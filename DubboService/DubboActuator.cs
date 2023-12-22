@@ -1,0 +1,678 @@
+﻿using NetService.Telnet;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Reflection;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using static NetService.Telnet.ExTelnet;
+
+namespace DubboNet.DubboService
+{
+    public class DubboActuator : IDisposable, ICloneable
+    {
+        public enum DubboActuatorStatus
+        {
+            DisConnect = -1,
+            Connecting = 0,
+            Connected = 1
+        }
+
+        public class DubboRequestResult
+        {
+            private const string _dubboResultSpit_result = "result: ";
+            private const string _dubboResultSpit_elapsed = "\nelapsed: ";
+            private const string _dubboResultSpit_ms = " ms.";
+
+            /// <summary>
+            /// 通过dubbo telnet原始返回 获取DubboRequestResult
+            /// </summary>
+            /// <param name="queryResultStr"></param>
+            /// <returns></returns>
+            public static DubboRequestResult GetRequestResultFormStr(string queryResultStr)
+            {
+                DubboRequestResult dubboRequestResult = new DubboRequestResult();
+                int nowStartFlag = 0;
+                int nowEndFlag = 0;
+                if (queryResultStr.Contains(_dubboResultSpit_result))
+                {
+                    //get Result
+                    if (!queryResultStr.StartsWith(_dubboResultSpit_result))
+                    {
+                        nowStartFlag = queryResultStr.IndexOf(_dubboResultSpit_result);
+                    }
+                    nowStartFlag = nowStartFlag + _dubboResultSpit_result.Length;
+                    //get Elapsed
+                    //需要指定StringComparison.Ordinal，不然\n在\r\n中将不能被找到，详见 https://learn.microsoft.com/zh-cn/dotnet/core/extensions/globalization-icu
+                    nowEndFlag = queryResultStr.IndexOf(_dubboResultSpit_elapsed, nowStartFlag, StringComparison.Ordinal);
+                    if (nowEndFlag > 0)
+                    {
+                        dubboRequestResult.Result = queryResultStr.Substring(nowStartFlag, nowEndFlag - nowStartFlag);
+                        nowStartFlag = nowEndFlag + _dubboResultSpit_elapsed.Length;
+                        nowEndFlag = queryResultStr.IndexOf(_dubboResultSpit_ms, nowStartFlag);
+                        int tempElapsed = -1;
+                        if (nowEndFlag > 0)
+                        {
+                            if (!int.TryParse(queryResultStr.Substring(nowStartFlag, nowEndFlag - nowStartFlag), out tempElapsed))
+                            {
+                                //TryParse 失败 out 值会赋写为0
+                                tempElapsed = -1;
+                            }
+                        }
+                        dubboRequestResult.ServiceElapsed = tempElapsed;
+                    }
+                    else
+                    {
+                        dubboRequestResult.Result = queryResultStr.Substring(nowStartFlag);
+                        dubboRequestResult.ServiceElapsed = -1;
+                    }
+
+                }
+                else
+                {
+                    dubboRequestResult.Result = queryResultStr;
+                    dubboRequestResult.ServiceElapsed = -1;
+                }
+                return dubboRequestResult;
+            }
+
+            /// <summary>
+            /// 请求结果
+            /// </summary>
+            public string Result { get; set; }
+            /// <summary>
+            /// 服务处理时间，-1表示解析失败（毫秒）
+            /// </summary>
+            public int ServiceElapsed { get; set; }
+            /// <summary>
+            /// 请求时间，包含网络时间（毫秒）
+            /// </summary>
+            public int RequestElapsed { get; set; }
+
+        }
+
+        public class DubboFuncInfo
+        {
+            public string ServiceName { get; set; }
+            public string FuncName { get; set; }
+            public List<string> FuncInputParameterDefinition { get; set; }
+            public string FuncOutputResultDefinition { get; set; }
+            public string FuncExample { get; set; }
+            public string UserRemark { get; set; }
+
+            public DubboFuncInfo()
+            {
+                FuncInputParameterDefinition = new List<string>();
+            }
+        }
+
+        public class DubboFuncTraceInfo
+        {
+            public string FullName { get; set; }
+            public string ServiceName { get; set; }
+            public string MethodName { get; set; }
+            public string FuncRequest { get; set; }
+            public string FuncResponse { get; set; }
+
+
+            /// <summary>
+            /// 从trace的返回消息里提取DubboFuncTraceInfo元数据（仅填充FullName，FuncRequest，FuncResponse）(如果失败将返回null)
+            /// </summary>
+            /// <param name="source"></param>
+            /// <returns></returns>
+            public static DubboFuncTraceInfo GetTraceInfo(string source)
+            {
+                const string FUNCNAME_START = "-> ";
+                const string FUNCREQUEST_START = "([";
+                const string FUNCRESPONSE_START = "]) -> ";
+                const string _dubboResultSpit_elapsed = "\nelapsed: ";
+
+
+                DubboFuncTraceInfo dubboFuncTraceInfo = new DubboFuncTraceInfo();
+                if (string.IsNullOrEmpty(source)) return null;
+                int startIndex, endIndex = 0;
+                //get func name
+                startIndex = source.IndexOf(FUNCNAME_START);
+                if (startIndex == -1) return null;
+                endIndex = source.IndexOf(FUNCREQUEST_START, startIndex);
+                if (startIndex == -1) return null;
+                dubboFuncTraceInfo.FullName = source.Substring(startIndex + FUNCNAME_START.Length, endIndex - startIndex - FUNCNAME_START.Length);
+                //get request
+                startIndex = endIndex + FUNCREQUEST_START.Length;
+                endIndex = source.IndexOf(FUNCRESPONSE_START, startIndex);
+                if (endIndex == -1) return null;
+                dubboFuncTraceInfo.FuncRequest = source.Substring(startIndex, endIndex - startIndex);
+                //get response
+                startIndex = endIndex + FUNCRESPONSE_START.Length;
+                endIndex = source.IndexOf(_dubboResultSpit_elapsed, startIndex);
+                dubboFuncTraceInfo.FuncResponse = source.Substring(startIndex, endIndex - startIndex);
+
+                return dubboFuncTraceInfo;
+            }
+        }
+
+        public class DubboPsInfo
+        {
+            public List<KeyValuePair<IPEndPoint, IPEndPoint>> Lines { get; set; } = new List<KeyValuePair<IPEndPoint, IPEndPoint>>();
+
+            public static DubboPsInfo GetDubboPsInfo(string source)
+            {
+                const string IP_START = "/";
+                const string IP_SPIT = " -> /";
+                const string IP_NEWLINE = "\n";
+
+                DubboPsInfo dubboPsInfo = new DubboPsInfo();
+                if (string.IsNullOrEmpty(source)) return null;
+                string[] sourceLineArr = source.Split(IP_NEWLINE);
+                foreach (string oneLine in sourceLineArr)
+                {
+                    if (oneLine.StartsWith(IP_START))
+                    {
+                        int tempEnd = oneLine.IndexOf(IP_SPIT);
+                        string epFrom = oneLine.Substring(1, tempEnd - 1);
+                        string epTo = oneLine.Substring(tempEnd + IP_SPIT.Length);
+                        IPEndPoint iPEndPointFrom, iPEndPointTo = null;
+                        if (IPEndPoint.TryParse(epFrom, out iPEndPointFrom) && IPEndPoint.TryParse(epTo, out iPEndPointTo))
+                        {
+                            dubboPsInfo.Lines.Add(new KeyValuePair<IPEndPoint, IPEndPoint>(iPEndPointFrom, iPEndPointTo));
+                        }
+                    }
+                }
+                return dubboPsInfo;
+            }
+        }
+
+        public static List<string> ResultList;
+
+        static DubboActuator()
+        {
+            ResultList = new List<string>();
+        }
+
+        private const int _dubboTelnetKeepAliveTime = 10000; //TCP 保活计时器 (TCP 自己的心跳维持，默认2h)
+        private const int _dubboTelnetTelnetAlivePeriod = 30000; //telnet 业务保护间隔 （发送一个业务命令，防止服务器主动断开）
+        private const int _dubboTelnetConnectTimeOut = 5000; //应用侧连接主机时等待的最大超时时间，默认为0表示默认值不设置默认超时将会是2MSL （MSL根据操作系统不同实现会有差距普遍会超过30s，使用不设置该项超时等待时间会超过1min）
+        private const int _dubboTelnetReceiveBuffLength = 1024 * 8; //telnet内部接收缓存大小
+        private const int _dubboTelnetMaxMaintainDataLength = 1024 * 1024 * 8; //telnet命令返回接收缓存大小, dubbo 响应默认最大返回为8MB
+        private const string _dubboTelnetDefautExpectPattern = "dubbo>";
+
+
+
+
+
+        private ExTelnet dubboTelnet;
+        private AutoResetEvent sendQueryAutoResetEvent = null;
+        private bool _isConnecting = false;
+        private string _dubboResponseNewline = "\r\n";
+
+        /// <summary>
+        /// 获取最近的错误信息(仅用于同步调用)
+        /// </summary>
+        public string NowErrorMes { get; private set; }
+
+        /// <summary>
+        /// 当前Dubbo服务Host地址
+        /// </summary>
+        public string DubboHost { get; private set; }
+
+        /// <summary>
+        /// 当前Dubbo服务Port端口
+        /// </summary>
+        public int DubboPort { get; private set; }
+
+        /// <summary>
+        /// DubboRequest的最大等待时间（Dubbo服务默认的超时时间是 1000 毫秒，这个值建议设置大于等于Dubbo服务默认的超时时间）
+        /// </summary>
+        public int DubboRequestTimeout { get; private set; }
+
+
+        /// <summary>
+        /// 当前Dubbo服务默认服务名称
+        /// </summary>
+        public string DefaultServiceName { get; private set; }
+
+
+
+        public DubboActuator(string address, int port, int commandTimeout = 10 * 1000, string defaultServiceName = null)
+        {
+            DubboHost = address;
+            DubboPort = port;
+            DubboRequestTimeout = commandTimeout;
+
+            dubboTelnet = new ExTelnet(address, port, commandTimeout);
+            dubboTelnet.DefautExpectPattern = _dubboTelnetDefautExpectPattern;
+            dubboTelnet.ReceiveBuffLength = _dubboTelnetReceiveBuffLength;
+            dubboTelnet.IsSaveTerminalData = false;
+            dubboTelnet.MaxMaintainDataLength = _dubboTelnetMaxMaintainDataLength; //dubbo 默认最大返回为8MB
+        }
+
+        /// <summary>
+        /// 当前DubboTester是否处于连接状态
+        /// </summary>
+        public bool IsConnected
+        {
+            get
+            {
+                if (dubboTelnet == null)
+                {
+                    return false;
+                }
+                return dubboTelnet.IsConnected;
+            }
+        }
+
+        /// <summary>
+        /// 获取当前DubboTester状态
+        /// </summary>
+        public DubboActuatorStatus State
+        {
+            get
+            {
+                if (IsConnected)
+                {
+                    return DubboActuatorStatus.Connected;
+                }
+                else
+                {
+                    return _isConnecting ? DubboActuatorStatus.Connecting : DubboActuatorStatus.DisConnect;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 获取当前DubboTester是否出于请求发送中
+        /// </summary>
+        public bool IsQuerySending
+        {
+            get
+            {
+                if (!IsConnected || sendQueryAutoResetEvent == null)
+                {
+                    return false;
+                }
+                bool getSignal = sendQueryAutoResetEvent.WaitOne(0);
+                if (getSignal)
+                {
+                    sendQueryAutoResetEvent.Set();
+                }
+                return !getSignal;
+            }
+        }
+
+        /// <summary>
+        /// 连接DubboTester
+        /// </summary>
+        /// <returns>是否连接成功（连接失败请通过NowErrorMes属性查看错误信息）</returns>
+        public async Task<bool> Connect()
+        {
+            //return telnet.Connect();
+            _isConnecting = true;
+            if (await dubboTelnet.ConnectAsync(_dubboTelnetKeepAliveTime, _dubboTelnetTelnetAlivePeriod, _dubboTelnetConnectTimeOut))
+            {
+                _isConnecting = false;
+                //重置上一个dubboTelnet的发送等待信号(如果信号器没有销毁)
+                if (sendQueryAutoResetEvent != null)
+                {
+                    while (!sendQueryAutoResetEvent.WaitOne(0))
+                    {
+                        sendQueryAutoResetEvent.Set();
+                    }
+                }
+                sendQueryAutoResetEvent = new AutoResetEvent(true);
+                return true;
+            }
+            NowErrorMes = dubboTelnet.NowErrorMes;
+            _isConnecting = false;
+            return false;
+        }
+
+        /// <summary>
+        /// 断开连接
+        /// </summary>
+        public void DisConnect()
+        {
+            dubboTelnet?.DisConnect();
+            //重置上一个dubboTelnet的发送等待信号
+            if (sendQueryAutoResetEvent != null)
+            {
+                while (!sendQueryAutoResetEvent.WaitOne(0))
+                {
+                    sendQueryAutoResetEvent.Set();
+                }
+            }
+            sendQueryAutoResetEvent = null;
+        }
+
+        /// <summary>
+        ///  发送Query请求[返回DubboRequestResult结果]
+        /// </summary>
+        /// <param name="endPoint">服务人口</param>
+        /// <param name="req">请求参数</param>
+        /// <returns></returns>
+        public async Task<DubboRequestResult> DoRequest(string endPoint, string req)
+        {
+            DubboRequestResult dubboRequestResult = new DubboRequestResult();
+            TelnetRequestResult queryResult = await SendCommandAsync($"invoke {endPoint}({req})");
+            if (queryResult != null)
+            {
+                if (queryResult.IsGetTargetIdentification)
+                {
+                    dubboRequestResult = DubboRequestResult.GetRequestResultFormStr(queryResult.Result);
+                }
+                else
+                {
+                    dubboRequestResult.Result = $"可能存在未能接收的数据\r\n{queryResult.Result}";
+                    dubboRequestResult.ServiceElapsed = -1;
+                }
+                dubboRequestResult.RequestElapsed = (int)queryResult.ElapsedMilliseconds;
+            }
+            else
+            {
+                dubboRequestResult.Result = $"[error:{NowErrorMes}]";
+                dubboRequestResult.ServiceElapsed = -1;
+                dubboRequestResult.RequestElapsed = -1;
+            }
+            return dubboRequestResult;
+        }
+
+        /// <summary>
+        ///  发送Query请求[直接返回原始报文字符串]
+        /// </summary>
+        /// <param name="endPoint">服务人口</param>
+        /// <param name="req">请求参数</param>
+        /// <returns></returns>
+        public async Task<string> SendQuery(string endPoint, string req)
+        {
+            TelnetRequestResult queryResult = await SendCommandAsync($"invoke {endPoint}({req})");
+            MyCommonHelper.MyCommonTool.ShowDebugLog($"[DoRequestAsync]: {queryResult.ElapsedMilliseconds} ms", "SendQuery");
+            if (queryResult == null)
+            {
+                return $"[error:{NowErrorMes}]";
+            }
+            else
+            {
+                if (queryResult.IsGetTargetIdentification)
+                {
+                    return queryResult.Result;
+                }
+                else
+                {
+                    return $"可能存在未能接收的数据\r\n{queryResult.Result}";
+                }
+            }
+        }
+
+        /// <summary>
+        /// 执行telnet DoRequestAsync
+        /// </summary>
+        /// <param name="command"></param>
+        /// <returns>返回结果，如果未null表示执行失败（错误请查看NowErrorMes）</returns>
+        protected async Task<TelnetRequestResult> SendCommandAsync(string command)
+        {
+            if (!IsConnected && !await Connect())
+            {
+                NowErrorMes = $"Connected Fail :{dubboTelnet.NowErrorMes}";
+                return null;
+            }
+            TelnetRequestResult requestResult = null;
+            try
+            {
+                sendQueryAutoResetEvent.WaitOne();
+                requestResult = await dubboTelnet.DoRequestAsync(command);
+            }
+            catch (Exception ex)
+            {
+                requestResult = null;
+                NowErrorMes = $"数据请求异常\r\n{ex.Message}";
+            }
+            finally
+            {
+                sendQueryAutoResetEvent.Set();
+            }
+            return requestResult;
+        }
+
+        /// <summary>
+        ///  获取指定服务的Func列表详情（失败返回null，通过查看NowErrorMes可获取错误详情）
+        /// </summary>
+        /// <param name="serviceName">服务名称(不能为空，通过GetAllDubboServiceAsync可以获取可用服务名列表)</param>
+        /// <returns>Func列表详情</returns>
+        public async Task<Dictionary<string, DubboFuncInfo>> GetDubboServiceFuncAsync(string serviceName)
+        {
+            if (string.IsNullOrEmpty(serviceName))
+            {
+                throw new ArgumentException("serviceName is empty");
+            }
+            TelnetRequestResult tempResult = await SendCommandAsync($"ls -l {serviceName}");
+            if (tempResult == null || string.IsNullOrEmpty(tempResult.Result))
+            {
+                NowErrorMes = "tempResult or tempResult.Result is NullOrEmpty";
+                return null;
+            }
+            if (!tempResult.IsGetTargetIdentification)
+            {
+                NowErrorMes = "can not get all data";
+                return null;
+            }
+            if (tempResult.Result.StartsWith("No such service"))
+            {
+                NowErrorMes = tempResult.Result;
+                return null;
+            }
+            return GetDubboFuncListIntro(tempResult.Result, serviceName);
+        }
+
+        /// <summary>
+        /// 获取当前服务PROVIDER列表
+        /// </summary>
+        /// <returns>PROVIDER列表</returns>
+        public async Task<List<string>> GetAllDubboServiceAsync()
+        {
+            TelnetRequestResult tempResult = await SendCommandAsync($"ls");
+            if (tempResult == null)
+            {
+                return null;
+            }
+            if (!tempResult.IsGetTargetIdentification)
+            {
+                NowErrorMes = "can not get all data";
+                return null;
+            }
+            return GetAllDubboServiceList(tempResult.Result);
+        }
+
+        public async Task<DubboPsInfo> GetDubboPsInfoAsync()
+        {
+            TelnetRequestResult tempResult = await SendCommandAsync($"ps -l {DubboPort}");
+            if (tempResult == null)
+            {
+                return null;
+            }
+            if (!tempResult.IsGetTargetIdentification)
+            {
+                NowErrorMes = "can not get all data";
+                return null;
+            }
+            return DubboPsInfo.GetDubboPsInfo(tempResult.Result);
+        }
+
+        /// <summary>
+        /// 获取指定服务方法的TraceInfo (失败返回null)(因为获取trace可能耗时比较长，会启一个独立的DubboTester，获取完成后自动释放)
+        /// </summary>
+        /// <param name="serviceName"></param>
+        /// <param name="methodName"></param>
+        /// <param name="timeoutSecond"></param>
+        /// <returns></returns>
+        public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfo(string serviceName, string methodName, int timeoutSecond = 300)
+        {
+            DubboActuator innerDubboTester = new DubboActuator(dubboTelnet.TelnetEndPoint.Address.ToString(), dubboTelnet.TelnetEndPoint.Port, 120 * 1000);
+            DubboFuncTraceInfo dubboFuncTraceInfo = null;
+            if (await innerDubboTester.Connect())
+            {
+                DateTime endTime = DateTime.Now.AddSeconds(timeoutSecond);
+                while (DateTime.Now < endTime)
+                {
+                    TelnetRequestResult requestResult = await innerDubboTester.SendCommandAsync($"trace {serviceName} {methodName} 1");
+                    if (requestResult != null)
+                    {
+                        dubboFuncTraceInfo = DubboFuncTraceInfo.GetTraceInfo(requestResult.Result);
+                    }
+                    if (dubboFuncTraceInfo != null)
+                    {
+                        dubboFuncTraceInfo.ServiceName = serviceName;
+                        dubboFuncTraceInfo.MethodName = methodName;
+                        break;
+                    }
+                }
+            }
+            innerDubboTester.Dispose();
+            return dubboFuncTraceInfo;
+        }
+
+
+        public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfo(string dubboEndPoint, int timeoutSecond = 180)
+        {
+            if (!(dubboEndPoint?.Contains('.') == true))
+            {
+                return null;
+            }
+            int spitIndex = dubboEndPoint.LastIndexOf(".");
+            return await GetDubboFuncTraceInfo(dubboEndPoint.Substring(0, spitIndex), dubboEndPoint.Substring(spitIndex + 1), timeoutSecond);
+        }
+
+
+
+        /// <summary>
+        /// 将ls -l命令返回值结果解析为DubboFuncInfo字典（内部使用）
+        /// </summary>
+        /// <param name="lslStr"></param>
+        /// <param name="serviceName"></param>
+        /// <returns></returns>
+        protected Dictionary<string, DubboFuncInfo> GetDubboFuncListIntro(string lslStr, string serviceName)
+        {
+            Dictionary<string, DubboFuncInfo> resultDc = new Dictionary<string, DubboFuncInfo>();
+            if (!string.IsNullOrEmpty(lslStr) && lslStr.Contains(_dubboResponseNewline))
+            {
+                string[] tempLines = lslStr.Split(_dubboResponseNewline, StringSplitOptions.RemoveEmptyEntries);
+                if (tempLines.Length > 1)
+                {
+                    for (int i = 1; i < tempLines.Length; i++)
+                    {
+                        string tempNowLine = tempLines[i];
+                        string tempFuncOut;
+                        string tempFuncName;
+                        string tempFuncIn;
+                        if (tempLines[i].StartsWith("\t"))
+                        {
+                            tempNowLine = tempNowLine.Remove(0, 1);
+                            int tempIndex = tempNowLine.IndexOf(" ");
+                            if (tempIndex < 0)
+                            {
+                                MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error can not find FuncOut in {tempLines[i]} ", "GetDubboFuncListIntro");
+                                continue;
+                            }
+                            tempFuncOut = tempNowLine.Substring(0, tempIndex).Trim();
+                            int tempEndIndex = tempNowLine.IndexOf("(", tempIndex + 1);
+                            if (tempEndIndex < 0)
+                            {
+                                MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error can not find FuncName in {tempLines[i]} data error ", "GetDubboFuncListIntro");
+                                continue;
+                            }
+                            tempFuncName = tempNowLine.Substring(tempIndex + 1, tempEndIndex - tempIndex - 1).Trim();
+                            tempIndex = tempEndIndex;
+                            tempEndIndex = tempNowLine.IndexOf(")", tempIndex + 1);
+                            if (tempEndIndex < 0)
+                            {
+                                MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error can not find FuncIn in {tempLines[i]} data error ", "GetDubboFuncListIntro");
+                                continue;
+                            }
+                            tempFuncIn = tempNowLine.Substring(tempIndex + 1, tempEndIndex - tempIndex - 1).Trim();
+                            string nowDcKey = $"{serviceName}.{tempFuncName}";
+                            if (!resultDc.TryAdd(nowDcKey, new DubboFuncInfo()
+                            {
+                                ServiceName = serviceName,
+                                FuncName = tempFuncName,
+                                FuncInputParameterDefinition = new List<string>() { tempFuncIn },
+                                FuncOutputResultDefinition = tempFuncOut
+                            }))
+                            {
+                                if (resultDc.ContainsKey(nowDcKey))
+                                {
+                                    resultDc[nowDcKey].FuncInputParameterDefinition.Add(tempFuncIn);
+                                }
+                                else
+                                {
+                                    MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error when TryAdd in {tempLines[i]} data error ", "GetDubboFuncListIntro");
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return resultDc;
+        }
+
+        /// <summary>
+        /// 将ls 命令返回值结果解析为服务List（内部使用）
+        /// </summary>
+        /// <param name="lsStr"></param>
+        /// <returns></returns>
+        protected List<string> GetAllDubboServiceList(string lsStr)
+        {
+            List<string> result = new List<string>();
+            if (!string.IsNullOrEmpty(lsStr) && lsStr.Contains(_dubboResponseNewline))
+            {
+                string[] tempLines = lsStr.Split(_dubboResponseNewline, StringSplitOptions.RemoveEmptyEntries);
+                if (tempLines.Length > 1)
+                {
+                    bool isSatrtProvider = false;
+                    for (int i = 0; i < tempLines.Length; i++)
+                    {
+                        if (isSatrtProvider)
+                        {
+                            if (tempLines[i].StartsWith("CONSUMER:"))
+                            {
+                                break;
+                            }
+                            result.Add(tempLines[i]);
+                            continue;
+                        }
+                        else if (tempLines[i].StartsWith("PROVIDER:"))
+                        {
+                            isSatrtProvider = true;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 主动关闭 Dubbo Telnet
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask ExitAsync()
+        {
+            if (IsConnected)
+            {
+                await dubboTelnet.WriteLineAsync("exit");
+            }
+            DisConnect();
+        }
+
+        public void Dispose()
+        {
+            DisConnect();
+            dubboTelnet?.Dispose();
+        }
+
+        public object Clone()
+        {
+            return new DubboActuator(dubboTelnet.TelnetEndPoint.Address.ToString(), dubboTelnet.TelnetEndPoint.Port, dubboTelnet.DefaWaitTimeout);
+        }
+    }
+}

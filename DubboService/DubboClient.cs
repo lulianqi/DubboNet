@@ -1,0 +1,183 @@
+﻿using DubboNet.DubboService.DataModle;
+using org.apache.zookeeper;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using static DubboNet.DubboService.DubboActuator;
+
+namespace DubboNet.DubboService
+{
+    public class DubboClient
+    {
+        public class DubboManCollection
+        {
+            private List<DubboActuator> dubboActuators = new List<DubboActuator>();
+
+            public int MaxUsersNum { get; set; } = 0;
+            public int CommandTimeout { get; set; } = 10 * 1000;
+            public string DefaultServiceName { get; set; }
+
+            public int Count { get { return dubboActuators?.Count ?? 0; } }
+
+            public bool IsInclude(string host, int port)
+            {
+                foreach (var man in dubboActuators)
+                {
+                    if (man.DubboHost == host && man.DubboPort == port)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            public DubboActuator GetDubboActuator()
+            {
+                return dubboActuators.FirstOrDefault();
+                foreach (var actuator in dubboActuators)
+                {
+                    //if(actuator.IsQuerySending)
+                }
+            }
+
+            public async Task<DubboRequestResult> SendRequestAsync(string funcEntrance, string req)
+            {
+                DubboActuator nowDubboActuator = GetDubboActuator();
+                return await nowDubboActuator.DoRequest(funcEntrance, req);
+            }
+
+            public void AddDubboMan(string address, int port)
+            {
+                dubboActuators.Add(new DubboActuator(address, port, CommandTimeout, DefaultServiceName));
+            }
+
+            public void RemoveByFilter(Func<DubboActuator, bool> filterFunc)
+            {
+                DubboActuator[] dubboArr = dubboActuators.ToArray();
+                foreach (DubboActuator dbm in dubboArr)
+                {
+                    if (filterFunc(dbm))
+                    {
+                        dubboActuators.Remove(dbm);
+                    }
+                }
+            }
+        }
+
+        public enum LoadBalanceMode
+        {
+            Random,
+            ShortestResponse,
+            RoundRobin,
+            LeastActive,
+            ConsistentHash
+        }
+
+        private MyZookeeper _innerMyZookeeper;
+
+        private DubboManCollection _dubboManCollection = new DubboManCollection();
+
+        /// <summary>
+        /// Zookeeper上默认的Dubbo跟路径，默认/dubbo/
+        /// </summary>
+        public string DubboRootPath { get; set; } = "/dubbo/";
+
+        /// <summary>
+        /// 完整的Dubbo方法名称
+        /// </summary>
+        public string FuncFullName { get; private set; }
+
+        /// <summary>
+        /// 当前Dubbo方法的服务路径
+        /// </summary>
+        public string FuncServicePath { get; private set; }
+
+        public DubboClient(string zookeeperCoonectString, string endPointFuncFullName)
+        {
+            _innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
+            FuncFullName = endPointFuncFullName;
+            if (FuncFullName.Contains('.'))
+            {
+                FuncServicePath = FuncFullName.Remove(FuncFullName.LastIndexOf('.'));
+            }
+            else
+            {
+                throw new Exception("endPointFuncFullName is error");
+            }
+        }
+
+        public async Task<DubboRequestResult> SendRequestAsync(string req)
+        {
+            if (_dubboManCollection.Count == 0)
+            {
+                await InitServiceHost();
+            }
+            return await _dubboManCollection.SendRequestAsync(FuncFullName, req);
+        }
+
+        public async Task Test()
+        {
+            await InitServiceHost();
+        }
+
+        private async Task InitServiceHost()
+        {
+            string nowFuncPath = $"{DubboRootPath}{FuncServicePath}";
+            ZNode tempZNode = await _innerMyZookeeper.GetZNodeTree(nowFuncPath);
+            if (tempZNode == null)
+            {
+                throw new Exception($"[GetServiceHost] error : can not GetZNodeTree from {FuncServicePath} ");
+            }
+            List<ZNode> providersNodes = GetDubboProvidersNode(tempZNode);
+            //删除已经无效的节点
+            if (_dubboManCollection.Count > 0)
+            {
+                Func<DubboActuator, bool> filterFunc = new Func<DubboActuator, bool>((dt) =>
+                {
+                    bool isSholdAlive = false;
+                    foreach (ZNode providerNode in providersNodes)
+                    {
+                        string path = System.Web.HttpUtility.UrlDecode(providerNode.Path, System.Text.Encoding.UTF8);
+                        Uri uri = new Uri(path);
+                        if (dt.DubboHost == uri.Host && dt.DubboPort == uri.Port)
+                        {
+                            isSholdAlive = true;
+                            break;
+                        }
+                    }
+                    return !isSholdAlive;
+                });
+                _dubboManCollection.RemoveByFilter(filterFunc);
+            }
+            //添加新节点
+            foreach (ZNode providerNode in providersNodes)
+            {
+                string path = System.Web.HttpUtility.UrlDecode(providerNode.Path, System.Text.Encoding.UTF8);
+                Uri uri = new Uri(path);
+                if (!_dubboManCollection.IsInclude(uri.Host, uri.Port))
+                {
+                    _dubboManCollection.AddDubboMan(uri.Host, uri.Port);
+                }
+            }
+
+        }
+
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
+        private List<ZNode> GetDubboProvidersNode(ZNode zNode)
+        {
+            ZNode dubboNodes = zNode.FilterLeafNode(nd => nd.Path?.StartsWith("dubbo%3A%2F%2F") ?? false, "DubboNode");
+            List<ZNode> resultZNodes = new List<ZNode>();
+            foreach (var tn in dubboNodes.Children)
+            {
+                if (tn.Path == "providers")
+                {
+                    //resultZNodes.AddRange(tn.GetLeafNodeList());
+                    resultZNodes.AddRange(tn.Children);
+                }
+            }
+            return resultZNodes;
+        }
+    }
+}
