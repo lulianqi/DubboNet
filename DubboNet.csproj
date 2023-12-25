@@ -2,10 +2,26 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Title>DubboNet</Title>
+    <Authors>lulianqi</Authors>
+    <PackageProjectUrl>https://github.com/lulianqi/DubboNet</PackageProjectUrl>
+    <PackageIcon>DubboNet.png</PackageIcon>
+    <RepositoryUrl>https://github.com/lulianqi/DubboNet</RepositoryUrl>
+    <PackageTags>dubbo;telnet</PackageTags>
+    <IncludeSymbols>False</IncludeSymbols>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DistributedLock.ZooKeeper" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Resource\DubboNet.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>
