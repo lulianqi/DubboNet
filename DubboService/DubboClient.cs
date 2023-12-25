@@ -3,6 +3,7 @@ using org.apache.zookeeper;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Threading.Tasks;
 using static DubboNet.DubboService.DubboActuator;
 
@@ -84,28 +85,51 @@ namespace DubboNet.DubboService
         public string DubboRootPath { get; set; } = "/dubbo/";
 
         /// <summary>
-        /// 完整的Dubbo方法名称
+        /// 默认当前Dubbo方法名称
         /// </summary>
-        public string FuncFullName { get; private set; }
+        public string DefaultFuncName { get; private set; }
 
         /// <summary>
-        /// 当前Dubbo方法的服务路径
+        /// 默认当前Dubbo服务名称
         /// </summary>
-        public string FuncServicePath { get; private set; }
+        public string DefaultServiceName { get; private set; }
 
-        public DubboClient(string zookeeperCoonectString, string endPointFuncFullName)
+        public DubboClient(string zookeeperCoonectString)
         {
-            _innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
-            FuncFullName = endPointFuncFullName;
-            if (FuncFullName.Contains('.'))
+            if (string.IsNullOrEmpty(zookeeperCoonectString))
             {
-                FuncServicePath = FuncFullName.Remove(FuncFullName.LastIndexOf('.'));
+                throw new ArgumentException($"“{nameof(zookeeperCoonectString)}”不能为 null 或空。", nameof(zookeeperCoonectString));
+            }
+            _innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
+            DefaultFuncName = null;
+            DefaultServiceName = null;
+        }
+
+        public DubboClient(string zookeeperCoonectString, string defaultServiceName , string defaultFuncName) : this(zookeeperCoonectString)
+        {
+            DefaultServiceName = defaultServiceName;
+            DefaultFuncName = defaultFuncName;
+            if (string.IsNullOrEmpty(DefaultServiceName)&& !string.IsNullOrEmpty(DefaultFuncName))
+            {
+                throw new Exception("defaultServiceName can not be null unless defaultFuncName is null");
+            }
+        }
+
+        public DubboClient(string zookeeperCoonectString, string endPointFuncFullName):this(zookeeperCoonectString)
+        {
+            if (DefaultFuncName.Contains('.'))
+            {
+                int tempSpitIndex = DefaultFuncName.LastIndexOf('.');
+                DefaultFuncName = DefaultFuncName.Substring(tempSpitIndex + 1);
+                DefaultServiceName = DefaultFuncName.Remove(tempSpitIndex);
             }
             else
             {
-                throw new Exception("endPointFuncFullName is error");
+                throw new ArgumentException($"“{nameof(endPointFuncFullName)}” is error", nameof(endPointFuncFullName));
             }
         }
+
+
 
         public async Task<DubboRequestResult> SendRequestAsync(string req)
         {
@@ -113,7 +137,7 @@ namespace DubboNet.DubboService
             {
                 await InitServiceHost();
             }
-            return await _dubboManCollection.SendRequestAsync(FuncFullName, req);
+            return await _dubboManCollection.SendRequestAsync($"{DefaultServiceName}.{DefaultFuncName}", req);
         }
 
         public async Task Test()
@@ -123,11 +147,11 @@ namespace DubboNet.DubboService
 
         private async Task InitServiceHost()
         {
-            string nowFuncPath = $"{DubboRootPath}{FuncServicePath}";
+            string nowFuncPath = $"{DubboRootPath}{DefaultServiceName}";
             ZNode tempZNode = await _innerMyZookeeper.GetZNodeTree(nowFuncPath);
             if (tempZNode == null)
             {
-                throw new Exception($"[GetServiceHost] error : can not GetZNodeTree from {FuncServicePath} ");
+                throw new Exception($"[GetServiceHost] error : can not GetZNodeTree from {DefaultServiceName} ");
             }
             List<ZNode> providersNodes = GetDubboProvidersNode(tempZNode);
             //删除已经无效的节点
