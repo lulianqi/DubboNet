@@ -93,6 +93,12 @@ namespace DubboNet.DubboService
         /// </summary>
         public string DefaultServiceName { get; private set; }
 
+        
+         /// <summary>
+        /// 初始化DubboClient
+        /// </summary>
+        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
+        /// <exception cref="ArgumentException"></exception>
         public DubboClient(string zookeeperCoonectString)
         {
             if (string.IsNullOrEmpty(zookeeperCoonectString))
@@ -104,6 +110,13 @@ namespace DubboNet.DubboService
             DefaultServiceName = null;
         }
 
+        /// <summary>
+        /// 初始化DubboClient
+        /// </summary>
+        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
+        /// <param name="defaultServiceName">默认服务名称</param>
+        /// <param name="defaultFuncName">默认方法名称</param>
+        /// <exception cref="Exception"></exception>
         public DubboClient(string zookeeperCoonectString, string defaultServiceName , string defaultFuncName) : this(zookeeperCoonectString)
         {
             DefaultServiceName = defaultServiceName;
@@ -114,9 +127,21 @@ namespace DubboNet.DubboService
             }
         }
 
+        /// <summary>
+        /// 初始化DubboClient
+        /// </summary>
+        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
+        /// <param name="endPointFuncFullName">默认方法入口（完整名称包括服务名称）</param>
+        /// <exception cref="ArgumentException"></exception>
         public DubboClient(string zookeeperCoonectString, string endPointFuncFullName):this(zookeeperCoonectString)
         {
-            if (DefaultFuncName.Contains('.'))
+            if(DefaultFuncName.Contains('#'))
+            {
+                int tempSpitIndex = DefaultFuncName.LastIndexOf('#');
+                DefaultFuncName = DefaultFuncName.Substring(tempSpitIndex + 1);
+                DefaultServiceName = DefaultFuncName.Remove(tempSpitIndex);
+            }
+            else if (DefaultFuncName.Contains('.'))
             {
                 int tempSpitIndex = DefaultFuncName.LastIndexOf('.');
                 DefaultFuncName = DefaultFuncName.Substring(tempSpitIndex + 1);
@@ -127,7 +152,6 @@ namespace DubboNet.DubboService
                 throw new ArgumentException($"“{nameof(endPointFuncFullName)}” is error", nameof(endPointFuncFullName));
             }
         }
-
 
 
         public async Task<DubboRequestResult> SendRequestAsync(string req)
