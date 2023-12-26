@@ -1,4 +1,5 @@
-﻿using NetService.Telnet;
+﻿using DubboNet.DubboService.DataModle;
+using NetService.Telnet;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -21,169 +22,6 @@ namespace DubboNet.DubboService
             Connected = 1
         }
 
-        public class DubboRequestResult
-        {
-            private const string _dubboResultSpit_result = "result: ";
-            private const string _dubboResultSpit_elapsed = "\nelapsed: ";
-            private const string _dubboResultSpit_ms = " ms.";
-
-            /// <summary>
-            /// 通过dubbo telnet原始返回 获取DubboRequestResult
-            /// </summary>
-            /// <param name="queryResultStr"></param>
-            /// <returns></returns>
-            public static DubboRequestResult GetRequestResultFormStr(string queryResultStr)
-            {
-                DubboRequestResult dubboRequestResult = new DubboRequestResult();
-                int nowStartFlag = 0;
-                int nowEndFlag = 0;
-                if (queryResultStr.Contains(_dubboResultSpit_result))
-                {
-                    //get Result
-                    if (!queryResultStr.StartsWith(_dubboResultSpit_result))
-                    {
-                        nowStartFlag = queryResultStr.IndexOf(_dubboResultSpit_result);
-                    }
-                    nowStartFlag = nowStartFlag + _dubboResultSpit_result.Length;
-                    //get Elapsed
-                    //需要指定StringComparison.Ordinal，不然\n在\r\n中将不能被找到，详见 https://learn.microsoft.com/zh-cn/dotnet/core/extensions/globalization-icu
-                    nowEndFlag = queryResultStr.IndexOf(_dubboResultSpit_elapsed, nowStartFlag, StringComparison.Ordinal);
-                    if (nowEndFlag > 0)
-                    {
-                        dubboRequestResult.Result = queryResultStr.Substring(nowStartFlag, nowEndFlag - nowStartFlag);
-                        nowStartFlag = nowEndFlag + _dubboResultSpit_elapsed.Length;
-                        nowEndFlag = queryResultStr.IndexOf(_dubboResultSpit_ms, nowStartFlag);
-                        int tempElapsed = -1;
-                        if (nowEndFlag > 0)
-                        {
-                            if (!int.TryParse(queryResultStr.Substring(nowStartFlag, nowEndFlag - nowStartFlag), out tempElapsed))
-                            {
-                                //TryParse 失败 out 值会赋写为0
-                                tempElapsed = -1;
-                            }
-                        }
-                        dubboRequestResult.ServiceElapsed = tempElapsed;
-                    }
-                    else
-                    {
-                        dubboRequestResult.Result = queryResultStr.Substring(nowStartFlag);
-                        dubboRequestResult.ServiceElapsed = -1;
-                    }
-
-                }
-                else
-                {
-                    dubboRequestResult.Result = queryResultStr;
-                    dubboRequestResult.ServiceElapsed = -1;
-                }
-                return dubboRequestResult;
-            }
-
-            /// <summary>
-            /// 请求结果
-            /// </summary>
-            public string Result { get; set; }
-            /// <summary>
-            /// 服务处理时间，-1表示解析失败（毫秒）
-            /// </summary>
-            public int ServiceElapsed { get; set; }
-            /// <summary>
-            /// 请求时间，包含网络时间（毫秒）
-            /// </summary>
-            public int RequestElapsed { get; set; }
-
-        }
-
-        public class DubboFuncInfo
-        {
-            public string ServiceName { get; set; }
-            public string FuncName { get; set; }
-            public List<string> FuncInputParameterDefinition { get; set; }
-            public string FuncOutputResultDefinition { get; set; }
-            public string FuncExample { get; set; }
-            public string UserRemark { get; set; }
-
-            public DubboFuncInfo()
-            {
-                FuncInputParameterDefinition = new List<string>();
-            }
-        }
-
-        public class DubboFuncTraceInfo
-        {
-            public string FullName { get; set; }
-            public string ServiceName { get; set; }
-            public string MethodName { get; set; }
-            public string FuncRequest { get; set; }
-            public string FuncResponse { get; set; }
-
-
-            /// <summary>
-            /// 从trace的返回消息里提取DubboFuncTraceInfo元数据（仅填充FullName，FuncRequest，FuncResponse）(如果失败将返回null)
-            /// </summary>
-            /// <param name="source"></param>
-            /// <returns></returns>
-            public static DubboFuncTraceInfo GetTraceInfo(string source)
-            {
-                const string FUNCNAME_START = "-> ";
-                const string FUNCREQUEST_START = "([";
-                const string FUNCRESPONSE_START = "]) -> ";
-                const string _dubboResultSpit_elapsed = "\nelapsed: ";
-
-
-                DubboFuncTraceInfo dubboFuncTraceInfo = new DubboFuncTraceInfo();
-                if (string.IsNullOrEmpty(source)) return null;
-                int startIndex, endIndex = 0;
-                //get func name
-                startIndex = source.IndexOf(FUNCNAME_START);
-                if (startIndex == -1) return null;
-                endIndex = source.IndexOf(FUNCREQUEST_START, startIndex);
-                if (startIndex == -1) return null;
-                dubboFuncTraceInfo.FullName = source.Substring(startIndex + FUNCNAME_START.Length, endIndex - startIndex - FUNCNAME_START.Length);
-                //get request
-                startIndex = endIndex + FUNCREQUEST_START.Length;
-                endIndex = source.IndexOf(FUNCRESPONSE_START, startIndex);
-                if (endIndex == -1) return null;
-                dubboFuncTraceInfo.FuncRequest = source.Substring(startIndex, endIndex - startIndex);
-                //get response
-                startIndex = endIndex + FUNCRESPONSE_START.Length;
-                endIndex = source.IndexOf(_dubboResultSpit_elapsed, startIndex);
-                dubboFuncTraceInfo.FuncResponse = source.Substring(startIndex, endIndex - startIndex);
-
-                return dubboFuncTraceInfo;
-            }
-        }
-
-        public class DubboPsInfo
-        {
-            public List<KeyValuePair<IPEndPoint, IPEndPoint>> Lines { get; set; } = new List<KeyValuePair<IPEndPoint, IPEndPoint>>();
-
-            public static DubboPsInfo GetDubboPsInfo(string source)
-            {
-                const string IP_START = "/";
-                const string IP_SPIT = " -> /";
-                const string IP_NEWLINE = "\n";
-
-                DubboPsInfo dubboPsInfo = new DubboPsInfo();
-                if (string.IsNullOrEmpty(source)) return null;
-                string[] sourceLineArr = source.Split(IP_NEWLINE);
-                foreach (string oneLine in sourceLineArr)
-                {
-                    if (oneLine.StartsWith(IP_START))
-                    {
-                        int tempEnd = oneLine.IndexOf(IP_SPIT);
-                        string epFrom = oneLine.Substring(1, tempEnd - 1);
-                        string epTo = oneLine.Substring(tempEnd + IP_SPIT.Length);
-                        IPEndPoint iPEndPointFrom, iPEndPointTo = null;
-                        if (IPEndPoint.TryParse(epFrom, out iPEndPointFrom) && IPEndPoint.TryParse(epTo, out iPEndPointTo))
-                        {
-                            dubboPsInfo.Lines.Add(new KeyValuePair<IPEndPoint, IPEndPoint>(iPEndPointFrom, iPEndPointTo));
-                        }
-                    }
-                }
-                return dubboPsInfo;
-            }
-        }
 
         public static List<string> ResultList;
 
@@ -198,9 +36,6 @@ namespace DubboNet.DubboService
         private const int _dubboTelnetReceiveBuffLength = 1024 * 8; //telnet内部接收缓存大小
         private const int _dubboTelnetMaxMaintainDataLength = 1024 * 1024 * 8; //telnet命令返回接收缓存大小, dubbo 响应默认最大返回为8MB
         private const string _dubboTelnetDefautExpectPattern = "dubbo>";
-
-
-
 
 
         private ExTelnet dubboTelnet;

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DubboNet.DubboService.DataModle;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
