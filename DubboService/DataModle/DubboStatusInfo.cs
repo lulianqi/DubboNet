@@ -61,7 +61,7 @@ namespace DubboNet.DubboService.DataModle
                 string[] parts = message.Split(MES_SPLIT, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 foreach (string part in parts) 
                 {
-                    var keyValue = part.Trim().Split(MESVAL_SPLIT, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var keyValue = part.Trim().Split(MESVAL_SPLIT, 2,StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     if (keyValue.Length != 2)
                     {
                         MyLogger.LogWarning("Each part of the status text should contain a single ':' character.");
@@ -149,7 +149,7 @@ namespace DubboNet.DubboService.DataModle
 
         public class LoadInfo : ResourceStatus
         {
-            public int Load { get; set; }
+            public Double Load { get; set; }
             public int Cpu { get; set; }
 
             protected override bool InitStatusResource()
@@ -166,7 +166,7 @@ namespace DubboNet.DubboService.DataModle
                         switch (kv.Key.ToLower())
                         {
                             case "load":
-                                Load = int.Parse(kv.Value);
+                                Load = Double.Parse(kv.Value);
                                 break;
                             case "cpu":
                                 Cpu = int.Parse(kv.Value);
@@ -207,7 +207,7 @@ namespace DubboNet.DubboService.DataModle
                         case "max":
                             Max = kv.Value;
                             break;
-                        case "tolal":
+                        case "total":
                             Total = kv.Value;
                             break;
                         case "used":
@@ -267,12 +267,12 @@ namespace DubboNet.DubboService.DataModle
             string[] sourceLineArr = source.Split(DATA_NEWLINE, StringSplitOptions.RemoveEmptyEntries);
             foreach (string oneLine in sourceLineArr)
             {
-                if (oneLine.StartsWith(DATA_NEWLINE))
+                if (oneLine.StartsWith(DATA_SPLIT))
                 {
                     string nowKey, nowStatus, nowMessage = null;
                     int tempStartIndex = 1;
                     int tempEndIndex = oneLine.IndexOf(DATA_SPLIT, tempStartIndex);
-                    if (tempEndIndex > 0)
+                    if (tempEndIndex < 0)
                     {
                         MyLogger.LogWarning($"GetDubboStatusInfo key from {oneLine} fail");
                         continue;
@@ -280,7 +280,7 @@ namespace DubboNet.DubboService.DataModle
                     nowKey = oneLine.Substring(tempStartIndex, tempEndIndex - tempStartIndex).Trim();
                     tempStartIndex = tempEndIndex + 1;
                     tempEndIndex = oneLine.IndexOf(DATA_SPLIT, tempStartIndex);
-                    if (tempEndIndex > 0)
+                    if (tempEndIndex < 0)
                     {
                         MyLogger.LogWarning($"GetDubboStatusInfo status from {oneLine} fail");
                         continue;
@@ -288,7 +288,7 @@ namespace DubboNet.DubboService.DataModle
                     nowStatus = oneLine.Substring(tempStartIndex, tempEndIndex - tempStartIndex).Trim();
                     tempStartIndex = tempEndIndex + 1;
                     tempEndIndex = oneLine.IndexOf(DATA_SPLIT, tempStartIndex);
-                    if (tempEndIndex > 0)
+                    if (tempEndIndex < 0)
                     {
                         MyLogger.LogWarning($"GetDubboStatusInfo message from {oneLine} fail");
                         continue;

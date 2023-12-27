@@ -187,7 +187,7 @@ namespace DubboNet.DubboService
         /// <param name="endPoint">服务人口</param>
         /// <param name="req">请求参数</param>
         /// <returns></returns>
-        public async Task<DubboRequestResult> DoRequest(string endPoint, string req)
+        public async Task<DubboRequestResult> DoRequestAsync(string endPoint, string req)
         {
             DubboRequestResult dubboRequestResult = new DubboRequestResult();
             TelnetRequestResult queryResult = await SendCommandAsync($"invoke {endPoint}({req})");
@@ -213,6 +213,10 @@ namespace DubboNet.DubboService
             return dubboRequestResult;
         }
 
+        public async Task<DubboRequestResult<T_Rsp>> DoRequestAsync<T_Rsp,T_Req>(string endPoint, T_Req req)
+        {
+
+        }
         /// <summary>
         ///  发送Query请求[直接返回原始报文字符串]
         /// </summary>

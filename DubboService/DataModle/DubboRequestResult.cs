@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
+using MyCommonHelper;
 
 namespace DubboNet.DubboService.DataModle
 {
@@ -78,4 +80,50 @@ namespace DubboNet.DubboService.DataModle
         public int RequestElapsed { get; set; }
 
     }
+
+    public class DubboRequestResult<T>:DubboRequestResult  //where T :class
+    {
+        private T _resultModle = default;
+
+        private bool hasSetResultModle =false;
+
+        public T ResultModle
+        { 
+            get
+            {
+                if(!hasSetResultModle)
+                {
+                    if(!string.IsNullOrEmpty(Result))
+                    {
+                        try
+                        {
+                            _resultModle = JsonSerializer.Deserialize<T>(Result);
+                        }
+                        catch(Exception ex)
+                        {
+                            _resultModle =default;
+                            MyLogger.LogError("Get ResultModle Error",ex);
+                        }
+                    }
+                    hasSetResultModle = true;
+                }
+                return _resultModle;
+            }
+        }
+
+        public DubboRequestResult(DubboRequestResult sourceDubboRequestResult)
+        {
+            this.Result = sourceDubboRequestResult.Result;
+            this.ServiceElapsed = sourceDubboRequestResult.ServiceElapsed;
+            this.RequestElapsed = sourceDubboRequestResult.RequestElapsed;
+            _ = ResultModle;
+        }
+
+        public void ResetResultModle()
+        {
+            _resultModle = default;
+            hasSetResultModle = false;
+        }
+    }
+
 }
