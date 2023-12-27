@@ -1,6 +1,4 @@
-﻿#define LogDubg
-
-using System;
+﻿using System;
 using System.Reflection;
 
 namespace MyCommonHelper
@@ -40,13 +38,6 @@ namespace MyCommonHelper
             {
                 Console.WriteLine($"[{flag}]{error}");
             }
-        }
-
-        public static void LogDebug(string debugInfo)
-        {
-#if LogDubg
-            Console.WriteLine(debugInfo);
-#endif
         }
     }
 }

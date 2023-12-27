@@ -319,6 +319,10 @@ namespace DubboNet.DubboService
             return GetAllDubboServiceList(tempResult.Result);
         }
 
+        /// <summary>
+        /// 获取端口上的连接详细信息
+        /// </summary>
+        /// <returns></returns>
         public async Task<DubboPsInfo> GetDubboPsInfoAsync()
         {
             TelnetRequestResult tempResult = await SendCommandAsync($"ps -l {DubboPort}");
@@ -332,6 +336,25 @@ namespace DubboNet.DubboService
                 return null;
             }
             return DubboPsInfo.GetDubboPsInfo(tempResult.Result);
+        }
+
+        /// <summary>
+        /// 获取状态信息
+        /// </summary>
+        /// <returns></returns>
+        public async Task<DubboStatusInfo> GetDubboStatusInfoAsync()
+        {
+            TelnetRequestResult tempResult = await SendCommandAsync($"status -l");
+            if (tempResult == null)
+            {
+                return null;
+            }
+            if (!tempResult.IsGetTargetIdentification)
+            {
+                NowErrorMes = "can not get all data";
+                return null;
+            }
+            return DubboStatusInfo.GetDubboStatusInfo(tempResult.Result);
         }
 
         /// <summary>

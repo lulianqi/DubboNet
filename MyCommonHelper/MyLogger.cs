@@ -1,4 +1,5 @@
-﻿using System;
+﻿#define LogDubg
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,7 +11,7 @@ namespace MyCommonHelper
     {
         public enum LogType
         {
-            Info, Warn, Error
+            Info, Warn, Error,Debug
         }
 
         public static void Print(string info , LogType logType = LogType.Info)
@@ -39,7 +40,20 @@ namespace MyCommonHelper
             {
                 Print($"[{DateTime.Now}] {mes} {ex.Message}" , LogType.Error);
             }
+        }
 
+        public static void LogDebug(string mes, Exception ex = null)
+        {
+            #if LogDubg
+            if (ex == null)
+            {
+                Print($"[{DateTime.Now}] {mes}" , LogType.Debug);
+            }
+            else
+            {
+                Print($"[{DateTime.Now}] {mes} {ex.Message}" , LogType.Debug);
+            }
+            #endif
         }
     }
 }
