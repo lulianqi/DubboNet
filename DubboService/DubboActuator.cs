@@ -1,4 +1,5 @@
 ﻿using DubboNet.DubboService.DataModle;
+using MyCommonHelper;
 using NetService.Telnet;
 using System;
 using System.Collections.Generic;
@@ -7,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using static NetService.Telnet.ExTelnet;
@@ -182,7 +184,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        ///  发送Query请求[返回DubboRequestResult结果]
+        ///  发送Query请求[返回DubboRequestResult结果](返回不会为null，dubboRequestResult.ServiceElapsed 为 -1 时即代表错误，通过dubboRequestResult.ErrorMeaasge获取错误详情)
         /// </summary>
         /// <param name="endPoint">服务人口</param>
         /// <param name="req">请求参数</param>
@@ -199,26 +201,67 @@ namespace DubboNet.DubboService
                 }
                 else
                 {
-                    dubboRequestResult.Result = $"可能存在未能接收的数据\r\n{queryResult.Result}";
+                    dubboRequestResult.Result = queryResult.Result;
                     dubboRequestResult.ServiceElapsed = -1;
+                    dubboRequestResult.ErrorMeaasge = $"can not get the end flag of the request,it may has more data for this request\r\n{queryResult.Result}";
                 }
                 dubboRequestResult.RequestElapsed = (int)queryResult.ElapsedMilliseconds;
             }
             else
             {
-                dubboRequestResult.Result = $"[error:{NowErrorMes}]";
+                dubboRequestResult.Result = string.Empty;
                 dubboRequestResult.ServiceElapsed = -1;
                 dubboRequestResult.RequestElapsed = -1;
+                dubboRequestResult.ErrorMeaasge = $"queryResult is null \r\nlast error:{NowErrorMes}";
             }
             return dubboRequestResult;
         }
 
+        /// <summary>
+        /// 发送指定类型的结构化数据Query请求，并将返回指定类型的结构化数据[返回DubboRequestResult<T_Rsp>结果]
+        /// </summary>
+        /// <typeparam name="T_Rsp">响应类型</typeparam>
+        /// <typeparam name="T_Req">请求类型</typeparam>
+        /// <param name="endPoint">服务人口</param>
+        /// <param name="req"></param>
+        /// <returns></returns>
         public async Task<DubboRequestResult<T_Rsp>> DoRequestAsync<T_Rsp,T_Req>(string endPoint, T_Req req)
         {
-
+            DubboRequestResult<T_Rsp> dubboRequestResult = null;
+            string requestStr = null;
+            if (req == null)
+            {
+                requestStr = string.Empty;
+            }
+            try
+            {
+                //https://stackoverflow.com/questions/863881/how-do-i-tell-if-a-type-is-a-simple-type-i-e-holds-a-single-value
+                Type typeReq = typeof(T_Req);
+                if (typeReq.IsPrimitive)
+                {
+                    
+                }
+                requestStr = JsonSerializer.Serialize<T_Req>(req);
+            }
+            catch (Exception ex)
+            {
+                dubboRequestResult = new DubboRequestResult<T_Rsp>()
+                {
+                    ErrorMeaasge = ex.Message,
+                    ServiceElapsed = -1,
+                    RequestElapsed = -1,
+                };
+                MyLogger.LogError("DoRequestAsync<T_Rsp,T_Req> fail in JsonSerializer.Serialize", ex);
+                return dubboRequestResult;
+            }
+            DubboRequestResult sourceDubboResult = await DoRequestAsync(endPoint , requestStr);
+            dubboRequestResult = new DubboRequestResult<T_Rsp>(sourceDubboResult);
+            return dubboRequestResult;
         }
+
+
         /// <summary>
-        ///  发送Query请求[直接返回原始报文字符串]
+        ///  发送Query请求[直接返回原始报文字符串]（弃用）
         /// </summary>
         /// <param name="endPoint">服务人口</param>
         /// <param name="req">请求参数</param>
@@ -226,7 +269,7 @@ namespace DubboNet.DubboService
         public async Task<string> SendQuery(string endPoint, string req)
         {
             TelnetRequestResult queryResult = await SendCommandAsync($"invoke {endPoint}({req})");
-            MyCommonHelper.MyCommonTool.ShowDebugLog($"[DoRequestAsync]: {queryResult.ElapsedMilliseconds} ms", "SendQuery");
+            MyLogger.LogDiagnostics($"[DoRequestAsync]: {queryResult.ElapsedMilliseconds} ms", "SendQuery");
             if (queryResult == null)
             {
                 return $"[error:{NowErrorMes}]";
@@ -245,7 +288,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 执行telnet DoRequestAsync
+        /// 执行telnet DoRequestAsync （原数据请求，所有请求，包括诊断类型请求最终都会使用该入口发送网络数据）
         /// </summary>
         /// <param name="command"></param>
         /// <returns>返回结果，如果未null表示执行失败（错误请查看NowErrorMes）</returns>
@@ -301,7 +344,7 @@ namespace DubboNet.DubboService
                 NowErrorMes = tempResult.Result;
                 return null;
             }
-            return GetDubboFuncListIntro(tempResult.Result, serviceName);
+            return DubboFuncInfo.GetDubboFuncListIntro(tempResult.Result, serviceName);
         }
 
         /// <summary>
@@ -407,76 +450,7 @@ namespace DubboNet.DubboService
 
 
 
-        /// <summary>
-        /// 将ls -l命令返回值结果解析为DubboFuncInfo字典（内部使用）
-        /// </summary>
-        /// <param name="lslStr"></param>
-        /// <param name="serviceName"></param>
-        /// <returns></returns>
-        protected Dictionary<string, DubboFuncInfo> GetDubboFuncListIntro(string lslStr, string serviceName)
-        {
-            Dictionary<string, DubboFuncInfo> resultDc = new Dictionary<string, DubboFuncInfo>();
-            if (!string.IsNullOrEmpty(lslStr) && lslStr.Contains(_dubboResponseNewline))
-            {
-                string[] tempLines = lslStr.Split(_dubboResponseNewline, StringSplitOptions.RemoveEmptyEntries);
-                if (tempLines.Length > 1)
-                {
-                    for (int i = 1; i < tempLines.Length; i++)
-                    {
-                        string tempNowLine = tempLines[i];
-                        string tempFuncOut;
-                        string tempFuncName;
-                        string tempFuncIn;
-                        if (tempLines[i].StartsWith("\t"))
-                        {
-                            tempNowLine = tempNowLine.Remove(0, 1);
-                            int tempIndex = tempNowLine.IndexOf(" ");
-                            if (tempIndex < 0)
-                            {
-                                MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error can not find FuncOut in {tempLines[i]} ", "GetDubboFuncListIntro");
-                                continue;
-                            }
-                            tempFuncOut = tempNowLine.Substring(0, tempIndex).Trim();
-                            int tempEndIndex = tempNowLine.IndexOf("(", tempIndex + 1);
-                            if (tempEndIndex < 0)
-                            {
-                                MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error can not find FuncName in {tempLines[i]} data error ", "GetDubboFuncListIntro");
-                                continue;
-                            }
-                            tempFuncName = tempNowLine.Substring(tempIndex + 1, tempEndIndex - tempIndex - 1).Trim();
-                            tempIndex = tempEndIndex;
-                            tempEndIndex = tempNowLine.IndexOf(")", tempIndex + 1);
-                            if (tempEndIndex < 0)
-                            {
-                                MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error can not find FuncIn in {tempLines[i]} data error ", "GetDubboFuncListIntro");
-                                continue;
-                            }
-                            tempFuncIn = tempNowLine.Substring(tempIndex + 1, tempEndIndex - tempIndex - 1).Trim();
-                            string nowDcKey = $"{serviceName}.{tempFuncName}";
-                            if (!resultDc.TryAdd(nowDcKey, new DubboFuncInfo()
-                            {
-                                ServiceName = serviceName,
-                                FuncName = tempFuncName,
-                                FuncInputParameterDefinition = new List<string>() { tempFuncIn },
-                                FuncOutputResultDefinition = tempFuncOut
-                            }))
-                            {
-                                if (resultDc.ContainsKey(nowDcKey))
-                                {
-                                    resultDc[nowDcKey].FuncInputParameterDefinition.Add(tempFuncIn);
-                                }
-                                else
-                                {
-                                    MyCommonHelper.MyCommonTool.ShowDebugLog($"[GetDubboFuncListIntro]:data error when TryAdd in {tempLines[i]} data error ", "GetDubboFuncListIntro");
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return resultDc;
-        }
+        
 
         /// <summary>
         /// 将ls 命令返回值结果解析为服务List（内部使用）

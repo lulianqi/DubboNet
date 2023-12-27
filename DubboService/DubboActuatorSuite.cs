@@ -1,4 +1,5 @@
 ﻿using DubboNet.DubboService.DataModle;
+using MyCommonHelper;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -24,7 +25,7 @@ namespace DubboNet.DubboService
 
         private void ShowError(string mes)
         {
-            MyCommonHelper.MyCommonTool.ShowDebugLog(mes, "DubboTesterSevice", true);
+            MyLogger.LogDiagnostics(mes, "DubboTesterSevice", true);
         }
 
         /// <summary>

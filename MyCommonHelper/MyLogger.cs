@@ -1,4 +1,5 @@
-﻿#define LogDubg
+﻿#define LogDebug
+#define LogDiagnostics
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -44,7 +45,7 @@ namespace MyCommonHelper
 
         public static void LogDebug(string mes, Exception ex = null)
         {
-            #if LogDubg
+            #if LogDebug
             if (ex == null)
             {
                 Print($"[{DateTime.Now}] {mes}" , LogType.Debug);
@@ -54,6 +55,40 @@ namespace MyCommonHelper
                 Print($"[{DateTime.Now}] {mes} {ex.Message}" , LogType.Debug);
             }
             #endif
+        }
+
+
+        private const string infoLogPrefixStr = "-----------------------";
+        private const string errorLogPrefixStr = "💔💔💔💔💔💔💔💔💔💔";
+
+        /// <summary>
+        /// 打印调试数据，发布时请关闭LogDiagnostics，以禁止打印
+        /// </summary>
+        /// <param name="debugLog"></param>
+        public static void LogDiagnostics(string debugLog, string title = null, bool isErrorLog = false)
+        {
+#if LogDiagnostics
+            string prefixStr = isErrorLog ? errorLogPrefixStr : infoLogPrefixStr;
+            System.Diagnostics.Debug.WriteLine($"{prefixStr}{title ?? ""}[{DateTime.Now.ToString("HH:mm:ss fff")}]{prefixStr}");
+            System.Diagnostics.Debug.WriteLine(debugLog);
+#endif
+        }
+
+        /// <summary>
+        /// 打印调试数据，发布时请关闭LogDiagnostics，以禁止打印
+        /// </summary>
+        /// <param name="debugLog"></param>
+        /// <param name="hexaDecimal"></param>
+        public static void LogDiagnostics(byte[] debugLog, string title = null, HexaDecimal hexaDecimal = HexaDecimal.hex16, bool isErrorLog = false)
+        {
+#if LogDiagnostics
+            string prefixStr = isErrorLog ? errorLogPrefixStr : infoLogPrefixStr;
+            System.Diagnostics.Debug.WriteLine($"{prefixStr}{title ?? ""}[{DateTime.Now.ToString("HH:mm:ss fff")}]{prefixStr}");
+            System.Diagnostics.Debug.WriteLine($"byte[] leng is : {debugLog.Length}");
+            System.Diagnostics.Debug.WriteLine(MyBytes.ByteToHexString(debugLog, hexaDecimal, ShowHexMode.space));
+            //System.Diagnostics.Debug.WriteLine(Encoding.ASCII.GetString(debugLog));
+            System.Diagnostics.Debug.WriteLine(Encoding.UTF8.GetString(debugLog));
+#endif
         }
     }
 }
