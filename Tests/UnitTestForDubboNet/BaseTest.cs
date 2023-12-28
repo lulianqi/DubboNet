@@ -1,0 +1,35 @@
+using DubboNet.DubboService;
+using DubboNet.DubboService.DataModle;
+using System.Collections.Generic;
+using static DubboNet.DubboService.DubboActuator;
+
+namespace UnitTestForDubboNet
+{
+    public class BaseTest
+    {
+        [Theory]
+        [InlineData(typeof(sbyte),true)]
+        [InlineData(typeof(byte), true)]
+        [InlineData(typeof(short), true)]
+        [InlineData(typeof(ushort), true)]
+        [InlineData(typeof(int), true)]
+        [InlineData(typeof(uint), true)]
+        [InlineData(typeof(long), true)]
+        [InlineData(typeof(ulong), true)]
+        [InlineData(typeof(char), true)]
+        [InlineData(typeof(float), true)]
+        [InlineData(typeof(double), true)]
+        [InlineData(typeof(bool), true)]
+        [InlineData(typeof(decimal), true)]
+        [InlineData(typeof(string), true)]
+        [InlineData(typeof(DateTime), true)]
+        [InlineData(typeof(DubboActuatorStatus), true)]
+        [InlineData(typeof(DubboFuncInfo), false)]
+        [InlineData(typeof(DubboActuator), false)]
+        [InlineData(typeof(List<>), false)]
+        public void IsSimpleTest(Type type , bool expect)
+        {
+            Assert.Equal<bool>( DubboActuator.IsSimple(type), expect);
+        }
+    }
+}

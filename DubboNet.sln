@@ -5,6 +5,8 @@ VisualStudioVersion = 17.8.34316.72
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DubboNet", "DubboNet.csproj", "{BC4FE17E-8975-420E-9821-65CB93C88B56}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "UnitTestForDubboNet", "Tests\UnitTestForDubboNet\UnitTestForDubboNet.csproj", "{99005958-0F24-4A44-9FCA-BA4CC6FA7D07}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{BC4FE17E-8975-420E-9821-65CB93C88B56}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BC4FE17E-8975-420E-9821-65CB93C88B56}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BC4FE17E-8975-420E-9821-65CB93C88B56}.Release|Any CPU.Build.0 = Release|Any CPU
+		{99005958-0F24-4A44-9FCA-BA4CC6FA7D07}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{99005958-0F24-4A44-9FCA-BA4CC6FA7D07}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{99005958-0F24-4A44-9FCA-BA4CC6FA7D07}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{99005958-0F24-4A44-9FCA-BA4CC6FA7D07}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
