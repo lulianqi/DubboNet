@@ -437,7 +437,12 @@ namespace DubboNet.DubboService
             return dubboFuncTraceInfo;
         }
 
-
+        /// <summary>
+        /// 获取指定服务方法的TraceInfo (失败返回null)(因为获取trace可能耗时比较长，会启一个独立的DubboTester，获取完成后自动释放)
+        /// </summary>
+        /// <param name="dubboEndPoint"></param>
+        /// <param name="timeoutSecond"></param>
+        /// <returns></returns>
         public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfo(string dubboEndPoint, int timeoutSecond = 180)
         {
             if (!(dubboEndPoint?.Contains('.') == true))
@@ -448,8 +453,19 @@ namespace DubboNet.DubboService
             return await GetDubboFuncTraceInfo(dubboEndPoint.Substring(0, spitIndex), dubboEndPoint.Substring(spitIndex + 1), timeoutSecond);
         }
 
-
-
+        /// <summary>
+        /// 判断当前类型是否为简单类型（简单类型可以不用json序列化，直接ToString就可以了）
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static bool IsSimple(Type type)
+        {
+            return type.IsPrimitive 
+                || type.IsEnum
+                || type.Equals(typeof(string))
+                || type.Equals(typeof(decimal))
+                || type.Equals(typeof(TimeSpan));
+        }
         
 
         /// <summary>
