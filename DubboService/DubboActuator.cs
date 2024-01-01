@@ -187,7 +187,7 @@ namespace DubboNet.DubboService
         ///  发送Query请求[返回DubboRequestResult结果](返回不会为null，dubboRequestResult.ServiceElapsed 为 -1 时即代表错误，通过dubboRequestResult.ErrorMeaasge获取错误详情)
         /// </summary>
         /// <param name="endPoint">服务人口</param>
-        /// <param name="req">请求参数</param>
+        /// <param name="req">请求参数，如果有多个参数参数间用,隔开（实际是[par1,par2,par3]的数组形式[]不用包括中req里）（null也是一种参数对象，没有任何参数填空""即可）</param>
         /// <returns></returns>
         public async Task<DubboRequestResult> DoRequestAsync(string endPoint, string req)
         {
@@ -225,22 +225,17 @@ namespace DubboNet.DubboService
         /// <param name="endPoint">服务人口</param>
         /// <param name="req"></param>
         /// <returns></returns>
-        public async Task<DubboRequestResult<T_Rsp>> DoRequestAsync<T_Rsp,T_Req>(string endPoint, T_Req req)
+        public async Task<DubboRequestResult<T_Rsp>> DoRequestAsync<T_Req ,T_Rsp>(string endPoint, T_Req req)
         {
             DubboRequestResult<T_Rsp> dubboRequestResult = null;
             string requestStr = null;
-            if (req == null)
-            {
-                requestStr = string.Empty;
-            }
             try
             {
-                //https://stackoverflow.com/questions/863881/how-do-i-tell-if-a-type-is-a-simple-type-i-e-holds-a-single-value
-                Type typeReq = typeof(T_Req);
-                if (typeReq.IsPrimitive)
-                {
-                    
-                }
+                //单独的基础类型也是json，可以被正常序列化
+                //if (IsSimple(typeof(T_Req)))
+                //{
+                //    requestStr = req.ToString();
+                //}
                 requestStr = JsonSerializer.Serialize<T_Req>(req);
             }
             catch (Exception ex)
@@ -251,13 +246,40 @@ namespace DubboNet.DubboService
                     ServiceElapsed = -1,
                     RequestElapsed = -1,
                 };
-                MyLogger.LogError("DoRequestAsync<T_Rsp,T_Req> fail in JsonSerializer.Serialize", ex);
+                MyLogger.LogError("DoRequestAsync fail in T_Req JsonSerializer.Serialize", ex);
                 return dubboRequestResult;
             }
+            
             DubboRequestResult sourceDubboResult = await DoRequestAsync(endPoint , requestStr);
             dubboRequestResult = new DubboRequestResult<T_Rsp>(sourceDubboResult);
             return dubboRequestResult;
         }
+
+        public async Task<DubboRequestResult<T_Rsp>> DoRequestAsync<T_Req1, T_Req2 , T_Rsp>(string endPoint, T_Req1 req1, T_Req2 req2)
+        {
+            DubboRequestResult<T_Rsp> dubboRequestResult = null;
+            string requestStr = null;
+            try
+            {
+                requestStr = $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)}";
+            }
+            catch (Exception ex)
+            {
+                dubboRequestResult = new DubboRequestResult<T_Rsp>()
+                {
+                    ErrorMeaasge = ex.Message,
+                    ServiceElapsed = -1,
+                    RequestElapsed = -1,
+                };
+                MyLogger.LogError("DoRequestAsync fail in T_Req JsonSerializer.Serialize", ex);
+                return dubboRequestResult;
+            }
+
+            DubboRequestResult sourceDubboResult = await DoRequestAsync(endPoint, requestStr);
+            dubboRequestResult = new DubboRequestResult<T_Rsp>(sourceDubboResult);
+            return dubboRequestResult;
+        }
+
 
 
         /// <summary>
@@ -464,6 +486,7 @@ namespace DubboNet.DubboService
                 || type.IsEnum
                 || type.Equals(typeof(string))
                 || type.Equals(typeof(decimal))
+                || type.Equals(typeof(DateTime))
                 || type.Equals(typeof(TimeSpan));
         }
         

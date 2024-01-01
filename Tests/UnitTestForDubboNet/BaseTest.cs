@@ -1,6 +1,8 @@
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
+using System.Collections;
 using System.Collections.Generic;
+using System.Drawing;
 using static DubboNet.DubboService.DubboActuator;
 
 namespace UnitTestForDubboNet
@@ -27,6 +29,11 @@ namespace UnitTestForDubboNet
         [InlineData(typeof(DubboFuncInfo), false)]
         [InlineData(typeof(DubboActuator), false)]
         [InlineData(typeof(List<>), false)]
+        [InlineData(typeof(Array), false)]
+        [InlineData(typeof(Object), false)]
+        [InlineData(typeof(Point), false)]
+        [InlineData(typeof(IEnumerable<>), false)]
+        [InlineData(typeof(IDictionary), false)]
         public void IsSimpleTest(Type type , bool expect)
         {
             Assert.Equal<bool>( DubboActuator.IsSimple(type), expect);
