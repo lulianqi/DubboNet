@@ -44,7 +44,7 @@ namespace DubboNet.DubboService
             public async Task<DubboRequestResult> SendRequestAsync(string funcEntrance, string req)
             {
                 DubboActuator nowDubboActuator = GetDubboActuator();
-                return await nowDubboActuator.DoRequestAsync(funcEntrance, req);
+                return await nowDubboActuator.SendQuery(funcEntrance, req);
             }
 
             public void AddDubboMan(string address, int port)
