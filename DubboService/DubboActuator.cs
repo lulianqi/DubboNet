@@ -86,6 +86,10 @@ namespace DubboNet.DubboService
             dubboTelnet.MaxMaintainDataLength = _dubboTelnetMaxMaintainDataLength; //dubbo 默认最大返回为8MB
         }
 
+        public DubboActuator(IPEndPoint iPEndPoint, int commandTimeout = 10 * 1000, string defaultServiceName = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port, commandTimeout, defaultServiceName)
+        {
+        }
+
         /// <summary>
         /// 当前DubboTester是否处于连接状态
         /// </summary>
@@ -383,20 +387,20 @@ namespace DubboNet.DubboService
         {
             if (string.IsNullOrEmpty(serviceName))
             {
-                throw new ArgumentException("serviceName is empty");
+                throw new ArgumentException("[GetDubboServiceFuncAsync] serviceName is empty");
             }
             TelnetRequestResult tempResult = await SendCommandAsync($"ls -l {serviceName}");
             if (tempResult == null || string.IsNullOrEmpty(tempResult.Result))
             {
-                NowErrorMes = "tempResult or tempResult.Result is NullOrEmpty";
+                NowErrorMes = "[GetDubboServiceFuncAsync] tempResult or tempResult.Result is NullOrEmpty";
                 return null;
             }
             if (!tempResult.IsGetTargetIdentification)
             {
-                NowErrorMes = "can not get all data";
+                NowErrorMes = "[GetDubboServiceFuncAsync] can not get all data";
                 return null;
             }
-            if (tempResult.Result.StartsWith("No such service"))
+            if (tempResult.Result.StartsWith("[GetDubboServiceFuncAsync] No such service"))
             {
                 NowErrorMes = tempResult.Result;
                 return null;
@@ -413,12 +417,12 @@ namespace DubboNet.DubboService
             TelnetRequestResult tempResult = await SendCommandAsync($"ls");
             if (tempResult == null)
             {
-                NowErrorMes = "[GetAllDubboServiceAsync] SendCommandAsync fail";
+                NowErrorMes = "[GetDubboLsInfoAsync] SendCommandAsync fail";
                 return null;
             }
             if (!tempResult.IsGetTargetIdentification)
             {
-                NowErrorMes = "[GetAllDubboServiceAsync] can not get all data";
+                NowErrorMes = "[GetDubboLsInfoAsync] can not get all data";
                 return null;
             }
             return DubboLsInfo.GetDubboLsInfo(tempResult.Result);
@@ -548,6 +552,10 @@ namespace DubboNet.DubboService
             dubboTelnet?.Dispose();
         }
 
+        /// <summary>
+        /// deep clone （使用当前配置返回一个新的DubboActuator）
+        /// </summary>
+        /// <returns></returns>
         public object Clone()
         {
             return new DubboActuator(dubboTelnet.TelnetEndPoint.Address.ToString(), dubboTelnet.TelnetEndPoint.Port, dubboTelnet.DefaWaitTimeout);

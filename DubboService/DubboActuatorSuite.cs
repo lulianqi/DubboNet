@@ -1,7 +1,9 @@
 ﻿using DubboNet.DubboService.DataModle;
 using MyCommonHelper;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 
 namespace DubboNet.DubboService
@@ -17,10 +19,13 @@ namespace DubboNet.DubboService
         public Dictionary<string, Dictionary<string, DubboFuncInfo>> DubboServiceFuncCollection { get; private set; }
 
         public Dictionary<string, DubboFuncInfo> DefaulDubboServiceFuncs { get; private set; }
+        private List<DubboActuator> _actuatorSuiteList;
+        public ReadOnlyCollection<DubboActuator> ReadOnlyList => _actuatorSuiteList.AsReadOnly();
 
         public DubboActuatorSuite(string Address, int Port, int CommandTimeout = 10 * 1000, string defaultServiceName = null) : base(Address, Port, CommandTimeout, defaultServiceName)
         {
             DefaultServiceName = defaultServiceName;
+            _actuatorSuiteList = new List<DubboActuator>{this};
         }
 
         private void ShowError(string mes)
