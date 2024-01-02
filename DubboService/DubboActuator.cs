@@ -408,19 +408,20 @@ namespace DubboNet.DubboService
         /// 获取当前服务PROVIDER列表
         /// </summary>
         /// <returns>PROVIDER列表</returns>
-        public async Task<List<string>> GetAllDubboServiceAsync()
+        public async Task<DubboLsInfo> GetDubboLsInfoAsync()
         {
             TelnetRequestResult tempResult = await SendCommandAsync($"ls");
             if (tempResult == null)
             {
+                NowErrorMes = "[GetAllDubboServiceAsync] SendCommandAsync fail";
                 return null;
             }
             if (!tempResult.IsGetTargetIdentification)
             {
-                NowErrorMes = "can not get all data";
+                NowErrorMes = "[GetAllDubboServiceAsync] can not get all data";
                 return null;
             }
-            return GetAllDubboServiceList(tempResult.Result);
+            return DubboLsInfo.GetDubboLsInfo(tempResult.Result);
         }
 
         /// <summary>
@@ -432,11 +433,12 @@ namespace DubboNet.DubboService
             TelnetRequestResult tempResult = await SendCommandAsync($"ps -l {DubboPort}");
             if (tempResult == null)
             {
+                NowErrorMes = "[GetDubboPsInfoAsync] SendCommandAsync fail";
                 return null;
             }
             if (!tempResult.IsGetTargetIdentification)
             {
-                NowErrorMes = "can not get all data";
+                NowErrorMes = "[GetDubboPsInfoAsync] can not get all data";
                 return null;
             }
             return DubboPsInfo.GetDubboPsInfo(tempResult.Result);
@@ -451,11 +453,12 @@ namespace DubboNet.DubboService
             TelnetRequestResult tempResult = await SendCommandAsync($"status -l");
             if (tempResult == null)
             {
+                NowErrorMes = "[GetDubboStatusInfoAsync] SendCommandAsync fail";
                 return null;
             }
             if (!tempResult.IsGetTargetIdentification)
             {
-                NowErrorMes = "can not get all data";
+                NowErrorMes = "[GetDubboStatusInfoAsync] can not get all data";
                 return null;
             }
             return DubboStatusInfo.GetDubboStatusInfo(tempResult.Result);
@@ -525,41 +528,6 @@ namespace DubboNet.DubboService
                 || type.Equals(typeof(TimeSpan));
         }
         
-
-        /// <summary>
-        /// 将ls 命令返回值结果解析为服务List（内部使用）
-        /// </summary>
-        /// <param name="lsStr"></param>
-        /// <returns></returns>
-        protected List<string> GetAllDubboServiceList(string lsStr)
-        {
-            List<string> result = new List<string>();
-            if (!string.IsNullOrEmpty(lsStr) && lsStr.Contains(_dubboResponseNewline))
-            {
-                string[] tempLines = lsStr.Split(_dubboResponseNewline, StringSplitOptions.RemoveEmptyEntries);
-                if (tempLines.Length > 1)
-                {
-                    bool isSatrtProvider = false;
-                    for (int i = 0; i < tempLines.Length; i++)
-                    {
-                        if (isSatrtProvider)
-                        {
-                            if (tempLines[i].StartsWith("CONSUMER:"))
-                            {
-                                break;
-                            }
-                            result.Add(tempLines[i]);
-                            continue;
-                        }
-                        else if (tempLines[i].StartsWith("PROVIDER:"))
-                        {
-                            isSatrtProvider = true;
-                        }
-                    }
-                }
-            }
-            return result;
-        }
 
         /// <summary>
         /// 主动关闭 Dubbo Telnet

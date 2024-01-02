@@ -8,7 +8,7 @@ using MyCommonHelper;
 
 namespace DubboNet.DubboService.DataModle
 {
-    /*示例原数据
+    /*invoke XxxService.xxxMethod(1234, "abcd", {"prop" : "value"})
     Use default service com.account.api.account.AccountInfoRemoteSerevice.
     result: { "code":200,"data":57,"message":"successful","success":true}
     elapsed: 7 ms.

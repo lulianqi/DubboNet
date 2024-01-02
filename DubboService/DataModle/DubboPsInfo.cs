@@ -7,6 +7,13 @@ using System.Threading.Tasks;
 
 namespace DubboNet.DubboService.DataModle
 {
+    /*   dubbo>ps -l 20882
+    /172.16.189.88:40992 -> /172.16.69.118:20882
+    /172.16.67.106:55998 -> /172.16.69.118:20882
+    /172.16.189.61:41458 -> /172.16.69.118:20882
+    /172.16.246.67:59054 -> /172.16.69.118:20882
+    /172.16.193.136:59222 -> /172.16.69.118:20882
+    */
     public class DubboPsInfo
     {
         public List<KeyValuePair<IPEndPoint, IPEndPoint>> Lines { get; set; } = new List<KeyValuePair<IPEndPoint, IPEndPoint>>();

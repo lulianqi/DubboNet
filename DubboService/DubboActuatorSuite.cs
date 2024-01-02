@@ -48,7 +48,7 @@ namespace DubboNet.DubboService
             if (string.IsNullOrEmpty(DefaultServiceName))
             {
                 //DefaulDubboServiceFuncs = new Dictionary<string, DubboFuncInfo>();
-                List<string> tempSeviceList = await GetAllDubboServiceAsync();
+                List<string> tempSeviceList = (await GetDubboLsInfoAsync())?.Providers;
                 if (tempSeviceList?.Count > 0)
                 {
                     foreach (var nowService in tempSeviceList)
