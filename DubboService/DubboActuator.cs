@@ -171,7 +171,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 断开连接(使用时可以不用调用，Dispose释放时自动调用，如果想主动退出可以先调用ExitAsync以完成更平滑的退出)
+        /// 断开连接(不用手动调用除非有场景需要暂时临时断开，在未来将再次连接，Dispose释放时自动调用，如果想主动退出可以先调用ExitAsync以完成更平滑的退出)
         /// </summary>
         public void DisConnect()
         {

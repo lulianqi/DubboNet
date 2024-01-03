@@ -10,6 +10,13 @@ namespace DubboNet.DubboService
 {
     public class DubboActuatorSuite : DubboActuator
     {
+        public class SingleSuite
+        {
+             public DubboActuator InnerDubboActuator {get;set;}
+             public DateTime CreatTime {get;}=DateTime.Now;
+             public DateTime ConnectedTimetable{get;set;}
+             public bool NeedKeepAlive{get;set;}=false;
+        }
 
         /// <summary>
         /// 默认服务名称
