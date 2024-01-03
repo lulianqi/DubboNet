@@ -5,17 +5,28 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using System.Timers;
 
 namespace DubboNet.DubboService
 {
-    public class DubboActuatorSuite : DubboActuator
+    public class DubboActuatorSuite : DubboActuator , IDisposable
     {
-        public class SingleSuite
+        internal class DubboSuiteCell
+        { 
+            public DubboActuator InnerDubboActuator {get;private set;}
+            public DateTime CreatTime {get;}=DateTime.Now;
+            public DateTime ConnectedTime{get;set;}
+            public DateTime LastActivateTime => InnerDubboActuator?.LastActivateTime ?? default;
+            public bool NeedKeepAlive{get;set;}=false;
+            public DubboSuiteCell(DubboActuator dubboActuator) => InnerDubboActuator = dubboActuator;
+        }
+
+        public class DubboActuatorSuiteConf
         {
-             public DubboActuator InnerDubboActuator {get;set;}
-             public DateTime CreatTime {get;}=DateTime.Now;
-             public DateTime ConnectedTimetable{get;set;}
-             public bool NeedKeepAlive{get;set;}=false;
+            public int MaxConnections { get; set; } = 20;
+            public int AssistConnectionAliveTime { get; set; } = 60 * 5;
+            public string DefaultServiceName { get; set; } = null;
+
         }
 
         /// <summary>
@@ -26,19 +37,50 @@ namespace DubboNet.DubboService
         public Dictionary<string, Dictionary<string, DubboFuncInfo>> DubboServiceFuncCollection { get; private set; }
 
         public Dictionary<string, DubboFuncInfo> DefaulDubboServiceFuncs { get; private set; }
-        private List<DubboActuator> _actuatorSuiteList;
-        public ReadOnlyCollection<DubboActuator> ReadOnlyList => _actuatorSuiteList.AsReadOnly();
+
+        private List<DubboSuiteCell> _actuatorSuiteCellList;
+        internal ReadOnlyCollection<DubboSuiteCell> ReadOnlyList => _actuatorSuiteCellList.AsReadOnly();
+
+        private const int InnetTimerInterval = 1000*10;
+        private static Timer DubboSuiteTimer;
+        protected delegate void DubboSuiteCruiseEventHandler(object sender, ElapsedEventArgs e);
+        protected static event DubboSuiteCruiseEventHandler DubboSuiteCruiseEvent;
+
+
+        static DubboActuatorSuite()
+        {
+            DubboSuiteTimer = new Timer(InnetTimerInterval);
+            DubboSuiteTimer.Elapsed += OnDubboSuiteTimedEvent;
+            DubboSuiteTimer.AutoReset = true;
+            //不用直接启动Timer，在每一个DubboActuatorSuite实例化、释放过程中判断DubboSuiteTimer是否需要被复用，如果所有引用都被释放则自动停止
+            DubboSuiteTimer.Enabled = false;
+        }
+
+        private static void OnDubboSuiteTimedEvent(object sender, ElapsedEventArgs e)
+        {
+            if(DubboSuiteCruiseEvent==null || DubboSuiteCruiseEvent.GetInvocationList().Length==0)
+            {
+                DubboSuiteTimer.Stop();
+            }
+            else
+            {
+                DubboSuiteCruiseEvent.Invoke(sender, e);
+            }
+        }
 
         public DubboActuatorSuite(string Address, int Port, int CommandTimeout = 10 * 1000, string defaultServiceName = null) : base(Address, Port, CommandTimeout, defaultServiceName)
         {
             DefaultServiceName = defaultServiceName;
-            _actuatorSuiteList = new List<DubboActuator>{this};
+            _actuatorSuiteCellList = new List<DubboSuiteCell> {new DubboSuiteCell(this)};
+            DubboSuiteCruiseEvent += CruiseTaskEvent;
+            if(!DubboSuiteTimer.Enabled) DubboSuiteTimer.Start();
         }
 
-        private void ShowError(string mes)
+        private void CruiseTaskEvent(object sender, ElapsedEventArgs e)
         {
-            MyLogger.LogDiagnostics(mes, "DubboTesterSevice", true);
+            throw new NotImplementedException();
         }
+
 
         /// <summary>
         /// 初始化DubboTesterSuite，获取Func列表及详情
@@ -68,7 +110,7 @@ namespace DubboNet.DubboService
                         Dictionary<string, DubboFuncInfo> tempDc = await GetDubboServiceFuncAsync(nowService);
                         if (tempDc == null)
                         {
-                            ShowError($"GetDubboServiceFuncAsyncfailed in[InitServiceAsync] that Service is {nowService}");
+                            MyLogger.LogError($"GetDubboServiceFuncAsyncfailed in[InitServiceAsync] that Service is {nowService}");
                             continue;
                         }
                         DubboServiceFuncCollection.Add(nowService, tempDc);
@@ -92,6 +134,17 @@ namespace DubboNet.DubboService
                 }
                 return DefaulDubboServiceFuncs != null;
             }
+        }
+
+
+        public new void Dispose()
+        {
+            DubboSuiteCruiseEvent -= CruiseTaskEvent;
+            if (DubboSuiteCruiseEvent == null || DubboSuiteCruiseEvent.GetInvocationList().Length == 0)
+            {
+                DubboSuiteTimer.Stop();
+            }
+            base.Dispose();
         }
 
     }

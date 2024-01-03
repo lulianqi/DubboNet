@@ -1,4 +1,5 @@
 ﻿using DubboNet.DubboService.DataModle;
+using Microsoft.VisualBasic;
 using MyCommonHelper;
 using NetService.Telnet;
 using System;
@@ -71,6 +72,10 @@ namespace DubboNet.DubboService
         /// </summary>
         public string DefaultServiceName { get; private set; }
 
+        /// <summary>
+        /// 最后激活时间，标记最后一次向dubbo服务发送业务请求的时间（连接、关闭连接不属于业务请求不更新LastActivateTime）
+        /// </summary>
+        public DateTime LastActivateTime { get; private set; }=default(DateTime);
 
 
         public DubboActuator(string address, int port, int commandTimeout = 10 * 1000, string defaultServiceName = null)
@@ -364,6 +369,7 @@ namespace DubboNet.DubboService
             try
             {
                 sendQueryAutoResetEvent.WaitOne();
+                LastActivateTime = DateTime.Now;
                 requestResult = await dubboTelnet.DoRequestAsync(command);
             }
             catch (Exception ex)
