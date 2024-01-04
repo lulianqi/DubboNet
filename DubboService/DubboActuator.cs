@@ -481,7 +481,7 @@ namespace DubboNet.DubboService
         /// <param name="methodName"></param>
         /// <param name="timeoutSecond"></param>
         /// <returns></returns>
-        public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfo(string serviceName, string methodName, int timeoutSecond = 300)
+        public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfoAsync(string serviceName, string methodName, int timeoutSecond = 300)
         {
             DubboActuator innerDubboTester = new DubboActuator(dubboTelnet.TelnetEndPoint.Address.ToString(), dubboTelnet.TelnetEndPoint.Port, 120 * 1000);
             DubboFuncTraceInfo dubboFuncTraceInfo = null;
@@ -513,14 +513,14 @@ namespace DubboNet.DubboService
         /// <param name="dubboEndPoint"></param>
         /// <param name="timeoutSecond"></param>
         /// <returns></returns>
-        public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfo(string dubboEndPoint, int timeoutSecond = 180)
+        public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfoAsync(string dubboEndPoint, int timeoutSecond = 180)
         {
             if (!(dubboEndPoint?.Contains('.') == true))
             {
                 return null;
             }
             int spitIndex = dubboEndPoint.LastIndexOf(".");
-            return await GetDubboFuncTraceInfo(dubboEndPoint.Substring(0, spitIndex), dubboEndPoint.Substring(spitIndex + 1), timeoutSecond);
+            return await GetDubboFuncTraceInfoAsync(dubboEndPoint.Substring(0, spitIndex), dubboEndPoint.Substring(spitIndex + 1), timeoutSecond);
         }
 
         /// <summary>
