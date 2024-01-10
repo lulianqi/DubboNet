@@ -30,8 +30,8 @@ namespace DubboNet.DubboService
         }
 
         private List<DubboSuiteCell> _actuatorSuiteCellList;
+        private bool _innerFlagForInCruiseTask = false;
 
-        
         /// <summary>
         /// 获取当前节点服务及Func信息
         /// </summary>
@@ -91,6 +91,11 @@ namespace DubboNet.DubboService
             DubboSuiteTimer.Enabled = false;
         }
 
+        /// <summary>
+        /// DubboSuiteTimer 事件
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private static void OnDubboSuiteTimedEvent(object sender, ElapsedEventArgs e)
         {
             if (DubboSuiteCruiseEvent == null || DubboSuiteCruiseEvent.GetInvocationList().Length == 0)
@@ -99,6 +104,8 @@ namespace DubboNet.DubboService
             }
             else
             {
+                //对于System.Timers.Timer来说,每一次Elapsed事件都是异步的，也就是说多次Elapsed是可能在同时运行的
+                //不过对于Invoke来说DubboSuiteCruiseEvent如果被注册多次，Invoke是同步的轮流执行，这里需要在逻辑上避免Timer会有2个Elapsed同时执行
                 DubboSuiteCruiseEvent.Invoke(sender, e);
             }
         } 
@@ -114,10 +121,33 @@ namespace DubboNet.DubboService
 
         private void CruiseTaskEvent(object sender, ElapsedEventArgs e)
         {
-            if(IsRead)
+            if(_innerFlagForInCruiseTask)
             {
-                StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+                MyLogger.LogWarning($"[{this}] last CruiseTaskEvent is not complete");
+                return;
             }
+            _innerFlagForInCruiseTask = true;
+            try
+            {
+                if (IsRead)
+                {
+                    StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+                    if(StatusInfo==null)
+                    {
+                        throw new Exception(this.NowErrorMes);
+                    }
+                }
+            } 
+            catch (Exception ex)
+            {
+                MyLogger.LogError($"[{this}]CruiseTaskEvent Exception", ex);
+            }
+            finally
+            {
+                _innerFlagForInCruiseTask = false;
+            }
+            //Task.Delay(5000).Wait();
+            //Console.WriteLine($"CruiseTaskEvent{this.DubboHost}");
         }
 
 

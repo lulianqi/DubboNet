@@ -552,6 +552,11 @@ namespace DubboNet.DubboService
             DisConnect();
         }
 
+        public override string ToString()
+        {
+            return $"{DubboHost}:{DubboPort}";
+        }
+
         public void Dispose()
         {
             DisConnect();
