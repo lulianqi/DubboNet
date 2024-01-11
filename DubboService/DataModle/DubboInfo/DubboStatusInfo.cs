@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace DubboNet.DubboService.DataModle
+namespace DubboNet.DubboService.DataModle.DubboInfo
 {
     /* source data
     +------------+--------+--------------------------------------------------------+
@@ -22,7 +22,7 @@ namespace DubboNet.DubboService.DataModle
     +------------+--------+--------------------------------------------------------+
     */
 
-    public class DubboStatusInfo
+    public class DubboStatusInfo : DubboInfoBase
     {
         /// <summary>
         /// DubboStatusInfo 原数据基类
@@ -31,7 +31,7 @@ namespace DubboNet.DubboService.DataModle
         {
             private string _message = null;
             public string Status { get; set; }
-            public string Message { get { return _message; } set { _message = value;  InitStatusResource(); } }
+            public string Message { get { return _message; } set { _message = value; InitStatusResource(); } }
 
             /// <summary>
             /// 根据Message初始化结构化数据，不用单独调用该方法，改方法会在Message的set中自动触发（需要定制化实现）
@@ -50,7 +50,7 @@ namespace DubboNet.DubboService.DataModle
                 const string MES_SPLIT = ",";
                 const string MESVAL_SPLIT = ":";
                 Dictionary<string, string> keyValuePairs = new Dictionary<string, string>();
-                if(message == null)
+                if (message == null)
                 {
                     message = _message;
                 }
@@ -59,9 +59,9 @@ namespace DubboNet.DubboService.DataModle
                     throw new ArgumentException($"“{nameof(message)}”can not be null 。", nameof(message));
                 }
                 string[] parts = message.Split(MES_SPLIT, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                foreach (string part in parts) 
+                foreach (string part in parts)
                 {
-                    var keyValue = part.Trim().Split(MESVAL_SPLIT, 2,StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var keyValue = part.Trim().Split(MESVAL_SPLIT, 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     if (keyValue.Length != 2)
                     {
                         MyLogger.LogWarning("Each part of the status text should contain a single ':' character.");
@@ -73,9 +73,9 @@ namespace DubboNet.DubboService.DataModle
             }
         }
 
-        public class ThreadPoolInfo:ResourceStatus
+        public class ThreadPoolInfo : ResourceStatus
         {
-            public new string Status {  get; set; }
+            public new string Status { get; set; }
             public int Max { get; set; }
             public int Core { get; set; }
             public int Largest { get; set; }
@@ -90,7 +90,7 @@ namespace DubboNet.DubboService.DataModle
                     return false;
                 }
                 Dictionary<string, string> kps = GetKeyValuePairs();
-                foreach(KeyValuePair<string, string> kv in kps)
+                foreach (KeyValuePair<string, string> kv in kps)
                 {
                     try
                     {
@@ -122,7 +122,7 @@ namespace DubboNet.DubboService.DataModle
                                 break;
                         }
                     }
-                    catch(Exception ex)
+                    catch (Exception ex)
                     {
                         MyLogger.LogError("ThreadPoolInfo InitStatusResource error", ex);
                         return false;
@@ -132,7 +132,7 @@ namespace DubboNet.DubboService.DataModle
             }
         }
 
-        public class DataSourceInfo:ResourceStatus
+        public class DataSourceInfo : ResourceStatus
         {
             public Dictionary<string, string> DataSources { get; set; }
 
@@ -149,7 +149,7 @@ namespace DubboNet.DubboService.DataModle
 
         public class LoadInfo : ResourceStatus
         {
-            public Double Load { get; set; }
+            public double Load { get; set; }
             public int Cpu { get; set; }
 
             protected override bool InitStatusResource()
@@ -166,7 +166,7 @@ namespace DubboNet.DubboService.DataModle
                         switch (kv.Key.ToLower())
                         {
                             case "load":
-                                Load = Double.Parse(kv.Value);
+                                Load = double.Parse(kv.Value);
                                 break;
                             case "cpu":
                                 Cpu = int.Parse(kv.Value);
@@ -188,7 +188,7 @@ namespace DubboNet.DubboService.DataModle
 
         public class MemoryInfo : ResourceStatus
         {
-            public string Max {  get; set; }
+            public string Max { get; set; }
             public string Total { get; set; }
             public string Used { get; set; }
             public string Free { get; set; }
@@ -305,7 +305,7 @@ namespace DubboNet.DubboService.DataModle
                         //标题栏
                         break;
                     case "threadpool":
-                        dubboStatusInfo.ThreadPool = new ThreadPoolInfo() { Status = statusInfo.Value.Item1, Message= statusInfo.Value.Item2 };
+                        dubboStatusInfo.ThreadPool = new ThreadPoolInfo() { Status = statusInfo.Value.Item1, Message = statusInfo.Value.Item2 };
                         break;
                     case "datasource":
                         dubboStatusInfo.Datasource = new DataSourceInfo() { Status = statusInfo.Value.Item1, Message = statusInfo.Value.Item2 };

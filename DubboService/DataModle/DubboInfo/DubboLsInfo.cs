@@ -5,7 +5,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DubboNet.DubboService.DataModle
+namespace DubboNet.DubboService.DataModle.DubboInfo
 {
     /*
     dubbo>ls
@@ -19,7 +19,7 @@ namespace DubboNet.DubboService.DataModle
     dubbo>ls
     com.xxxxx.pay.api.PayRemoteService
     */
-    public class DubboLsInfo
+    public class DubboLsInfo : DubboInfoBase
     {
         public List<string> Providers { get; set; } = new List<string>();
         public List<string> Consumers { get; set; } = new List<string>();
@@ -29,7 +29,7 @@ namespace DubboNet.DubboService.DataModle
             const string LS_NEWLINE = "\r\n";
             DubboLsInfo dubboLsInfo = new DubboLsInfo();
             if (string.IsNullOrEmpty(source)) return null;
-            string[] sourceLineArr = source.Split(LS_NEWLINE,StringSplitOptions.RemoveEmptyEntries);
+            string[] sourceLineArr = source.Split(LS_NEWLINE, StringSplitOptions.RemoveEmptyEntries);
             if (sourceLineArr.Length > 0)
             {
                 List<string> activeList = dubboLsInfo.Providers;

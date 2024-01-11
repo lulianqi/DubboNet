@@ -1,5 +1,5 @@
 using DubboNet.DubboService;
-using DubboNet.DubboService.DataModle;
+using DubboNet.DubboService.DataModle.DubboInfo;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;

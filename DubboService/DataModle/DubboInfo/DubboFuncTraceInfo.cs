@@ -4,10 +4,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DubboNet.DubboService.DataModle
+namespace DubboNet.DubboService.DataModle.DubboInfo
 {
 
-    public class DubboFuncTraceInfo
+    public class DubboFuncTraceInfo : DubboInfoBase
     {
         public string FullName { get; set; }
         public string ServiceName { get; set; }

@@ -1,9 +1,10 @@
-﻿using DubboNet.DubboService.DataModle;
+﻿using DubboNet.DubboService.DataModle.DubboInfo;
 using MyCommonHelper;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Timers;
 
@@ -12,12 +13,32 @@ namespace DubboNet.DubboService
     public class DubboActuatorSuite : DubboActuator , IDisposable
     {
         internal class DubboSuiteCell
-        { 
+        {
+            /// <summary>
+            /// DubboActuator执行器
+            /// </summary>
             public DubboActuator InnerDubboActuator {get;private set;}
+            /// <summary>
+            /// DubboSuiteCell创建时间
+            /// </summary>
             public DateTime CreatTime {get;}=DateTime.Now;
-            public DateTime ConnectedTime{get;set;}
+            /// <summary>
+            /// 最后激活即发送请求的时间
+            /// </summary>
             public DateTime LastActivateTime => InnerDubboActuator?.LastActivateTime ?? default;
-            public bool NeedKeepAlive{get;set;}=false;
+            /// <summary>
+            /// 内部DubboActuator执行器是否处于连接状态
+            /// </summary>
+            public bool IsAlive => InnerDubboActuator?.IsConnected ?? false;
+            /// <summary>
+            /// 
+            /// </summary>
+            public bool IsFreeForQuery => IsAlive && (!InnerDubboActuator?.IsQuerySending ?? false);
+
+            /// <summary>
+            /// 初始化DubboSuiteCell
+            /// </summary>
+            /// <param name="dubboActuator">DubboActuator执行器</param>
             public DubboSuiteCell(DubboActuator dubboActuator) => InnerDubboActuator = dubboActuator;
         }
 
@@ -29,7 +50,9 @@ namespace DubboNet.DubboService
 
         }
 
+        //内部DubboSuiteCell（只要DubboActuatorSuite初始化_actuatorSuiteCellList就不会为null）
         private List<DubboSuiteCell> _actuatorSuiteCellList;
+        //标记当前Cruise是否正在进行中
         private bool _innerFlagForInCruiseTask = false;
 
         /// <summary>
@@ -111,14 +134,41 @@ namespace DubboNet.DubboService
         } 
         #endregion
 
-        public DubboActuatorSuite(string Address, int Port, int CommandTimeout = 10 * 1000, string defaultServiceName = null) : base(Address, Port, CommandTimeout, defaultServiceName)
+        public DubboActuatorSuite(string Address, int Port, int CommandTimeout = 10 * 1000, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) : base(Address, Port, CommandTimeout, dubboActuatorSuiteConf?.DefaultServiceName)
         {
-            DefaultServiceName = defaultServiceName;
+            if(dubboActuatorSuiteConf!=null)
+            {
+                DefaultServiceName = dubboActuatorSuiteConf.DefaultServiceName;
+                AssistConnectionAliveTime = dubboActuatorSuiteConf.AssistConnectionAliveTime;
+                MaxConnections = dubboActuatorSuiteConf.MaxConnections;
+            }
             _actuatorSuiteCellList = new List<DubboSuiteCell> {new DubboSuiteCell(this)};
             DubboSuiteCruiseEvent += CruiseTaskEvent;
             if(!DubboSuiteTimer.Enabled) DubboSuiteTimer.Start();
         }
 
+        private DubboActuator GetAvailableDubboActuator()
+        {
+            if(!IsRead)
+            {
+                return null;
+            }
+            if(!this.IsQuerySending)
+            {
+                return this;
+            }
+            else
+            {
+                _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => dsc.IsFreeForQuery);
+            }
+            return this;
+        }
+
+        /// <summary>
+        /// Cruises事件
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void CruiseTaskEvent(object sender, ElapsedEventArgs e)
         {
             if(_innerFlagForInCruiseTask)
@@ -131,6 +181,16 @@ namespace DubboNet.DubboService
             {
                 if (IsRead)
                 {
+                    //维持DubboSuiteCell状态
+                    foreach(DubboSuiteCell dubboSuiteCell in _actuatorSuiteCellList)
+                    {
+                        if(dubboSuiteCell.IsAlive)
+                        {
+                            if((e.SignalTime - dubboSuiteCell.LastActivateTime).TotalSeconds> AssistConnectionAliveTime)
+                                dubboSuiteCell.InnerDubboActuator.DisConnect();
+                        }
+                    }
+                    //获取最新节点信息
                     StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
                     if(StatusInfo==null)
                     {
@@ -146,8 +206,6 @@ namespace DubboNet.DubboService
             {
                 _innerFlagForInCruiseTask = false;
             }
-            //Task.Delay(5000).Wait();
-            //Console.WriteLine($"CruiseTaskEvent{this.DubboHost}");
         }
 
 

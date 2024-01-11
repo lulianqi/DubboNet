@@ -1,4 +1,5 @@
 ﻿using DubboNet.DubboService.DataModle;
+using DubboNet.DubboService.DataModle.DubboInfo;
 using Microsoft.VisualBasic;
 using MyCommonHelper;
 using NetService.Telnet;
@@ -129,7 +130,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 获取当前DubboTester是否出于请求发送中
+        /// 获取当前DubboTester是否处于请求发送中状态
         /// </summary>
         public bool IsQuerySending
         {
@@ -431,7 +432,9 @@ namespace DubboNet.DubboService
                 NowErrorMes = "[GetDubboLsInfoAsync] can not get all data";
                 return null;
             }
-            return DubboLsInfo.GetDubboLsInfo(tempResult.Result);
+            DubboLsInfo dubboLsInfo = DubboLsInfo.GetDubboLsInfo(tempResult.Result);
+            dubboLsInfo.SetDubboActuatorInfo(this);
+            return dubboLsInfo;
         }
 
         /// <summary>
@@ -451,7 +454,9 @@ namespace DubboNet.DubboService
                 NowErrorMes = "[GetDubboPsInfoAsync] can not get all data";
                 return null;
             }
-            return DubboPsInfo.GetDubboPsInfo(tempResult.Result);
+            DubboPsInfo dubboPsInfo = DubboPsInfo.GetDubboPsInfo(tempResult.Result);
+            dubboPsInfo.SetDubboActuatorInfo(this);
+            return dubboPsInfo;
         }
 
         /// <summary>
@@ -471,7 +476,9 @@ namespace DubboNet.DubboService
                 NowErrorMes = "[GetDubboStatusInfoAsync] can not get all data";
                 return null;
             }
-            return DubboStatusInfo.GetDubboStatusInfo(tempResult.Result);
+            DubboStatusInfo dubboStatusInfo = DubboStatusInfo.GetDubboStatusInfo(tempResult.Result);
+            dubboStatusInfo.SetDubboActuatorInfo(this);
+            return dubboStatusInfo;
         }
 
         /// <summary>
@@ -494,6 +501,7 @@ namespace DubboNet.DubboService
                     if (requestResult != null)
                     {
                         dubboFuncTraceInfo = DubboFuncTraceInfo.GetTraceInfo(requestResult.Result);
+                        dubboFuncTraceInfo.SetDubboActuatorInfo(this);
                     }
                     if (dubboFuncTraceInfo != null)
                     {

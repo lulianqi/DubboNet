@@ -95,32 +95,32 @@ namespace DubboNet.DubboService.DataModle
 
     }
 
-    public class DubboRequestResult<T>:DubboRequestResult  //where T :class
+    public class DubboRequestResult<T> : DubboRequestResult  //where T :class
     {
         private T _resultModle = default;
 
-        private bool hasSetResultModle =false;
+        private bool hasSetResultModle = false;
 
         /// <summary>
         /// T Modle 类型数据
         /// </summary>
         public T ResultModle
-        { 
+        {
             get
             {
-                if(!hasSetResultModle)
+                if (!hasSetResultModle)
                 {
-                    if(!string.IsNullOrEmpty(Result))
+                    if (!string.IsNullOrEmpty(Result))
                     {
                         try
                         {
                             _resultModle = JsonSerializer.Deserialize<T>(Result);
                         }
-                        catch(Exception ex)
+                        catch (Exception ex)
                         {
-                            _resultModle =default;
+                            _resultModle = default;
                             ErrorMeaasge = ex.Message;
-                            MyLogger.LogError("Get ResultModle Error",ex);
+                            MyLogger.LogError("Get ResultModle Error", ex);
                         }
                     }
                     hasSetResultModle = true;
@@ -135,9 +135,9 @@ namespace DubboNet.DubboService.DataModle
 
         public DubboRequestResult(DubboRequestResult sourceDubboRequestResult)
         {
-            this.Result = sourceDubboRequestResult.Result;
-            this.ServiceElapsed = sourceDubboRequestResult.ServiceElapsed;
-            this.RequestElapsed = sourceDubboRequestResult.RequestElapsed;
+            Result = sourceDubboRequestResult.Result;
+            ServiceElapsed = sourceDubboRequestResult.ServiceElapsed;
+            RequestElapsed = sourceDubboRequestResult.RequestElapsed;
             //如果原始数据有问题，即放弃反序列化
             if (ServiceElapsed >= 0)
             {

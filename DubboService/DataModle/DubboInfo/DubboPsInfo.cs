@@ -5,7 +5,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DubboNet.DubboService.DataModle
+namespace DubboNet.DubboService.DataModle.DubboInfo
 {
     /*   dubbo>ps -l 20882
     /172.16.189.88:40992 -> /172.16.69.118:20882
@@ -14,7 +14,7 @@ namespace DubboNet.DubboService.DataModle
     /172.16.246.67:59054 -> /172.16.69.118:20882
     /172.16.193.136:59222 -> /172.16.69.118:20882
     */
-    public class DubboPsInfo
+    public class DubboPsInfo : DubboInfoBase
     {
         public List<KeyValuePair<IPEndPoint, IPEndPoint>> Lines { get; set; } = new List<KeyValuePair<IPEndPoint, IPEndPoint>>();
 
@@ -26,7 +26,7 @@ namespace DubboNet.DubboService.DataModle
 
             DubboPsInfo dubboPsInfo = new DubboPsInfo();
             if (string.IsNullOrEmpty(source)) return null;
-            string[] sourceLineArr = source.Split(IP_NEWLINE,StringSplitOptions.RemoveEmptyEntries);
+            string[] sourceLineArr = source.Split(IP_NEWLINE, StringSplitOptions.RemoveEmptyEntries);
             foreach (string oneLine in sourceLineArr)
             {
                 if (oneLine.StartsWith(IP_START))
