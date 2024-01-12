@@ -159,9 +159,13 @@ namespace DubboNet.DubboService
             }
             else
             {
-                _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => dsc.IsFreeForQuery);
+                DubboSuiteCell nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => dsc.IsFreeForQuery);
+                if(nowDubboSuiteCell==null)
+                {
+                    nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => !dsc.IsAlive);
+                }
+                return nowDubboSuiteCell?.InnerDubboActuator;
             }
-            return this;
         }
 
         /// <summary>

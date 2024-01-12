@@ -8,8 +8,32 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-TestForTimer();
+await TestForReset();
+Console.WriteLine("Enter to Exit");
 Console.ReadLine();
+
+
+static async Task TestForReset()
+{
+    //AutoResetEvent sendQueryAutoResetEvent = new AutoResetEvent(false);
+    ManualResetEvent sendQueryAutoResetEvent = new ManualResetEvent(false);
+    _= Task.Factory.StartNew(()=>{Console.WriteLine("an task satrt 1");sendQueryAutoResetEvent.WaitOne();Console.WriteLine("an task end 1");});
+    _= Task.Factory.StartNew(()=>{Console.WriteLine("an task satrt 2");sendQueryAutoResetEvent.WaitOne();Console.WriteLine("an task end 2");});
+    _= Task.Factory.StartNew(()=>{Console.WriteLine("an task satrt 3");sendQueryAutoResetEvent.WaitOne();Console.WriteLine("an task end 3");});
+    _= Task.Factory.StartNew(()=>{Console.WriteLine("an task satrt 4");sendQueryAutoResetEvent.WaitOne();Console.WriteLine("an task end 4");});
+    _= Task.Factory.StartNew(()=>{Console.WriteLine("an task satrt 5");sendQueryAutoResetEvent.WaitOne();Console.WriteLine("an task end 5");});
+    _= Task.Factory.StartNew(()=>{Console.WriteLine("an task satrt 6");sendQueryAutoResetEvent.WaitOne();Console.WriteLine("an task end 6");});
+    await Task.Delay(5000);
+    Console.WriteLine("ResetEvent.Set");
+    sendQueryAutoResetEvent.Set();
+    await Task.Delay(5000);
+    Console.WriteLine("ResetEvent.Set");
+    sendQueryAutoResetEvent.Set();
+    await Task.Delay(5000);
+    Console.WriteLine("ResetEvent.Set");
+    sendQueryAutoResetEvent.Set();
+}
+
 
 static void TestForTimer()
 {
