@@ -53,6 +53,11 @@ namespace DubboNet.DubboService
         public string NowErrorMes { get; private set; }
 
         /// <summary>
+        /// 当前DubboActuator备注名称（非必要信息，主要用于多DubboActuator场景下的区分）
+        /// </summary>
+        public string RemarkName { get; set; } = "DubboActuator";
+
+        /// <summary>
         /// 当前Dubbo服务Host地址
         /// </summary>
         public string DubboHost { get; private set; }
@@ -336,7 +341,7 @@ namespace DubboNet.DubboService
         public async Task<string> SendRawQuery(string endPoint, string req)
         {
             TelnetRequestResult queryResult = await SendCommandAsync($"invoke {endPoint}({req})");
-            MyLogger.LogDiagnostics($"[DoRequestAsync]: {queryResult.ElapsedMilliseconds} ms", "SendQuery");
+            MyLogger.LogDiagnostics($"[DoRequestAsync]: {queryResult?.ElapsedMilliseconds} ms", "SendQuery");
             if (queryResult == null)
             {
                 return $"[error:{NowErrorMes}]";
@@ -358,8 +363,8 @@ namespace DubboNet.DubboService
         /// 执行telnet DoRequestAsync （原数据请求，所有请求，包括诊断类型请求最终都会使用该入口发送网络数据）
         /// </summary>
         /// <param name="command"></param>
-        /// <returns>返回结果，如果未null表示执行失败（错误请查看NowErrorMes）</returns>
-        protected async Task<TelnetRequestResult> SendCommandAsync(string command)
+        /// <returns>返回结果，如果为null表示执行失败（错误请查看NowErrorMes）</returns>
+        internal virtual async Task<TelnetRequestResult> SendCommandAsync(string command)
         {
             if (!IsConnected && !await Connect())
             {
@@ -562,7 +567,7 @@ namespace DubboNet.DubboService
 
         public override string ToString()
         {
-            return $"{DubboHost}:{DubboPort}";
+            return $"[{RemarkName}]-{DubboHost}:{DubboPort}";
         }
 
         public void Dispose()

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Sockets;
+using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +23,11 @@ namespace NetService.Telnet
             var t = tcs.Task;
             t.ContinueWith((antecedent) => rwh.Unregister(null));
             return t;
+        }
+
+        internal static async Task<bool> WaitOneResultAsync(this WaitHandle waitHandle, int millisecondsTimeOutInterval = -1)
+        {
+            return await Task.Run<bool>(() => {return waitHandle.WaitOne(millisecondsTimeOutInterval); });
         }
 
 

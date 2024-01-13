@@ -8,10 +8,15 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await TestForReset();
+await TestForOverWriter();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
 
+static async Task TestForOverWriter()
+{
+    DubboActuatorSuite dubboActuatorSuite = new DubboActuatorSuite("0.0.0.1", 0);
+    await dubboActuatorSuite.SendQuery("","");
+}
 
 static async Task TestForReset()
 {
@@ -33,7 +38,6 @@ static async Task TestForReset()
     Console.WriteLine("ResetEvent.Set");
     sendQueryAutoResetEvent.Set();
 }
-
 
 static void TestForTimer()
 {

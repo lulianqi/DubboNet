@@ -1,12 +1,15 @@
 ﻿using DubboNet.DubboService.DataModle.DubboInfo;
 using MyCommonHelper;
+using NetService.Telnet;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
+using static NetService.Telnet.ExTelnet;
 
 namespace DubboNet.DubboService
 {
@@ -55,6 +58,8 @@ namespace DubboNet.DubboService
         //标记当前Cruise是否正在进行中
         private bool _innerFlagForInCruiseTask = false;
 
+        private EventWaitHandle _eventWaitHandle = null;
+
         /// <summary>
         /// 获取当前节点服务及Func信息
         /// </summary>
@@ -98,7 +103,7 @@ namespace DubboNet.DubboService
         #region 静态成员
         private const int InnetTimerInterval = 1000 * 10;
         //定时器是全局公用的，无论有多少DubboActuatorSuite实例正在运行，都将最多只有一个定时器
-        private static Timer DubboSuiteTimer;
+        private static System.Timers.Timer DubboSuiteTimer;
         protected delegate void DubboSuiteCruiseEventHandler(object sender, ElapsedEventArgs e);
         protected static event DubboSuiteCruiseEventHandler DubboSuiteCruiseEvent;
 
@@ -107,7 +112,7 @@ namespace DubboNet.DubboService
         /// </summary>
         static DubboActuatorSuite()
         {
-            DubboSuiteTimer = new Timer(InnetTimerInterval);
+            DubboSuiteTimer = new System.Timers.Timer(InnetTimerInterval);
             DubboSuiteTimer.Elapsed += OnDubboSuiteTimedEvent;
             DubboSuiteTimer.AutoReset = true;
             //不用直接启动Timer，在每一个DubboActuatorSuite实例化时判断是否需要启动，释放过程中判断DubboSuiteTimer是否需要被复用，如果所有引用都被释放则自动停止，以尽可能减少定时器的存在。
@@ -142,30 +147,15 @@ namespace DubboNet.DubboService
                 AssistConnectionAliveTime = dubboActuatorSuiteConf.AssistConnectionAliveTime;
                 MaxConnections = dubboActuatorSuiteConf.MaxConnections;
             }
+            _eventWaitHandle = new EventWaitHandle(true, EventResetMode.ManualReset);
             _actuatorSuiteCellList = new List<DubboSuiteCell> {new DubboSuiteCell(this)};
+            if(MaxConnections<1) MaxConnections =1;
+            for (int i = 1; i < MaxConnections; i++)
+            {
+                _actuatorSuiteCellList.Add(new DubboSuiteCell((DubboActuator)(base.Clone())));
+            }
             DubboSuiteCruiseEvent += CruiseTaskEvent;
             if(!DubboSuiteTimer.Enabled) DubboSuiteTimer.Start();
-        }
-
-        private DubboActuator GetAvailableDubboActuator()
-        {
-            if(!IsRead)
-            {
-                return null;
-            }
-            if(!this.IsQuerySending)
-            {
-                return this;
-            }
-            else
-            {
-                DubboSuiteCell nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => dsc.IsFreeForQuery);
-                if(nowDubboSuiteCell==null)
-                {
-                    nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => !dsc.IsAlive);
-                }
-                return nowDubboSuiteCell?.InnerDubboActuator;
-            }
         }
 
         /// <summary>
@@ -209,6 +199,81 @@ namespace DubboNet.DubboService
             finally
             {
                 _innerFlagForInCruiseTask = false;
+            }
+        }
+
+        /// <summary>
+        ///  异步获取一个可用的DubboActuator（因为有极限压测的场景，所有DubboSuiteCell可能都会被耗尽所以需要一个低消耗的异步等待）
+        /// </summary>
+        /// <param name="millisecondTimeout">超时时间，如果超过指定时间还没有可用DubboActuator，则直接返回null</param>
+        /// <returns></returns>
+        private async ValueTask<DubboActuator>  GetAvailableDubboActuatorAsync(int millisecondTimeout=1000*30)
+        {
+            if (millisecondTimeout < -1)
+            {
+                throw new Exception("millisecondTimeout can not less than 0");
+            }
+            DateTime startTime = DateTime.Now;
+            DubboActuator nowDubboActuator = GetAvailableDubboActuator();
+            while (nowDubboActuator == null)
+            {
+                int remainingTimeout = millisecondTimeout - (int)((DateTime.Now - startTime).TotalMilliseconds);
+                if (remainingTimeout<=0)
+                {
+                    break;
+                }
+                //_eventWaitHandle.WaitOne();
+                await _eventWaitHandle.WaitOneAsync(remainingTimeout);
+                nowDubboActuator = GetAvailableDubboActuator();
+            }
+            return nowDubboActuator;
+        }
+
+        /// <summary>
+        /// 获取一个可用的DubboActuator（如果没有则返回null）
+        /// </summary>
+        /// <returns></returns>
+        private DubboActuator GetAvailableDubboActuator()
+        {
+            if (!IsRead)
+            {
+                return null;
+            }
+            if (!this.IsQuerySending)
+            {
+                return this;
+            }
+            else
+            {
+                DubboSuiteCell nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => dsc.IsFreeForQuery);
+                if (nowDubboSuiteCell == null)
+                {
+                    nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => !dsc.IsAlive);
+                }
+                return nowDubboSuiteCell?.InnerDubboActuator;
+            }
+        }
+
+        /// <summary>
+        /// 重写SendCommandAsync可用改变所有基类SendQuery行为，因为所有SendQuery最终出口都是SendCommandAsync
+        /// </summary>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        internal override async Task<TelnetRequestResult> SendCommandAsync(string command)
+        {
+            DubboActuator availableDubboActuator =await GetAvailableDubboActuatorAsync(base.DubboRequestTimeout);
+            if(availableDubboActuator==null)
+            {
+                return null;
+            }
+            else
+            {
+                TelnetRequestResult telnetRequestResult = await availableDubboActuator.SendCommandAsync(command);
+                if(telnetRequestResult==null)
+                {
+                    throw new Exception(availableDubboActuator.NowErrorMes);
+                }
+                return telnetRequestResult;
             }
         }
 
