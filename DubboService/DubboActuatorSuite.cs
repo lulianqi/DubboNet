@@ -22,6 +22,10 @@ namespace DubboNet.DubboService
             /// </summary>
             public DubboActuator InnerDubboActuator {get;private set;}
             /// <summary>
+            /// 标记当前DubboSuiteCell被使用过的次数
+            /// </summary>
+            internal int Version { get; set; } = 0;
+            /// <summary>
             /// DubboSuiteCell创建时间
             /// </summary>
             public DateTime CreatTime {get;}=DateTime.Now;
@@ -136,9 +140,16 @@ namespace DubboNet.DubboService
                 //不过对于Invoke来说DubboSuiteCruiseEvent如果被注册多次，Invoke是同步的轮流执行，这里需要在逻辑上避免Timer会有2个Elapsed同时执行
                 DubboSuiteCruiseEvent.Invoke(sender, e);
             }
-        } 
+        }
         #endregion
 
+        /// <summary>
+        /// 初始化DubboActuatorSuite
+        /// </summary>
+        /// <param name="Address">地址（ip）</param>
+        /// <param name="Port">端口</param>
+        /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
+        /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
         public DubboActuatorSuite(string Address, int Port, int CommandTimeout = 10 * 1000, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) : base(Address, Port, CommandTimeout, dubboActuatorSuiteConf?.DefaultServiceName)
         {
             if(dubboActuatorSuiteConf!=null)
@@ -250,6 +261,7 @@ namespace DubboNet.DubboService
                 {
                     nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => !dsc.IsAlive);
                 }
+                if (nowDubboSuiteCell != null) nowDubboSuiteCell.Version++;
                 return nowDubboSuiteCell?.InnerDubboActuator;
             }
         }
@@ -268,12 +280,24 @@ namespace DubboNet.DubboService
             }
             else
             {
-                TelnetRequestResult telnetRequestResult = await availableDubboActuator.SendCommandAsync(command);
-                if(telnetRequestResult==null)
+                try
                 {
-                    throw new Exception(availableDubboActuator.NowErrorMes);
+                    TelnetRequestResult telnetRequestResult = await availableDubboActuator.SendCommandAsync(command);
+                    if (telnetRequestResult == null)
+                    {
+                        throw new Exception(availableDubboActuator.NowErrorMes);
+                    }
+                    return telnetRequestResult;
                 }
-                return telnetRequestResult;
+                catch (Exception ex)
+                {
+                    MyLogger.LogError("[DubboActuatorSuite -> SendCommandAsync] ", ex);
+                    return null;
+                }
+                finally
+                {
+                    _eventWaitHandle.Set();
+                }
             }
         }
 

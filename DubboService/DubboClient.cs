@@ -1,8 +1,10 @@
 ﻿using DubboNet.DubboService.DataModle;
 using org.apache.zookeeper;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 using static DubboNet.DubboService.DubboActuator;
 
@@ -10,6 +12,18 @@ namespace DubboNet.DubboService
 {
     public class DubboClient
     {
+
+        internal class DubboServiceDriver
+        {
+            public string ServiceName { get; private set; }
+            public Dictionary<IPEndPoint, DubboActuatorSuite> InnerActuatorSuites { get; private set; }
+
+            public DubboServiceDriver(string serviceName , Dictionary<DubboActuatorSuite,int> DubboActuatorSuiteCollection)
+            {
+                ServiceName = serviceName;
+                InnerActuatorSuites = new Dictionary<IPEndPoint, DubboActuatorSuite>();
+            }
+        }
         public class DubboManCollection
         {
             private List<DubboActuator> dubboActuators = new List<DubboActuator>();
