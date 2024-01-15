@@ -370,10 +370,16 @@ namespace DubboNet.DubboService
 
         public new void Dispose()
         {
+            //取消事件订阅，如果需要暂停DubboSuiteTimer
             DubboSuiteCruiseEvent -= CruiseTaskEvent;
             if (DubboSuiteCruiseEvent == null || DubboSuiteCruiseEvent.GetInvocationList().Length == 0)
             {
                 DubboSuiteTimer.Stop();
+            }
+            //释放连接
+            foreach(DubboSuiteCell dscItem in _actuatorSuiteCellList)
+            {
+                dscItem.InnerDubboActuator.Dispose();
             }
             base.Dispose();
         }

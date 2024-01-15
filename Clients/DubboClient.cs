@@ -1,4 +1,5 @@
-﻿using DubboNet.DubboService.DataModle;
+﻿using DubboNet.DubboService;
+using DubboNet.DubboService.DataModle;
 using org.apache.zookeeper;
 using System;
 using System.Collections;
@@ -9,112 +10,10 @@ using System.Net;
 using System.Threading.Tasks;
 using static DubboNet.DubboService.DubboActuator;
 
-namespace DubboNet.DubboService
+namespace DubboNet.Clients
 {
     public class DubboClient
     {
-
-        internal class DubboServiceDriver
-        {
-            public string ServiceName { get; private set; }
-            public Dictionary<IPEndPoint, DubboActuatorSuite> InnerActuatorSuites { get; private set; }
-
-            public DubboServiceDriver(string serviceName ,List<IPEndPoint> dbEpList, Dictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection)
-            {
-                ServiceName = serviceName;
-                InnerActuatorSuites = new Dictionary<IPEndPoint, DubboActuatorSuite>();
-                if(!(dbEpList?.Count>0))
-                {
-                    throw new ArgumentException("dbEpList can not be empty",nameof(dbEpList));
-                }
-                if(dubboActuatorSuiteCollection==null)
-                {
-                    throw new ArgumentNullException(nameof(dubboActuatorSuiteCollection));
-                }
-                foreach(IPEndPoint ep in dbEpList)
-                {
-                    if(dubboActuatorSuiteCollection.ContainsKey(ep))
-                    {
-                        InnerActuatorSuites.Add(ep,dubboActuatorSuiteCollection[ep].ActuatorSuite);
-                        dubboActuatorSuiteCollection[ep].ReferenceCount++;
-                    }
-                    else
-                    {
-                        DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo =new DubboActuatorSuiteEndPintInfo()
-                        {
-                            EndPoint = ep,
-                            ActuatorSuite = new DubboActuatorSuite(ep),
-                            ReferenceCount=0
-                        };
-                        InnerActuatorSuites.Add(ep,dubboActuatorSuiteEndPintInfo.ActuatorSuite);
-                        dubboActuatorSuiteEndPintInfo.ReferenceCount++;
-                        dubboActuatorSuiteCollection.Add(ep,dubboActuatorSuiteEndPintInfo);
-                    }
-                }
-            }
-        }
-
-        internal class DubboActuatorSuiteEndPintInfo
-        {
-            public IPEndPoint EndPoint {get;set;}
-            public DubboActuatorSuite ActuatorSuite{get;set;}
-            public int ReferenceCount {get;internal set;}=0;
-        }
-
-        public class DubboManCollection
-        {
-            private List<DubboActuator> dubboActuators = new List<DubboActuator>();
-
-            public int MaxUsersNum { get; set; } = 0;
-            public int CommandTimeout { get; set; } = 10 * 1000;
-            public string DefaultServiceName { get; set; }
-
-            public int Count { get { return dubboActuators?.Count ?? 0; } }
-
-            public bool IsInclude(string host, int port)
-            {
-                foreach (var man in dubboActuators)
-                {
-                    if (man.DubboHost == host && man.DubboPort == port)
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            public DubboActuator GetDubboActuator()
-            {
-                return dubboActuators.FirstOrDefault();
-                foreach (var actuator in dubboActuators)
-                {
-                    //if(actuator.IsQuerySending)
-                }
-            }
-
-            public async Task<DubboRequestResult> SendRequestAsync(string funcEntrance, string req)
-            {
-                DubboActuator nowDubboActuator = GetDubboActuator();
-                return await nowDubboActuator.SendQuery(funcEntrance, req);
-            }
-
-            public void AddDubboMan(string address, int port)
-            {
-                dubboActuators.Add(new DubboActuator(address, port, CommandTimeout, DefaultServiceName));
-            }
-
-            public void RemoveByFilter(Func<DubboActuator, bool> filterFunc)
-            {
-                DubboActuator[] dubboArr = dubboActuators.ToArray();
-                foreach (DubboActuator dbm in dubboArr)
-                {
-                    if (filterFunc(dbm))
-                    {
-                        dubboActuators.Remove(dbm);
-                    }
-                }
-            }
-        }
 
         public enum LoadBalanceMode
         {
@@ -127,11 +26,11 @@ namespace DubboNet.DubboService
 
         private MyZookeeper _innerMyZookeeper;
 
-        private DubboManCollection _dubboManCollection = new DubboManCollection();
-    
-        private Dictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo> _retainDubboActuatorSuiteCollection = new Dictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo>();
+        private DubboDriverCollection _dubboManCollection = new DubboDriverCollection();
 
-        internal ReadOnlyDictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo> DubboActuatorSuiteCollection => new ReadOnlyDictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo>(_retainDubboActuatorSuiteCollection);
+        private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _retainDubboActuatorSuiteCollection = new Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>();
+
+        internal ReadOnlyDictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> DubboActuatorSuiteCollection => new ReadOnlyDictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>(_retainDubboActuatorSuiteCollection);
 
         /// <summary>
         /// Zookeeper上默认的Dubbo跟路径，默认/dubbo/
@@ -148,8 +47,8 @@ namespace DubboNet.DubboService
         /// </summary>
         public string DefaultServiceName { get; private set; }
 
-        
-         /// <summary>
+
+        /// <summary>
         /// 初始化DubboClient
         /// </summary>
         /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
@@ -172,11 +71,11 @@ namespace DubboNet.DubboService
         /// <param name="defaultServiceName">默认服务名称</param>
         /// <param name="defaultFuncName">默认方法名称</param>
         /// <exception cref="Exception"></exception>
-        public DubboClient(string zookeeperCoonectString, string defaultServiceName , string defaultFuncName) : this(zookeeperCoonectString)
+        public DubboClient(string zookeeperCoonectString, string defaultServiceName, string defaultFuncName) : this(zookeeperCoonectString)
         {
             DefaultServiceName = defaultServiceName;
             DefaultFuncName = defaultFuncName;
-            if (string.IsNullOrEmpty(DefaultServiceName)&& !string.IsNullOrEmpty(DefaultFuncName))
+            if (string.IsNullOrEmpty(DefaultServiceName) && !string.IsNullOrEmpty(DefaultFuncName))
             {
                 throw new Exception("defaultServiceName can not be null unless defaultFuncName is null");
             }
@@ -188,9 +87,9 @@ namespace DubboNet.DubboService
         /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
         /// <param name="endPointFuncFullName">默认方法入口（完整名称包括服务名称）</param>
         /// <exception cref="ArgumentException"></exception>
-        public DubboClient(string zookeeperCoonectString, string endPointFuncFullName):this(zookeeperCoonectString)
+        public DubboClient(string zookeeperCoonectString, string endPointFuncFullName) : this(zookeeperCoonectString)
         {
-            if(DefaultFuncName.Contains('#'))
+            if (DefaultFuncName.Contains('#'))
             {
                 int tempSpitIndex = DefaultFuncName.LastIndexOf('#');
                 DefaultFuncName = DefaultFuncName.Substring(tempSpitIndex + 1);
