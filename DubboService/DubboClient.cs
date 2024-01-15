@@ -3,6 +3,7 @@ using org.apache.zookeeper;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -18,12 +19,48 @@ namespace DubboNet.DubboService
             public string ServiceName { get; private set; }
             public Dictionary<IPEndPoint, DubboActuatorSuite> InnerActuatorSuites { get; private set; }
 
-            public DubboServiceDriver(string serviceName , Dictionary<DubboActuatorSuite,int> DubboActuatorSuiteCollection)
+            public DubboServiceDriver(string serviceName ,List<IPEndPoint> dbEpList, Dictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection)
             {
                 ServiceName = serviceName;
                 InnerActuatorSuites = new Dictionary<IPEndPoint, DubboActuatorSuite>();
+                if(!(dbEpList?.Count>0))
+                {
+                    throw new ArgumentException("dbEpList can not be empty",nameof(dbEpList));
+                }
+                if(dubboActuatorSuiteCollection==null)
+                {
+                    throw new ArgumentNullException(nameof(dubboActuatorSuiteCollection));
+                }
+                foreach(IPEndPoint ep in dbEpList)
+                {
+                    if(dubboActuatorSuiteCollection.ContainsKey(ep))
+                    {
+                        InnerActuatorSuites.Add(ep,dubboActuatorSuiteCollection[ep].ActuatorSuite);
+                        dubboActuatorSuiteCollection[ep].ReferenceCount++;
+                    }
+                    else
+                    {
+                        DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo =new DubboActuatorSuiteEndPintInfo()
+                        {
+                            EndPoint = ep,
+                            ActuatorSuite = new DubboActuatorSuite(ep),
+                            ReferenceCount=0
+                        };
+                        InnerActuatorSuites.Add(ep,dubboActuatorSuiteEndPintInfo.ActuatorSuite);
+                        dubboActuatorSuiteEndPintInfo.ReferenceCount++;
+                        dubboActuatorSuiteCollection.Add(ep,dubboActuatorSuiteEndPintInfo);
+                    }
+                }
             }
         }
+
+        internal class DubboActuatorSuiteEndPintInfo
+        {
+            public IPEndPoint EndPoint {get;set;}
+            public DubboActuatorSuite ActuatorSuite{get;set;}
+            public int ReferenceCount {get;internal set;}=0;
+        }
+
         public class DubboManCollection
         {
             private List<DubboActuator> dubboActuators = new List<DubboActuator>();
@@ -91,6 +128,10 @@ namespace DubboNet.DubboService
         private MyZookeeper _innerMyZookeeper;
 
         private DubboManCollection _dubboManCollection = new DubboManCollection();
+    
+        private Dictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo> _retainDubboActuatorSuiteCollection = new Dictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo>();
+
+        internal ReadOnlyDictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo> DubboActuatorSuiteCollection => new ReadOnlyDictionary<IPEndPoint,DubboActuatorSuiteEndPintInfo>(_retainDubboActuatorSuiteCollection);
 
         /// <summary>
         /// Zookeeper上默认的Dubbo跟路径，默认/dubbo/

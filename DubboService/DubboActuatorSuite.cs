@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
@@ -167,6 +168,16 @@ namespace DubboNet.DubboService
             }
             DubboSuiteCruiseEvent += CruiseTaskEvent;
             if(!DubboSuiteTimer.Enabled) DubboSuiteTimer.Start();
+        }
+
+        /// <summary>
+        /// 初始化DubboActuatorSuite
+        /// </summary>
+        /// <param name="iPEndPoint"></param>
+        /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
+        /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
+        public DubboActuatorSuite(IPEndPoint iPEndPoint,int CommandTimeout = 10 * 1000, DubboActuatorSuiteConf dubboActuatorSuiteConf = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port,CommandTimeout,dubboActuatorSuiteConf)
+        {
         }
 
         /// <summary>
