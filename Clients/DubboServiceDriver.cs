@@ -76,6 +76,11 @@ namespace DubboNet.Clients
             }
         }
 
+        /// <summary>
+        /// 更新DubboServiceDriver服务节点
+        /// </summary>
+        /// <param name="dbEpList"></param>
+        /// <exception cref="ArgumentException"></exception>
         public void UpdateEqualIPEndPoints(List<IPEndPoint> dbEpList)
         {
             if (!(dbEpList?.Count > 0))
@@ -108,10 +113,16 @@ namespace DubboNet.Clients
             {
                 if(!InnerActuatorSuites.ContainsKey(epItem))
                 {
-                        
+                    AddActuatorSuite(epItem);
                 }
             }
 
+        }
+
+        public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode)
+        {
+            //未实现
+            return InnerActuatorSuites.First().Value;
         }
 
         public void Dispose()
