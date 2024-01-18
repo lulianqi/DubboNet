@@ -263,6 +263,7 @@ namespace DubboNet.DubboService
             }
             if (!this.IsQuerySending)
             {
+                //注意this的运行时类型是DubboActuatorSuite
                 return this;
             }
             else
@@ -293,7 +294,17 @@ namespace DubboNet.DubboService
             {
                 try
                 {
-                    TelnetRequestResult telnetRequestResult = await availableDubboActuator.SendCommandAsync(command);
+                    TelnetRequestResult telnetRequestResult = null;
+                    //因为GetAvailableDubboActuatorAsync返回的DubboActuator可能是DubboActuatorSuite，如果是DubboActuatorSuite会循环调用override的SendCommandAsync方法，这里需要区分开
+                    if (availableDubboActuator == this)
+                    {
+                        telnetRequestResult = await base.SendCommandAsync(command);
+                    }
+                    else
+                    {
+                        telnetRequestResult = await availableDubboActuator.SendCommandAsync(command);
+                    }
+                        
                     if (telnetRequestResult == null)
                     {
                         throw new Exception(availableDubboActuator.NowErrorMes);

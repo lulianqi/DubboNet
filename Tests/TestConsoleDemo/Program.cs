@@ -8,14 +8,21 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await TestForOverWriter();
+await TestForOverZookeeper();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
 
+static async Task TestForOverZookeeper()
+{
+    MyZookeeper _innerMyZookeeper = new MyZookeeper("10.100.64.53:2181");
+    await _innerMyZookeeper.ConnectZooKeeperAsync();
+}
+
 static async Task TestForOverWriter()
 {
+    //https://www.cnblogs.com/shanfeng1000/p/12700296.html
     DubboActuatorSuite dubboActuatorSuite = new DubboActuatorSuite("0.0.0.1", 0);
-    await dubboActuatorSuite.SendQuery("","");
+    await dubboActuatorSuite.SendQuery("1","1");
 }
 
 static async Task TestForReset()

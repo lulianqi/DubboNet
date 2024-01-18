@@ -26,10 +26,14 @@ namespace DubboNet.Clients
 
         private MyZookeeper _innerMyZookeeper;
 
-        private DubboDriverCollection _dubboManCollection = new DubboDriverCollection();
+        private DubboDriverCollection _dubboDriverCollection;
 
         private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _retainDubboActuatorSuiteCollection = new Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>();
 
+
+        /// <summary>
+        /// 获取只读的DubboActuatorSuiteCollection
+        /// </summary>
         internal ReadOnlyDictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> DubboActuatorSuiteCollection => new ReadOnlyDictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>(_retainDubboActuatorSuiteCollection);
 
         /// <summary>
@@ -60,6 +64,7 @@ namespace DubboNet.Clients
                 throw new ArgumentException($"“{nameof(zookeeperCoonectString)}”不能为 null 或空。", nameof(zookeeperCoonectString));
             }
             _innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
+            _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection);
             DefaultFuncName = null;
             DefaultServiceName = null;
         }
@@ -110,11 +115,7 @@ namespace DubboNet.Clients
 
         public async Task<DubboRequestResult> SendRequestAsync(string req)
         {
-            if (_dubboManCollection.Count == 0)
-            {
-                await InitServiceHost();
-            }
-            return await _dubboManCollection.SendRequestAsync($"{DefaultServiceName}.{DefaultFuncName}", req);
+            throw new NotImplementedException();
         }
 
         public async Task Test()
@@ -132,7 +133,7 @@ namespace DubboNet.Clients
             }
             List<ZNode> providersNodes = GetDubboProvidersNode(tempZNode);
             //删除已经无效的节点
-            if (_dubboManCollection.Count > 0)
+            if (_dubboDriverCollection.Count > 0)
             {
                 Func<DubboActuator, bool> filterFunc = new Func<DubboActuator, bool>((dt) =>
                 {
@@ -149,17 +150,17 @@ namespace DubboNet.Clients
                     }
                     return !isSholdAlive;
                 });
-                _dubboManCollection.RemoveByFilter(filterFunc);
+                //_dubboDriverCollection.RemoveByFilter(filterFunc);
             }
             //添加新节点
             foreach (ZNode providerNode in providersNodes)
             {
                 string path = System.Web.HttpUtility.UrlDecode(providerNode.Path, System.Text.Encoding.UTF8);
                 Uri uri = new Uri(path);
-                if (!_dubboManCollection.IsInclude(uri.Host, uri.Port))
-                {
-                    _dubboManCollection.AddDubboMan(uri.Host, uri.Port);
-                }
+                //if (!_dubboDriverCollection.IsInclude(uri.Host, uri.Port))
+                //{
+                //    _dubboDriverCollection.AddDubboMan(uri.Host, uri.Port);
+                //}
             }
 
         }
