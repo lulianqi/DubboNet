@@ -15,7 +15,10 @@ Console.ReadLine();
 static async Task TestForOverZookeeper()
 {
     MyZookeeper _innerMyZookeeper = new MyZookeeper("10.100.64.53:2181");
-    await _innerMyZookeeper.ConnectZooKeeperAsync();
+    //await _innerMyZookeeper.ConnectZooKeeperAsync();
+    var sta = await _innerMyZookeeper.ExistsAsync("/test_a/test_a_1", new MyWatcher("/test_a/test_a_1"));
+    Console.WriteLine("Enter End TestForOverZookeeper");
+    Console.ReadLine();
 }
 
 static async Task TestForOverWriter()

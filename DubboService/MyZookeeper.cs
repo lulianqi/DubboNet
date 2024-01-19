@@ -532,6 +532,11 @@ namespace DubboNet.DubboService
             return await InnerDoZkRequest(path, agr => zooKeeper.existsAsync(agr));
         }
 
+        public async Task<Stat> ExistsAsync(string path, Watcher watcher)
+        {
+            return await InnerDoZkRequest(path, agr => zooKeeper.existsAsync(agr, watcher));
+        }
+
         /// <summary>
         /// 内部ZooKeeper执行方法 （内置可复用的连接及重连逻辑，用于让ZooKeeper执行实际网络请求）
         /// </summary>
@@ -627,7 +632,7 @@ namespace DubboNet.DubboService
         }
     }
 
-    class MyWatcher : Watcher
+    public class MyWatcher : Watcher
     {
         public string Name { get; private set; }
 
