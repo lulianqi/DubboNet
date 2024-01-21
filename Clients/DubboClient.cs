@@ -1,10 +1,14 @@
 ﻿using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
+using MyCommonHelper;
 using org.apache.zookeeper;
+using org.apache.zookeeper.data;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel.DataAnnotations;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -22,6 +26,27 @@ namespace DubboNet.Clients
             RoundRobin,
             LeastActive,
             ConsistentHash
+        }
+
+        public class DubboClientZookeeperWatcher : Watcher
+        {
+            public string Name { get; private set; }
+
+            public DubboClientZookeeperWatcher(DubboClient dubboClient , string name)
+            {
+                Name = name;
+            }
+
+            public override Task process(WatchedEvent @event)
+            {
+                Console.WriteLine($"{Name} recieve: Path-{@event.getPath()}     State-{@event.getState()}    Type-{@event.get_Type()}");
+                return Task.FromResult(0);
+            }
+        }
+        public class SeviceEndPointsInfo
+        {
+            public string ErrorInfo { get;  set; } = null;
+            public List<EndPoint> EndPoints { get;  set; } = new List<EndPoint>();
         }
 
         private MyZookeeper _innerMyZookeeper;
@@ -90,25 +115,25 @@ namespace DubboNet.Clients
         /// 初始化DubboClient
         /// </summary>
         /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
-        /// <param name="endPointFuncFullName">默认方法入口（完整名称包括服务名称）</param>
+        /// <param name="funcEndPoint">默认方法入口（完整名称包括服务名称 eg:ServiceName.FuncName）</param>
         /// <exception cref="ArgumentException"></exception>
-        public DubboClient(string zookeeperCoonectString, string endPointFuncFullName) : this(zookeeperCoonectString)
+        public DubboClient(string zookeeperCoonectString, string funcEndPoint) : this(zookeeperCoonectString)
         {
-            if (DefaultFuncName.Contains('#'))
+            if (funcEndPoint.Contains('#'))
             {
-                int tempSpitIndex = DefaultFuncName.LastIndexOf('#');
-                DefaultFuncName = DefaultFuncName.Substring(tempSpitIndex + 1);
-                DefaultServiceName = DefaultFuncName.Remove(tempSpitIndex);
+                int tempSpitIndex = funcEndPoint.LastIndexOf('#');
+                DefaultFuncName = funcEndPoint.Substring(tempSpitIndex + 1);
+                DefaultServiceName = funcEndPoint.Remove(tempSpitIndex);
             }
             else if (DefaultFuncName.Contains('.'))
             {
-                int tempSpitIndex = DefaultFuncName.LastIndexOf('.');
-                DefaultFuncName = DefaultFuncName.Substring(tempSpitIndex + 1);
-                DefaultServiceName = DefaultFuncName.Remove(tempSpitIndex);
+                int tempSpitIndex = funcEndPoint.LastIndexOf('.');
+                DefaultFuncName = funcEndPoint.Substring(tempSpitIndex + 1);
+                DefaultServiceName = funcEndPoint.Remove(tempSpitIndex);
             }
             else
             {
-                throw new ArgumentException($"“{nameof(endPointFuncFullName)}” is error", nameof(endPointFuncFullName));
+                throw new ArgumentException($"“{nameof(funcEndPoint)}” is error", nameof(funcEndPoint));
             }
         }
 
@@ -118,9 +143,102 @@ namespace DubboNet.Clients
             throw new NotImplementedException();
         }
 
-        public async Task Test()
+        public async Task<DubboRequestResult> SendRequestAsync(string funcEndPoint ,string req)
         {
-            await InitServiceHost();
+            GetSeviceNameFormFuncEndPoint(funcEndPoint);
+            throw new NotImplementedException();
+        }
+
+        public async Task<SeviceEndPointsInfo> GetSeviceProviderEndPoints(string serviceName)
+        {
+            if(string.IsNullOrEmpty(serviceName))
+            {
+                throw new ArgumentNullException(nameof(serviceName));
+            }
+            SeviceEndPointsInfo seviceEndPointsInfo = new SeviceEndPointsInfo();
+            string nowFullPath = $"{DubboRootPath}{serviceName}/providers";
+            Stat stat =await _innerMyZookeeper.ExistsAsync(nowFullPath);
+            if (stat==null)
+            {
+                if((await _innerMyZookeeper.ExistsAsync($"{DubboRootPath}{serviceName}"))==null)
+                {
+                    seviceEndPointsInfo.ErrorInfo = $"serviceName [{serviceName}] is error";
+                }
+                else
+                {
+                    seviceEndPointsInfo.ErrorInfo = $"no provider in [{serviceName}]";
+                }
+            }
+            else if(stat.getNumChildren()<=0)
+            {
+                seviceEndPointsInfo.ErrorInfo = $"no provider endpoint in [{serviceName}]";
+            }
+            else
+            {
+                ChildrenResult childrenResult = await _innerMyZookeeper.GetChildrenAsync(nowFullPath).ConfigureAwait(false);
+                if (childrenResult == null)
+                {
+                    seviceEndPointsInfo.ErrorInfo = $"GetChildrenAsync error [{serviceName}]";
+                }
+                {
+                    foreach(var child in childrenResult.Children)
+                    {
+                        if (child.StartsWith("dubbo%3A%2F%2F"))
+                        {
+                            string nowDubboPath = System.Web.HttpUtility.UrlDecode(child, System.Text.Encoding.UTF8);
+                            Uri nowDubboUri;
+                            if(Uri.TryCreate(nowDubboPath, UriKind.Absolute, out nowDubboUri))
+                            {
+                                IPAddress nowIp;
+                                if (IPAddress.TryParse(nowDubboUri.Host, out nowIp))
+                                {
+                                    seviceEndPointsInfo.EndPoints.Add(new IPEndPoint(nowIp, nowDubboUri.Port));
+                                }
+                                else
+                                {
+                                    //这里如果有使用域名或主机名称的可能性，这里可以继续解析为IP
+                                    MyLogger.LogWarning($"[GetSeviceProviderEndPoints] IPAddress.TryParse error {child}");
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                MyLogger.LogWarning($"[GetSeviceProviderEndPoints] Uri.TryCreate error {child}");
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            MyLogger.LogWarning($"[GetSeviceProviderEndPoints] childrenResult.Children formate error {child}");
+                            continue;
+                        }
+                    }
+                }
+            }
+            return seviceEndPointsInfo;
+        }
+
+        private Tuple<string,string> GetSeviceNameFormFuncEndPoint(string funcEndPoint)
+        {
+            string serviceName, funName = null;
+            if (funcEndPoint.Contains('#'))
+            {
+                int tempSpitIndex = funcEndPoint.LastIndexOf('#');
+                serviceName = funcEndPoint.Substring(tempSpitIndex + 1);
+                funName = funcEndPoint.Remove(tempSpitIndex);
+            }
+            else if (DefaultFuncName.Contains('.'))
+            {
+                int tempSpitIndex = funcEndPoint.LastIndexOf('.');
+                serviceName = funcEndPoint.Substring(tempSpitIndex + 1);
+                funName = funcEndPoint.Remove(tempSpitIndex);
+            }
+            else
+            {
+                serviceName = null;
+                funName = funcEndPoint;
+            }
+            return new Tuple<string,string>(serviceName, funName);
         }
 
         private async Task InitServiceHost()

@@ -1,4 +1,5 @@
 ﻿// See https://aka.ms/new-console-template for more information
+using DubboNet.Clients;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
 using System.Text.Encodings.Web;
@@ -8,15 +9,21 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await TestForOverZookeeper();
+await TaskForDubboClient();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
+
+static async Task TaskForDubboClient()
+{
+    await (new DubboClient("10.100.64.53:2181")).GetSeviceProviderEndPoints("com.byai.crm.aicrm.api.config.ConfigOptionFacade");
+}
 
 static async Task TestForOverZookeeper()
 {
     MyZookeeper _innerMyZookeeper = new MyZookeeper("10.100.64.53:2181");
     //await _innerMyZookeeper.ConnectZooKeeperAsync();
     var sta = await _innerMyZookeeper.ExistsAsync("/test_a/test_a_1", new MyWatcher("/test_a/test_a_1"));
+    await _innerMyZookeeper.GetChildrenAsync("/test_a", new MyWatcher("/test_a"));
     Console.WriteLine("Enter End TestForOverZookeeper");
     Console.ReadLine();
 }

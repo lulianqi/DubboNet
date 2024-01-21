@@ -505,10 +505,17 @@ namespace DubboNet.DubboService
         /// </summary>
         /// <param name="path">节点完全Path</param>
         /// <returns>ChildrenResult列表</returns>
-        public async Task<ChildrenResult> GetChildrenAsync(string path, int retryTime = 2)
+        public async Task<ChildrenResult> GetChildrenAsync(string path, Watcher watcher=null, int retryTime = 2)
         {
             //System.Diagnostics.Debug.WriteLine($"---------{path}----------\r\n{Thread.CurrentThread.ManagedThreadId}");
-            return await InnerDoZkRequest(path, agr => zooKeeper.getChildrenAsync(agr), retryTime);
+            if (watcher == null)
+            {
+                return await InnerDoZkRequest(path, agr => zooKeeper.getChildrenAsync(agr), retryTime);
+            }
+            else
+            {
+                return await InnerDoZkRequest(path, agr => zooKeeper.getChildrenAsync(agr, watcher), retryTime);
+            }
         }
 
 
@@ -517,9 +524,9 @@ namespace DubboNet.DubboService
         /// </summary>
         /// <param name="path"></param>
         /// <returns>DataResult</returns>
-        public async Task<DataResult> GetDataAsync(string path)
+        public async Task<DataResult> GetDataAsync(string path, Watcher watcher = null, int retryTime = 2)
         {
-            return await InnerDoZkRequest(path, agr => zooKeeper.getDataAsync(agr));
+            return await InnerDoZkRequest(path, agr => zooKeeper.getDataAsync(agr, watcher), retryTime);
         }
 
         /// <summary>
@@ -527,15 +534,11 @@ namespace DubboNet.DubboService
         /// </summary>
         /// <param name="path"></param>
         /// <returns></returns>
-        public async Task<Stat> ExistsAsync(string path)
+        public async Task<Stat> ExistsAsync(string path, Watcher watcher = null, int retryTime = 2)
         {
-            return await InnerDoZkRequest(path, agr => zooKeeper.existsAsync(agr));
+            return await InnerDoZkRequest(path, agr => zooKeeper.existsAsync(agr, watcher), retryTime);
         }
 
-        public async Task<Stat> ExistsAsync(string path, Watcher watcher)
-        {
-            return await InnerDoZkRequest(path, agr => zooKeeper.existsAsync(agr, watcher));
-        }
 
         /// <summary>
         /// 内部ZooKeeper执行方法 （内置可复用的连接及重连逻辑，用于让ZooKeeper执行实际网络请求）
