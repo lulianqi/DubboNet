@@ -12,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using static DubboNet.Clients.DubboDriverCollection;
 using static DubboNet.DubboService.DubboActuator;
 
 namespace DubboNet.Clients
@@ -75,6 +76,11 @@ namespace DubboNet.Clients
         /// 默认当前Dubbo服务名称
         /// </summary>
         public string DefaultServiceName { get; private set; }
+
+        /// <summary>
+        /// 获当前负载模式
+        /// </summary>
+        public LoadBalanceMode NowLoadBalanceMode { get; private set; } = LoadBalanceMode.Random;
 
 
         /// <summary>
@@ -145,7 +151,26 @@ namespace DubboNet.Clients
 
         public async Task<DubboRequestResult> SendRequestAsync(string funcEndPoint ,string req)
         {
-            GetSeviceNameFormFuncEndPoint(funcEndPoint);
+            Tuple<string, string> tuple = GetSeviceNameFormFuncEndPoint(funcEndPoint);
+            string nowServiceName = tuple.Item1;
+            string nowFuncName = tuple.Item2;
+            if(string.IsNullOrEmpty(nowServiceName)|| string.IsNullOrEmpty(nowFuncName)) 
+            {
+                throw new ArgumentException("can not find the ServiceName or FuncName");
+            }
+            AvailableDubboActuatorInfo availableDubboActuatorInfo = _dubboDriverCollection.GetDubboActuatorSuite(nowServiceName, NowLoadBalanceMode);
+            if(availableDubboActuatorInfo.ResultType== AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
+            {
+                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}.{nowFuncName}", req);
+            }
+            else if(availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
+            {
+                SeviceEndPointsInfo seviceEndPointsInfo = await GetSeviceProviderEndPoints(nowServiceName);
+            }
+            else
+            {
+
+            }
             throw new NotImplementedException();
         }
 
@@ -221,7 +246,12 @@ namespace DubboNet.Clients
         private Tuple<string,string> GetSeviceNameFormFuncEndPoint(string funcEndPoint)
         {
             string serviceName, funName = null;
-            if (funcEndPoint.Contains('#'))
+            if(string.IsNullOrEmpty(funcEndPoint))
+            {
+                serviceName = DefaultServiceName;
+                funName = DefaultFuncName;
+            }
+            else if (funcEndPoint.Contains('#'))
             {
                 int tempSpitIndex = funcEndPoint.LastIndexOf('#');
                 serviceName = funcEndPoint.Substring(tempSpitIndex + 1);
@@ -235,7 +265,7 @@ namespace DubboNet.Clients
             }
             else
             {
-                serviceName = null;
+                serviceName = DefaultServiceName;
                 funName = funcEndPoint;
             }
             return new Tuple<string,string>(serviceName, funName);

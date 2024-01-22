@@ -12,6 +12,23 @@ namespace DubboNet.Clients
 {
     internal class DubboDriverCollection
     {
+        internal class AvailableDubboActuatorInfo
+        {
+            public enum GetDubboActuatorSuiteResultType
+            {
+                Unkonw,
+                GetDubboActuatorSuite,
+                NoDubboServiceDriver,
+                NoAvailableActuator,
+                NetworkError
+            }
+
+            public GetDubboActuatorSuiteResultType ResultType { get; set; }= GetDubboActuatorSuiteResultType.Unkonw;
+            public string ErrorMes { get; set; } = null;
+            public DubboServiceDriver NowDubboServiceDriver { get; set; }
+            public DubboActuatorSuite AvailableDubboActuatorSuite { get; set; }
+        }
+
         /// <summary>
         /// 内部维持的DubboActuatorSuite（用于最大程度复用链接）
         /// </summary>
@@ -60,8 +77,10 @@ namespace DubboNet.Clients
                 _dubboServiceDriverCollection.Add(serviceName, tempDubboServiceDriver);
             }
         }
-        public DubboActuatorSuite GetDubboActuatorSuite(string serviceName , LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random)
+
+        public AvailableDubboActuatorInfo GetDubboActuatorSuite(string serviceName , LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random)
         {
+            AvailableDubboActuatorInfo availableDubboActuatorInfo = new AvailableDubboActuatorInfo();
             if (string.IsNullOrEmpty(serviceName))
             {
                 serviceName = DefaultServiceName;
@@ -72,14 +91,28 @@ namespace DubboNet.Clients
             }
             if(_dubboServiceDriverCollection.ContainsKey(serviceName))
             {
-                _dubboServiceDriverCollection[serviceName].GetDubboActuatorSuite(loadBalanceMode);
+                availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver;
+                availableDubboActuatorInfo.ErrorMes = $"can not find {serviceName} in _dubboServiceDriverCollection";
             }
-            return null;
+            else
+            {
+                availableDubboActuatorInfo.AvailableDubboActuatorSuite = _dubboServiceDriverCollection[serviceName].GetDubboActuatorSuite(loadBalanceMode);
+                if(availableDubboActuatorInfo.AvailableDubboActuatorSuite == null)
+                {
+                    availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator;
+                }
+                else
+                {
+                    availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite;
+                    availableDubboActuatorInfo.NowDubboServiceDriver = _dubboServiceDriverCollection[serviceName];
+                }
+            }
+            return availableDubboActuatorInfo;
         }
         
         public async Task<DubboRequestResult> SendRequestAsync(string funcEntrance, string req)
         {
-            DubboActuatorSuite nowDubboActuator = GetDubboActuatorSuite(null);
+            DubboActuatorSuite nowDubboActuator =GetDubboActuatorSuite(null).AvailableDubboActuatorSuite;
             return await nowDubboActuator.SendQuery(funcEntrance, req);
         }
 
