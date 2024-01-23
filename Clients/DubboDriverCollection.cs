@@ -19,6 +19,7 @@ namespace DubboNet.Clients
                 Unkonw,
                 GetDubboActuatorSuite,
                 NoDubboServiceDriver,
+                NoActuatorInService,
                 NoAvailableActuator,
                 NetworkError
             }
@@ -60,7 +61,9 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentNullException(nameof(serviceName));
             }
-            if (!(dbEpList?.Count > 0))
+            //dbEpList内容为空，服务节点都没有了也是有可能的，也要保留这个服务
+            //if (!(dbEpList?.Count > 0))
+            if (dbEpList==null)
             {
                 throw new ArgumentException("dbEpList can not be empty", nameof(dbEpList));
             }
@@ -78,6 +81,13 @@ namespace DubboNet.Clients
             }
         }
 
+        /// <summary>
+        /// 根据服务名称获取可用的DubboActuatorSuite
+        /// </summary>
+        /// <param name="serviceName"></param>
+        /// <param name="loadBalanceMode"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
         public AvailableDubboActuatorInfo GetDubboActuatorSuite(string serviceName , LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random)
         {
             AvailableDubboActuatorInfo availableDubboActuatorInfo = new AvailableDubboActuatorInfo();
@@ -91,21 +101,28 @@ namespace DubboNet.Clients
             }
             if(_dubboServiceDriverCollection.ContainsKey(serviceName))
             {
-                availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver;
-                availableDubboActuatorInfo.ErrorMes = $"can not find {serviceName} in _dubboServiceDriverCollection";
-            }
-            else
-            {
                 availableDubboActuatorInfo.AvailableDubboActuatorSuite = _dubboServiceDriverCollection[serviceName].GetDubboActuatorSuite(loadBalanceMode);
-                if(availableDubboActuatorInfo.AvailableDubboActuatorSuite == null)
+                if (availableDubboActuatorInfo.AvailableDubboActuatorSuite == null)
                 {
                     availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator;
                 }
                 else
                 {
-                    availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite;
+                    if (_dubboServiceDriverCollection[serviceName].InnerActuatorSuites.Count == 0)
+                    {
+                        availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService;
+                    }
+                    else
+                    {
+                        availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite;
+                    }
                     availableDubboActuatorInfo.NowDubboServiceDriver = _dubboServiceDriverCollection[serviceName];
                 }
+            }
+            else
+            {
+                availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver;
+                availableDubboActuatorInfo.ErrorMes = $"can not find {serviceName} in _dubboServiceDriverCollection";
             }
             return availableDubboActuatorInfo;
         }

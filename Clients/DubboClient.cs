@@ -44,10 +44,10 @@ namespace DubboNet.Clients
                 return Task.FromResult(0);
             }
         }
-        public class SeviceEndPointsInfo
+        public class ServiceEndPointsInfo
         {
             public string ErrorInfo { get;  set; } = null;
-            public List<EndPoint> EndPoints { get;  set; } = new List<EndPoint>();
+            public List<IPEndPoint> EndPoints { get;  set; } = new List<IPEndPoint>();
         }
 
         private MyZookeeper _innerMyZookeeper;
@@ -159,13 +159,35 @@ namespace DubboNet.Clients
                 throw new ArgumentException("can not find the ServiceName or FuncName");
             }
             AvailableDubboActuatorInfo availableDubboActuatorInfo = _dubboDriverCollection.GetDubboActuatorSuite(nowServiceName, NowLoadBalanceMode);
-            if(availableDubboActuatorInfo.ResultType== AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
+            //获取到可用的DubboActuatorSuite
+            if (availableDubboActuatorInfo.ResultType== AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
             {
                 return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}.{nowFuncName}", req);
             }
-            else if(availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
+            //没有_dubboDriverCollection没有目标服务，尝试添加服务节点
+            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
             {
-                SeviceEndPointsInfo seviceEndPointsInfo = await GetSeviceProviderEndPoints(nowServiceName);
+                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(nowServiceName);
+                if(serviceEndPointsInfo.ErrorInfo!=null)
+                {
+                    string tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
+                    MyLogger.LogWarning(tempErrorMes);
+                    return new DubboRequestResult()
+                    {
+                        ServiceElapsed = -1,
+                        ErrorMeaasge = tempErrorMes
+                    };
+                }
+                else
+                {
+                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
+                    return await SendRequestAsync(funcEndPoint, req);
+                }
+            }
+            //服务里的节点信息为空
+            else if(availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
+            {
+
             }
             else
             {
@@ -174,36 +196,42 @@ namespace DubboNet.Clients
             throw new NotImplementedException();
         }
 
-        public async Task<SeviceEndPointsInfo> GetSeviceProviderEndPoints(string serviceName)
+        /// <summary>
+        /// 根据服务名，在注册中心查找服务节点信息
+        /// </summary>
+        /// <param name="serviceName"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public async Task<ServiceEndPointsInfo> GetSeviceProviderEndPoints(string serviceName)
         {
             if(string.IsNullOrEmpty(serviceName))
             {
                 throw new ArgumentNullException(nameof(serviceName));
             }
-            SeviceEndPointsInfo seviceEndPointsInfo = new SeviceEndPointsInfo();
+            ServiceEndPointsInfo serviceEndPointsInfo = new ServiceEndPointsInfo();
             string nowFullPath = $"{DubboRootPath}{serviceName}/providers";
             Stat stat =await _innerMyZookeeper.ExistsAsync(nowFullPath);
             if (stat==null)
             {
                 if((await _innerMyZookeeper.ExistsAsync($"{DubboRootPath}{serviceName}"))==null)
                 {
-                    seviceEndPointsInfo.ErrorInfo = $"serviceName [{serviceName}] is error";
+                    serviceEndPointsInfo.ErrorInfo = $"serviceName [{serviceName}] is error";
                 }
                 else
                 {
-                    seviceEndPointsInfo.ErrorInfo = $"no provider in [{serviceName}]";
+                    serviceEndPointsInfo.ErrorInfo = $"no provider in [{serviceName}]";
                 }
             }
             else if(stat.getNumChildren()<=0)
             {
-                seviceEndPointsInfo.ErrorInfo = $"no provider endpoint in [{serviceName}]";
+                serviceEndPointsInfo.ErrorInfo = $"no provider endpoint in [{serviceName}]";
             }
             else
             {
                 ChildrenResult childrenResult = await _innerMyZookeeper.GetChildrenAsync(nowFullPath).ConfigureAwait(false);
                 if (childrenResult == null)
                 {
-                    seviceEndPointsInfo.ErrorInfo = $"GetChildrenAsync error [{serviceName}]";
+                    serviceEndPointsInfo.ErrorInfo = $"GetChildrenAsync error [{serviceName}]";
                 }
                 {
                     foreach(var child in childrenResult.Children)
@@ -217,7 +245,7 @@ namespace DubboNet.Clients
                                 IPAddress nowIp;
                                 if (IPAddress.TryParse(nowDubboUri.Host, out nowIp))
                                 {
-                                    seviceEndPointsInfo.EndPoints.Add(new IPEndPoint(nowIp, nowDubboUri.Port));
+                                    serviceEndPointsInfo.EndPoints.Add(new IPEndPoint(nowIp, nowDubboUri.Port));
                                 }
                                 else
                                 {
@@ -240,9 +268,14 @@ namespace DubboNet.Clients
                     }
                 }
             }
-            return seviceEndPointsInfo;
+            return serviceEndPointsInfo;
         }
 
+        /// <summary>
+        /// 根据funcEndPoint获取服务名称与方法名称（用于参数解析，如果需要使用默认名称返回）
+        /// </summary>
+        /// <param name="funcEndPoint"></param>
+        /// <returns></returns>
         private Tuple<string,string> GetSeviceNameFormFuncEndPoint(string funcEndPoint)
         {
             string serviceName, funName = null;

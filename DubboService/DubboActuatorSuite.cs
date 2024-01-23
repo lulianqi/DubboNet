@@ -327,7 +327,7 @@ namespace DubboNet.DubboService
         /// <summary>
         /// 初始化DubboTesterSuite，获取Func列表及详情
         /// </summary>
-        /// <param name="serviceName">serviceName将被设置为DefaultServiceName，并且只会获取DefaultService里的Func（默认为空将使用DefaultServiceName，如果DefaultServiceName为空，将获取所有sevice里的Func列表,如果使用*将将DefaultServiceName设置为null）</param>
+        /// <param name="serviceName">serviceName将被设置为DefaultServiceName，并且只会获取DefaultService里的Func（默认为空将使用DefaultServiceName，如果DefaultServiceName为空，将获取所有service里的Func列表,如果使用*将将DefaultServiceName设置为null）</param>
         /// <returns>是否成功（成功后DubboServiceFuncCollection将被跟新，否则DubboServiceFuncCollection被清空）</returns>
         public async ValueTask<bool> InitServiceAsync(string serviceName = null)
         {

@@ -121,6 +121,10 @@ namespace DubboNet.Clients
 
         public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode)
         {
+            if(InnerActuatorSuites.Count==0)
+            {
+                return null;
+            }
             //未实现
             return InnerActuatorSuites.First().Value;
         }
