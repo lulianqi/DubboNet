@@ -12,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using static DubboNet.Clients.DubboClient;
 using static DubboNet.Clients.DubboDriverCollection;
 using static DubboNet.DubboService.DubboActuator;
 
@@ -29,19 +30,26 @@ namespace DubboNet.Clients
             ConsistentHash
         }
 
-        public class DubboClientZookeeperWatcher : Watcher
+        internal class DubboClientZookeeperWatcher : Watcher
         {
-            public string Name { get; private set; }
 
-            public DubboClientZookeeperWatcher(DubboClient dubboClient , string name)
+            public string Name { get; private set; }
+            public DubboClient InnerDubboClient { get; private set; }
+
+            public DubboClientZookeeperWatcher(DubboClient dubboClient , string name = null)
             {
-                Name = name;
+                Name = name?? "DubboClientZookeeperWatcher";
+                InnerDubboClient= dubboClient;
             }
 
-            public override Task process(WatchedEvent @event)
+            public override async Task process(WatchedEvent @event)
             {
-                Console.WriteLine($"{Name} recieve: Path-{@event.getPath()}     State-{@event.getState()}    Type-{@event.get_Type()}");
-                return Task.FromResult(0);
+                MyLogger.LogInfo($"{Name} recieve: Path-{@event.getPath()}     State-{@event.getState()}    Type-{@event.get_Type()}");
+                if (@event.get_Type() == Event.EventType.NodeChildrenChanged)
+                {
+                    await InnerDubboClient.ReflushProviderByPathAsync(@event.getPath());
+                }
+                //return Task.FromResult(0);
             }
         }
         public class ServiceEndPointsInfo
@@ -51,6 +59,8 @@ namespace DubboNet.Clients
         }
 
         private MyZookeeper _innerMyZookeeper;
+
+        private DubboClientZookeeperWatcher _dubboClientZookeeperWatcher;
 
         private DubboDriverCollection _dubboDriverCollection;
 
@@ -95,6 +105,7 @@ namespace DubboNet.Clients
                 throw new ArgumentException($"“{nameof(zookeeperCoonectString)}”不能为 null 或空。", nameof(zookeeperCoonectString));
             }
             _innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
+            _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
             _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection);
             DefaultFuncName = null;
             DefaultServiceName = null;
@@ -164,7 +175,7 @@ namespace DubboNet.Clients
             {
                 return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}.{nowFuncName}", req);
             }
-            //没有_dubboDriverCollection没有目标服务，尝试添加服务节点
+            //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
             {
                 ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(nowServiceName);
@@ -184,8 +195,13 @@ namespace DubboNet.Clients
                     return await SendRequestAsync(funcEndPoint, req);
                 }
             }
-            //服务里的节点信息为空
-            else if(availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
+            //没有获取到可用的DubboActuatorSuite，因为服务里的节点信息为空
+            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
+            {
+
+            }
+            //没有获取到可用的DubboActuatorSuite，因为没有可用的DubboActuatorSuite
+            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator)
             {
 
             }
@@ -196,20 +212,42 @@ namespace DubboNet.Clients
             throw new NotImplementedException();
         }
 
+        private async Task ReflushProviderByPathAsync(string nowFullPath)
+        {
+            ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(nowFullPath,true);
+            if (serviceEndPointsInfo.ErrorInfo != null)
+            {
+                MyLogger.LogWarning($"[ReflushProviderByPathAsync] fail by {nowFullPath} : serviceEndPointsInfo.ErrorInfo");
+            }
+            else
+            {
+                if (nowFullPath.StartsWith(DubboRootPath) && nowFullPath.EndsWith("/providers"))
+                {
+                    string nowServiceName = nowFullPath.Substring(DubboRootPath.Length, nowFullPath.Length- DubboRootPath.Length - "/providers".Length);
+                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
+                }
+                else
+                {
+                    MyLogger.LogWarning($"[ReflushProviderByPathAsync] fail : {nowFullPath} is error path for Service");
+                }
+            }
+        }
+
         /// <summary>
         /// 根据服务名，在注册中心查找服务节点信息
         /// </summary>
         /// <param name="serviceName"></param>
+        /// <param name="isFullPath"></param>
         /// <returns></returns>
         /// <exception cref="ArgumentNullException"></exception>
-        public async Task<ServiceEndPointsInfo> GetSeviceProviderEndPoints(string serviceName)
+        private async Task<ServiceEndPointsInfo> GetSeviceProviderEndPoints(string serviceName ,bool isFullPath = false)
         {
             if(string.IsNullOrEmpty(serviceName))
             {
                 throw new ArgumentNullException(nameof(serviceName));
             }
+            string nowFullPath = isFullPath? serviceName: $"{DubboRootPath}{serviceName}/providers";
             ServiceEndPointsInfo serviceEndPointsInfo = new ServiceEndPointsInfo();
-            string nowFullPath = $"{DubboRootPath}{serviceName}/providers";
             Stat stat =await _innerMyZookeeper.ExistsAsync(nowFullPath);
             if (stat==null)
             {
@@ -228,7 +266,7 @@ namespace DubboNet.Clients
             }
             else
             {
-                ChildrenResult childrenResult = await _innerMyZookeeper.GetChildrenAsync(nowFullPath).ConfigureAwait(false);
+                ChildrenResult childrenResult = await _innerMyZookeeper.GetChildrenAsync(nowFullPath,_dubboClientZookeeperWatcher).ConfigureAwait(false);
                 if (childrenResult == null)
                 {
                     serviceEndPointsInfo.ErrorInfo = $"GetChildrenAsync error [{serviceName}]";
