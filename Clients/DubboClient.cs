@@ -36,6 +36,11 @@ namespace DubboNet.Clients
             public string Name { get; private set; }
             public DubboClient InnerDubboClient { get; private set; }
 
+            /// <summary>
+            /// DubboClientZookeeperWatcher构造函数(仅用于DubboClient内部使用)
+            /// </summary>
+            /// <param name="dubboClient"></param>
+            /// <param name="name"></param>
             public DubboClientZookeeperWatcher(DubboClient dubboClient , string name = null)
             {
                 Name = name?? "DubboClientZookeeperWatcher";
@@ -47,7 +52,15 @@ namespace DubboNet.Clients
                 MyLogger.LogInfo($"{Name} recieve: Path-{@event.getPath()}     State-{@event.getState()}    Type-{@event.get_Type()}");
                 if (@event.get_Type() == Event.EventType.NodeChildrenChanged)
                 {
-                    await InnerDubboClient.ReflushProviderByPathAsync(@event.getPath());
+                    //如果@event.getPath()为空ReflushProviderAsync会抛出异常
+                    if(string.IsNullOrEmpty(@event.getPath()))
+                    {
+                        MyLogger.LogError("[DubboClientZookeeperWatcher] get empty path");
+                    }
+                    else
+                    {
+                        await InnerDubboClient.ReflushProviderAsync(@event.getPath());
+                    }
                 }
                 //return Task.FromResult(0);
             }
@@ -200,7 +213,7 @@ namespace DubboNet.Clients
             {
 
             }
-            //没有获取到可用的DubboActuatorSuite，因为没有可用的DubboActuatorSuite
+            //没有获取到可用的DubboActuatorSuite，因为没有可用的DubboActuatorSuite（比如配置的资源耗尽）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator)
             {
 
@@ -212,24 +225,36 @@ namespace DubboNet.Clients
             throw new NotImplementedException();
         }
 
-        private async Task ReflushProviderByPathAsync(string nowFullPath)
+        /// <summary>
+        /// 刷新服务节点信息
+        /// </summary>
+        /// <param name="serviceName"></param>
+        /// <param name="isFullPath"></param>
+        /// <returns></returns>
+        private async Task<bool> ReflushProviderAsync(string serviceName ,bool isFullPath = false)
         {
-            ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(nowFullPath,true);
+            ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(serviceName,isFullPath);
             if (serviceEndPointsInfo.ErrorInfo != null)
             {
-                MyLogger.LogWarning($"[ReflushProviderByPathAsync] fail by {nowFullPath} : serviceEndPointsInfo.ErrorInfo");
+                MyLogger.LogError($"[ReflushProviderByPathAsync] fail by {serviceName} : serviceEndPointsInfo.ErrorInfo");
+                return false;
             }
             else
             {
-                if (nowFullPath.StartsWith(DubboRootPath) && nowFullPath.EndsWith("/providers"))
+                string nowServiceName = serviceName;
+                if(isFullPath)
                 {
-                    string nowServiceName = nowFullPath.Substring(DubboRootPath.Length, nowFullPath.Length- DubboRootPath.Length - "/providers".Length);
-                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
+                    if (serviceName.StartsWith(DubboRootPath) && serviceName.EndsWith("/providers"))
+                    {
+                         nowServiceName = serviceName.Substring(DubboRootPath.Length, serviceName.Length- DubboRootPath.Length - "/providers".Length);
+                    }
+                    else
+                    {
+                        MyLogger.LogError($"[ReflushProviderByPathAsync] fail : {serviceName} is error path for Service");
+                        return false;
+                    }
                 }
-                else
-                {
-                    MyLogger.LogWarning($"[ReflushProviderByPathAsync] fail : {nowFullPath} is error path for Service");
-                }
+                return _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
             }
         }
 

@@ -55,7 +55,15 @@ namespace DubboNet.Clients
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
         }
 
-        public void AddDubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList)
+        /// <summary>
+        /// 添加&更新DubboDriverCollection中保持的DubboServiceDriver（如果需要根据dbEpList更新DubboServiceDriver里的节点信息）
+        /// </summary>
+        /// <param name="serviceName">服务名称</param>
+        /// <param name="dbEpList">服务的节点信息</param>
+        /// <returns>添加或更新是否对当前DubboDriverCollection的DubboServiceDriver有实际影响</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        /// <exception cref="ArgumentException"></exception>
+        public bool AddDubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList)
         {
             if (string.IsNullOrEmpty(serviceName))
             {
@@ -71,13 +79,14 @@ namespace DubboNet.Clients
             if (_dubboServiceDriverCollection.ContainsKey(serviceName))
             {
                 DubboServiceDriver tempDubboServiceDriver = _dubboServiceDriverCollection[serviceName];
-                tempDubboServiceDriver.UpdateEqualIPEndPoints(dbEpList);
+                return tempDubboServiceDriver.UpdateActuatorSuiteEndPoints(dbEpList)>0;
             }
             //需要创建新的DubboServiceDriver
             else
             {
                 DubboServiceDriver tempDubboServiceDriver = new DubboServiceDriver(serviceName, dbEpList, _sourceDubboActuatorSuiteCollection);
                 _dubboServiceDriverCollection.Add(serviceName, tempDubboServiceDriver);
+                return true;
             }
         }
 

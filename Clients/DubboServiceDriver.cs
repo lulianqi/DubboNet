@@ -55,12 +55,17 @@ namespace DubboNet.Clients
         /// 通过IPEndPoint添加ActuatorSuite (内部函数)
         /// </summary>
         /// <param name="ep">IPEndPoint</param>
-        private void AddActuatorSuite(IPEndPoint ep)
+        /// <returns>是否添加成功</returns>
+        private bool AddActuatorSuite(IPEndPoint ep)
         {
             if (_sourceDubboActuatorSuiteCollection.ContainsKey(ep))
             {
-                InnerActuatorSuites.Add(ep, _sourceDubboActuatorSuiteCollection[ep].ActuatorSuite);
-                _sourceDubboActuatorSuiteCollection[ep].ReferenceCount++;
+                //InnerActuatorSuites.Add(ep, _sourceDubboActuatorSuiteCollection[ep].ActuatorSuite);
+                if(InnerActuatorSuites.TryAdd(ep, _sourceDubboActuatorSuiteCollection[ep].ActuatorSuite))
+                {
+                    _sourceDubboActuatorSuiteCollection[ep].ReferenceCount++;
+                    return true;
+                }
             }
             else
             {
@@ -70,29 +75,36 @@ namespace DubboNet.Clients
                     ActuatorSuite = new DubboActuatorSuite(ep),
                     ReferenceCount = 0
                 };
-                InnerActuatorSuites.Add(ep, dubboActuatorSuiteEndPintInfo.ActuatorSuite);
-                dubboActuatorSuiteEndPintInfo.ReferenceCount++;
-                _sourceDubboActuatorSuiteCollection.Add(ep, dubboActuatorSuiteEndPintInfo);
+                if(InnerActuatorSuites.TryAdd(ep, dubboActuatorSuiteEndPintInfo.ActuatorSuite))
+                {
+                    dubboActuatorSuiteEndPintInfo.ReferenceCount++;
+                    _sourceDubboActuatorSuiteCollection.Add(ep, dubboActuatorSuiteEndPintInfo);
+                    return true;
+                }
             }
+            return false;
         }
 
         /// <summary>
         /// 更新DubboServiceDriver服务节点
         /// </summary>
         /// <param name="dbEpList"></param>
+        /// <returns>返回更新的节点数</returns>    
         /// <exception cref="ArgumentException"></exception>
-        public void UpdateEqualIPEndPoints(List<IPEndPoint> dbEpList)
+        public int UpdateActuatorSuiteEndPoints(List<IPEndPoint> dbEpList)
         {
             if (!(dbEpList?.Count > 0))
             {
                 throw new ArgumentException("dbEpList can not be empty", nameof(dbEpList));
             }
+            int changeCount=0;
             //移出多余节点
-            foreach(var insItem in  InnerActuatorSuites)
+            foreach(var insItem in InnerActuatorSuites)
             {
                 if(!dbEpList.Contains(insItem.Key))
                 {
                     InnerActuatorSuites.Remove(insItem.Key);
+                    changeCount++;
                     if(_sourceDubboActuatorSuiteCollection.ContainsKey(insItem.Key))
                     {
                         _sourceDubboActuatorSuiteCollection[insItem.Key].ReferenceCount--;
@@ -104,7 +116,7 @@ namespace DubboNet.Clients
                     }
                     else
                     {
-                        MyLogger.LogWarning($"[UpdateEqualIPEndPoints]_sourceDubboActuatorSuiteCollection not contain {insItem.Key}");
+                        MyLogger.LogError($"[UpdateEqualIPEndPoints]_sourceDubboActuatorSuiteCollection not contain {insItem.Key}");
                     }
                 }
             }
@@ -113,10 +125,10 @@ namespace DubboNet.Clients
             {
                 if(!InnerActuatorSuites.ContainsKey(epItem))
                 {
-                    AddActuatorSuite(epItem);
+                    if(AddActuatorSuite(epItem)) changeCount++;
                 }
             }
-
+            return changeCount;
         }
 
         public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode)
