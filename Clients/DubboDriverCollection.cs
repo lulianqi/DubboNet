@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Net;
 using static DubboNet.Clients.DubboClient;
 using System.Collections;
+using System.Collections.Concurrent;
 
 namespace DubboNet.Clients
 {
@@ -19,7 +20,9 @@ namespace DubboNet.Clients
         /// <summary>
         /// 内部维持的DubboServiceDriver（使用_sourceDubboActuatorSuiteCollection资源，复用服务资源）
         /// </summary>
-        private Dictionary<string, DubboServiceDriver> _dubboServiceDriverCollection = null;
+        //private Dictionary<string, DubboServiceDriver> _dubboServiceDriverCollection = null;
+        private ConcurrentDictionary<string, DubboServiceDriver> _dubboServiceDriverCollection = null;
+
 
         public int MaxConnectionPerEndpoint{ get; set; } = 5;
         public int CommandTimeout { get; set; } = 10 * 1000;
@@ -33,7 +36,8 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentNullException(nameof(dubboActuatorSuiteCollection));
             }
-            _dubboServiceDriverCollection = new Dictionary<string, DubboServiceDriver>();
+            //_dubboServiceDriverCollection = new Dictionary<string, DubboServiceDriver>();
+            _dubboServiceDriverCollection = new ConcurrentDictionary<string, DubboServiceDriver>();
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
         }
 
@@ -77,7 +81,8 @@ namespace DubboNet.Clients
             else
             {
                 DubboServiceDriver tempDubboServiceDriver = new DubboServiceDriver(serviceName, dbEpList, _sourceDubboActuatorSuiteCollection);
-                _dubboServiceDriverCollection.Add(serviceName, tempDubboServiceDriver);
+                //_dubboServiceDriverCollection.Add(serviceName, tempDubboServiceDriver);
+                _dubboServiceDriverCollection.TryAdd(serviceName, tempDubboServiceDriver);
                 return true;
             }
         }
@@ -137,8 +142,11 @@ namespace DubboNet.Clients
 
         internal class DubboServiceDriverEnumerator : IEnumerator
         {
-            Dictionary<string, DubboServiceDriver>.Enumerator _innerEnumerator = default;
-            private Dictionary<string, DubboServiceDriver> _driverCollection = null;
+            //private Dictionary<string, DubboServiceDriver>.Enumerator _innerEnumerator = default;
+            //private Dictionary<string, DubboServiceDriver> _driverCollection = null;
+            private IEnumerator<KeyValuePair<string, DubboServiceDriver>> _innerEnumerator = default;
+            private ConcurrentDictionary<string, DubboServiceDriver> _driverCollection = null;
+
 
             object IEnumerator.Current
             {
@@ -170,8 +178,9 @@ namespace DubboNet.Clients
 
             public void Reset()
             {
-                _innerEnumerator.Dispose();
-                _innerEnumerator = _driverCollection.GetEnumerator();
+                //_innerEnumerator.Dispose();
+                //_innerEnumerator = _driverCollection.GetEnumerator();
+                _innerEnumerator.Reset();
             }
         }
         #endregion
