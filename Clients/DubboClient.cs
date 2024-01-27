@@ -6,6 +6,7 @@ using org.apache.zookeeper;
 using org.apache.zookeeper.data;
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
@@ -13,9 +14,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using static DubboNet.Clients.DubboClient;
-using static DubboNet.Clients.DubboDriverCollection;
-using static DubboNet.DubboService.DubboActuator;
+
 
 namespace DubboNet.Clients
 {
@@ -76,7 +75,7 @@ namespace DubboNet.Clients
                     }
                     else if(InnerDubboClient.HasServiceDriver(@event.getPath()))
                     {
-                        await InnerDubboClient.ReflushProviderAsync(@event.getPath());
+                        await InnerDubboClient.ReflushProviderAsync(@event.getPath(),true);
                     }
                     else
                     {
@@ -111,6 +110,9 @@ namespace DubboNet.Clients
         private DubboDriverCollection _dubboDriverCollection;
 
         private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _retainDubboActuatorSuiteCollection = new Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>();
+
+        private ConcurrentDictionary<string, Task<ServiceEndPointsInfo>> _concurrentGetProviderEndPointsTasks = new ConcurrentDictionary<string, Task<ServiceEndPointsInfo>>();
+
 
         /// <summary>
         /// 注册中心的状态（内部状态，对调用方隐藏。实际上DubboClient网络状态是自动维护的，对外接口使用上是无状态的）
@@ -204,6 +206,88 @@ namespace DubboNet.Clients
             }
         }
 
+
+        public async Task<DubboRequestResult> SendRequestAsync(string funcEndPoint, string req)
+        {
+            Tuple<string, string> tuple = GetSeviceNameFormFuncEndPoint(funcEndPoint);
+            string nowServiceName = tuple.Item1;
+            string nowFuncName = tuple.Item2;
+            if (string.IsNullOrEmpty(nowServiceName) || string.IsNullOrEmpty(nowFuncName))
+            {
+                throw new ArgumentException("can not find the ServiceName or FuncName");
+            }
+            AvailableDubboActuatorInfo availableDubboActuatorInfo = _dubboDriverCollection.GetDubboActuatorSuite(nowServiceName, NowLoadBalanceMode);
+            //获取到可用的DubboActuatorSuite
+            if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
+            {
+                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}.{nowFuncName}", req);
+            }
+            //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
+            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
+            {
+                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPointsAsync(nowServiceName);
+                if (serviceEndPointsInfo.ErrorInfo != null)
+                {
+                    string tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
+                    MyLogger.LogWarning(tempErrorMes);
+                    return new DubboRequestResult()
+                    {
+                        ServiceElapsed = -1,
+                        ErrorMeaasge = tempErrorMes
+                    };
+                }
+                else
+                {
+                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
+                    return await SendRequestAsync(funcEndPoint, req);
+                }
+            }
+            //没有获取到可用的DubboActuatorSuite，因为服务里的节点信息为空
+            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
+            {
+                //实际上是有watch会自动更新，这里主动更新一次可以兼容watch异常的情况（这里会触发同一个路径注册2个watch，不过重复的watch只会触发一次）
+                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPointsAsync(nowServiceName);
+                string tempErrorMes = null;
+                if (serviceEndPointsInfo.ErrorInfo != null)
+                {
+                    tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
+                }
+                else if (serviceEndPointsInfo.EndPoints.Count > 0)
+                {
+                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
+                    return await SendRequestAsync(funcEndPoint, req);
+                }
+                else
+                {
+                    tempErrorMes = $"[SendRequestAsync] fail {nowServiceName} do not has any Provider";
+                }
+                MyLogger.LogWarning(tempErrorMes);
+                return new DubboRequestResult()
+                {
+                    ServiceElapsed = -1,
+                    ErrorMeaasge = tempErrorMes
+                };
+            }
+            //没有获取到可用的DubboActuatorSuite，因为没有可用的DubboActuatorSuite（比如配置的资源耗尽）
+            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator)
+            {
+                return new DubboRequestResult()
+                {
+                    ServiceElapsed = -1,
+                    ErrorMeaasge = $"NoAvailableActuator in {nowServiceName}"
+                };
+            }
+            else
+            {
+                return new DubboRequestResult()
+                {
+                    ServiceElapsed = -1,
+                    ErrorMeaasge = "Unkonw error"
+                };
+            }
+        }
+
+
         /// <summary>
         /// 是否已经存在ServiceDriver（内部调用，不用暴露）
         /// </summary>
@@ -286,86 +370,6 @@ namespace DubboNet.Clients
             }
         }
 
-        public async Task<DubboRequestResult> SendRequestAsync(string funcEndPoint ,string req)
-        {
-            Tuple<string, string> tuple = GetSeviceNameFormFuncEndPoint(funcEndPoint);
-            string nowServiceName = tuple.Item1;
-            string nowFuncName = tuple.Item2;
-            if(string.IsNullOrEmpty(nowServiceName)|| string.IsNullOrEmpty(nowFuncName)) 
-            {
-                throw new ArgumentException("can not find the ServiceName or FuncName");
-            }
-            AvailableDubboActuatorInfo availableDubboActuatorInfo = _dubboDriverCollection.GetDubboActuatorSuite(nowServiceName, NowLoadBalanceMode);
-            //获取到可用的DubboActuatorSuite
-            if (availableDubboActuatorInfo.ResultType== AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
-            {
-                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}.{nowFuncName}", req);
-            }
-            //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
-            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
-            {
-                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(nowServiceName);
-                if(serviceEndPointsInfo.ErrorInfo!=null)
-                {
-                    string tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
-                    MyLogger.LogWarning(tempErrorMes);
-                    return new DubboRequestResult()
-                    {
-                        ServiceElapsed = -1,
-                        ErrorMeaasge = tempErrorMes
-                    };
-                }
-                else
-                {
-                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
-                    return await SendRequestAsync(funcEndPoint, req);
-                }
-            }
-            //没有获取到可用的DubboActuatorSuite，因为服务里的节点信息为空
-            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
-            {
-                //实际上是有watch会自动更新，这里主动更新一次可以兼容watch异常的情况（这里会触发同一个路径注册2个watch，不过重复的watch只会触发一次）
-                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(nowServiceName);
-                string tempErrorMes = null;
-                if (serviceEndPointsInfo.ErrorInfo != null)
-                {
-                    tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
-                }
-                else if(serviceEndPointsInfo.EndPoints.Count>0)
-                {
-                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
-                    return await SendRequestAsync(funcEndPoint, req);
-                }
-                else
-                {
-                    tempErrorMes = $"[SendRequestAsync] fail {nowServiceName} do not has any Provider";
-                }
-                MyLogger.LogWarning(tempErrorMes);
-                return new DubboRequestResult()
-                {
-                    ServiceElapsed = -1,
-                    ErrorMeaasge = tempErrorMes
-                };
-            }
-            //没有获取到可用的DubboActuatorSuite，因为没有可用的DubboActuatorSuite（比如配置的资源耗尽）
-            else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator)
-            {
-                return new DubboRequestResult()
-                {
-                    ServiceElapsed = -1,
-                    ErrorMeaasge = $"NoAvailableActuator in {nowServiceName}"
-                };
-            }
-            else
-            {
-                return new DubboRequestResult()
-                {
-                    ServiceElapsed = -1,
-                    ErrorMeaasge = "Unkonw error"
-                };
-            }
-        }
-
         /// <summary>
         /// 刷新服务节点信息
         /// </summary>
@@ -374,7 +378,7 @@ namespace DubboNet.Clients
         /// <returns></returns>
         private async Task<bool> ReflushProviderAsync(string serviceName ,bool isFullPath = false)
         {
-            ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(serviceName,isFullPath);
+            ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPointsAsync(serviceName,isFullPath);
             if (serviceEndPointsInfo.ErrorInfo != null)
             {
                 MyLogger.LogError($"[ReflushProviderByPathAsync] fail by {serviceName} : serviceEndPointsInfo.ErrorInfo");
@@ -400,13 +404,36 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
+        /// 对GetSeviceProviderEndPointsAsync重复并发的封装（用于应对短时间并行同时对同一个serviceName节点信息进行获取，同时重复获会耗费不必要的性能，这里会复用可复用的Task完成获取任务）
+        /// </summary>
+        /// <param name="serviceName"></param>
+        /// <returns></returns>
+        private async Task<ServiceEndPointsInfo> ConcurrentGetProviderEndPoints(string serviceName)
+        {
+            if(_concurrentGetProviderEndPointsTasks.ContainsKey(serviceName))
+            {
+                return await _concurrentGetProviderEndPointsTasks[serviceName];
+            }
+            else
+            {
+                Task<ServiceEndPointsInfo> getProviderEndPointsTask = GetSeviceProviderEndPointsAsync(serviceName);
+                ServiceEndPointsInfo serviceEndPointsInfo = await getProviderEndPointsTask;
+                if(!_concurrentGetProviderEndPointsTasks.TryRemove(serviceName,out _))
+                {
+                    MyLogger.LogError($"[ConcurrentGetProviderEndPoints] {serviceName} TryRemove fail");
+                }
+                return serviceEndPointsInfo;
+            }
+        }
+
+        /// <summary>
         /// 根据服务名，在注册中心查找服务节点信息(如果服务存在会默认注册_dubboClientZookeeperWatcher，以达到自动更新的目的)
         /// </summary>
         /// <param name="serviceName"></param>
         /// <param name="isFullPath"></param>
         /// <returns></returns>
         /// <exception cref="ArgumentNullException"></exception>
-        private async Task<ServiceEndPointsInfo> GetSeviceProviderEndPoints(string serviceName ,bool isFullPath = false)
+        private async Task<ServiceEndPointsInfo> GetSeviceProviderEndPointsAsync(string serviceName ,bool isFullPath = false)
         {
             if(string.IsNullOrEmpty(serviceName))
             {
