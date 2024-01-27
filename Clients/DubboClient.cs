@@ -33,10 +33,17 @@ namespace DubboNet.Clients
 
         public enum RegistryState
         {
-            NotConnect,
+            Default,
+            DisConnect,
             Connecting,
             Connected,
+            TryConnect,
             LostConnect
+        }
+        public class ServiceEndPointsInfo
+        {
+            public string ErrorInfo { get;  set; } = null;
+            public List<IPEndPoint> EndPoints { get;  set; } = new List<IPEndPoint>();
         }
 
         internal class DubboClientZookeeperWatcher : Watcher
@@ -59,6 +66,7 @@ namespace DubboNet.Clients
             public override async Task process(WatchedEvent @event)
             {
                 MyLogger.LogInfo($"{Name} recieve: Path-{@event.getPath()}     State-{@event.getState()}    Type-{@event.get_Type()}");
+                //节点信息发生变化
                 if (@event.get_Type() == Event.EventType.NodeChildrenChanged)
                 {
                     //如果@event.getPath()为空ReflushProviderAsync会抛出异常
@@ -75,18 +83,26 @@ namespace DubboNet.Clients
                         MyLogger.LogInfo($"[DubboClientZookeeperWatcher] service has removed {@event.getPath()}");
                     }
                 }
+                //注册中心断开时
                 else if(@event.get_Type() == Event.EventType.None && @event.getState() == Event.KeeperState.Disconnected)
                 {
-
+                    InnerDubboClient.InnerRegistryState = RegistryState.DisConnect;
+                    MyLogger.LogInfo($"[DubboClientZookeeperWatcher] Disconnected , TryDoConnectRegistryTaskAsync start ");
+                    if (await InnerDubboClient.TryDoConnectRegistryTaskAsync())
+                    {
+                        MyLogger.LogInfo($"[DubboClientZookeeperWatcher] Reconnect , ReLoadDubboDriverCollection start ");
+                        await InnerDubboClient.ReLoadDubboDriverCollection();
+                    }
+                    else
+                    {
+                        MyLogger.LogInfo($"[DubboClientZookeeperWatcher] LostConnect , TryDoConnectRegistryTaskAsync end and can not reconnect ");
+                    }
                 }
                 //return Task.FromResult(0);
             }
         }
-        public class ServiceEndPointsInfo
-        {
-            public string ErrorInfo { get;  set; } = null;
-            public List<IPEndPoint> EndPoints { get;  set; } = new List<IPEndPoint>();
-        }
+       
+
 
         private MyZookeeper _innerMyZookeeper;
 
@@ -96,6 +112,10 @@ namespace DubboNet.Clients
 
         private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _retainDubboActuatorSuiteCollection = new Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>();
 
+        /// <summary>
+        /// 注册中心的状态（内部状态，对调用方隐藏。实际上DubboClient网络状态是自动维护的，对外接口使用上是无状态的）
+        /// </summary>
+        private RegistryState InnerRegistryState { get; set; } = RegistryState.Default;
 
         /// <summary>
         /// 获取只读的DubboActuatorSuiteCollection
@@ -132,7 +152,7 @@ namespace DubboNet.Clients
         {
             if (string.IsNullOrEmpty(zookeeperCoonectString))
             {
-                throw new ArgumentException($"“{nameof(zookeeperCoonectString)}”不能为 null 或空。", nameof(zookeeperCoonectString));
+                throw new ArgumentException($"“{nameof(zookeeperCoonectString)}” can not be null or empty", nameof(zookeeperCoonectString));
             }
             _innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
             _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
@@ -194,14 +214,76 @@ namespace DubboNet.Clients
             return _dubboDriverCollection.HasServiceDriver(serviceName);
         }
 
-        internal async Task ReLoadDubboDriverCollection()
+        /// <summary>
+        /// 尝试重新连接注册中心
+        /// </summary>
+        /// <param name="delayTime"></param>
+        /// <param name="timeOut"></param>
+        /// <returns></returns>
+        internal async Task<bool> TryDoConnectRegistryTaskAsync(int delayTime = 1000, int timeOut = 1000*60*10)
         {
+            DateTime expiredTime = DateTime.Now.AddMilliseconds(timeOut);
+            if (InnerRegistryState == RegistryState.TryConnect)
+            {
+                while (DateTime.Now < expiredTime)
+                {
+                    await Task.Delay(delayTime);
+                    if(InnerRegistryState == RegistryState.Connected)
+                    {
+                        return true;
+                    }
+                    else if(InnerRegistryState == RegistryState.TryConnect)
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        int remainTimeOut = (int)(expiredTime - DateTime.Now).TotalMilliseconds;
+                        if (remainTimeOut > 10)
+                        {
+                            return await TryDoConnectRegistryTaskAsync(delayTime, remainTimeOut);
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                }
+                return false;
+            }
+            InnerRegistryState = RegistryState.TryConnect;
+            if(timeOut==0)
+            {
 
+            }
+            while(DateTime.Now<expiredTime)
+            {
+                if (_innerMyZookeeper.IsConnected)
+                {
+                    InnerRegistryState = RegistryState.Connected;
+                    return true;
+                }
+                if(await _innerMyZookeeper.ConnectZooKeeperAsync())
+                {
+                    InnerRegistryState = RegistryState.Connected;
+                    return true;
+                }
+                await Task.Delay(delayTime);
+            }
+            InnerRegistryState = RegistryState.LostConnect;
+            return false;
         }
 
-        public async Task<DubboRequestResult> SendRequestAsync(string req)
+        /// <summary>
+        /// 重新刷新dubboDriverCollection服务节点信息（发生在注册中心异常断开恢复连接时，其一断开的时间节点信息可能会变化，其二重新连接后需要重新注册watch）
+        /// </summary>
+        /// <returns></returns>
+        internal async Task ReLoadDubboDriverCollection()
         {
-            throw new NotImplementedException();
+            foreach(DubboServiceDriver dubboServiceDriverItem in _dubboDriverCollection)
+            {
+                await ReflushProviderAsync(dubboServiceDriverItem.ServiceName);
+            }
         }
 
         public async Task<DubboRequestResult> SendRequestAsync(string funcEndPoint ,string req)
@@ -425,6 +507,9 @@ namespace DubboNet.Clients
             }
             return new Tuple<string,string>(serviceName, funName);
         }
+
+
+
 
         private async Task InitServiceHost()
         {
