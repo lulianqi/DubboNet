@@ -4,10 +4,10 @@ using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Text;
 
-namespace DubboNet.DubboService.DataModle
+namespace DubboNet.Clients.RegistryClient
 {
     [DataContract]
-    public class ZNode : IEnumerable,ICloneable, IDisposable
+    public class ZNode : IEnumerable, ICloneable, IDisposable
     {
         [DataContract]
         public enum ZNodeType
@@ -39,7 +39,7 @@ namespace DubboNet.DubboService.DataModle
                     {
                         child.ParentZNode = this;
                     }
-                    if (this.IsLeafNode) this.IsLeafNode = false;
+                    if (IsLeafNode) IsLeafNode = false;
                 }
             }
         }
@@ -85,19 +85,19 @@ namespace DubboNet.DubboService.DataModle
         /// <summary>
         /// 获取当前Znode的版本，对其子节点/孙节点的新增/删除操作后该值+1 （注意修改节点的值不会影响当前Version）
         /// </summary>
-        public int Version => this._version;
+        public int Version => _version;
         /// <summary>
         /// 是否含义子节点
         /// </summary>
-        public bool HasChildren => this._zNodeChildren?.Count > 0;
+        public bool HasChildren => _zNodeChildren?.Count > 0;
         /// <summary>
         /// 当前节点是否为根节点
         /// </summary>
-        public bool IsRootNode => this.ParentZNode == null;
+        public bool IsRootNode => ParentZNode == null;
         /// <summary>
         /// 获取子节点列表（只读，请不要直接修改改列表）
         /// </summary>
-        public IReadOnlyList<ZNode> Children => (IReadOnlyList<ZNode>)_zNodeChildren;
+        public IReadOnlyList<ZNode> Children => _zNodeChildren;
         /// <summary>
         /// 获取当前节点的完整路径（所有父节点路径拼接）
         /// </summary>
@@ -151,10 +151,10 @@ namespace DubboNet.DubboService.DataModle
             Path = path;
             Value = value;
             Type = type;
-            IsLeafNode = !(zNodeChildren?.Count>0);
+            IsLeafNode = !(zNodeChildren?.Count > 0);
         }
 
-        public ZNode():this(null,null,null,ZNodeType.Unknow)
+        public ZNode() : this(null, null, null, ZNodeType.Unknow)
         {
 
         }
@@ -165,9 +165,9 @@ namespace DubboNet.DubboService.DataModle
         private void UpdataVersion()
         {
             ZNode updataNode = this;
-            this._version++;
-            updataNode = this.ParentZNode;
-            while (updataNode!=null)
+            _version++;
+            updataNode = ParentZNode;
+            while (updataNode != null)
             {
                 updataNode._version++;
                 updataNode = updataNode.ParentZNode;
@@ -181,7 +181,7 @@ namespace DubboNet.DubboService.DataModle
         {
             _zNodeChildren?.Clear();
             UpdataVersion();
-            this.IsLeafNode = true;
+            IsLeafNode = true;
         }
 
         public ZNode GetZNodeByPath(string path)
@@ -191,11 +191,11 @@ namespace DubboNet.DubboService.DataModle
                 throw new ArgumentException("znode is null");
             }
             string[] pathAr = path.Split('/'); // /byrobot-schedule/node
-            if(pathAr[0]=="")
+            if (pathAr[0] == "")
             {
                 pathAr[0] = "/";
             }
-            if(this.Path!= pathAr[0])
+            if (Path != pathAr[0])
             {
                 return null;
             }
@@ -203,14 +203,14 @@ namespace DubboNet.DubboService.DataModle
             for (int i = 1; i < pathAr.Length; i++)
             {
                 resultNode = resultNode.ZNodeChildren.Find(nd => nd.Path == pathAr[i]);
-                if(resultNode==null)
+                if (resultNode == null)
                 {
                     break;
                 }
             }
             return resultNode;
         }
-        
+
         /// <summary>
         /// 为当前node添加子节点
         /// </summary>
@@ -228,7 +228,7 @@ namespace DubboNet.DubboService.DataModle
             znode.ParentZNode = this;
             ZNodeChildren.Add(znode);
             UpdataVersion();
-            if (this.IsLeafNode) this.IsLeafNode = false;
+            if (IsLeafNode) IsLeafNode = false;
         }
 
         /// <summary>
@@ -247,7 +247,7 @@ namespace DubboNet.DubboService.DataModle
                 if (ZNodeChildren.Remove(znode))
                 {
                     UpdataVersion();
-                    if (ZNodeChildren.Count == 0) this.IsLeafNode = true;
+                    if (ZNodeChildren.Count == 0) IsLeafNode = true;
                     return true;
                 }
             }
@@ -266,13 +266,13 @@ namespace DubboNet.DubboService.DataModle
         /// <param name="isCheckTreeList">是否检查znode是否属于当前znode，如果有可能不属于请保持默认值</param>
         /// <param name="isPromoteChildren">删除节点后是否将被删除的节点的子节点保留并上移</param>
         /// <returns>是否完成移除</returns>
-        public bool RemoveAny([System.Diagnostics.CodeAnalysis.NotNull] ZNode znode ,bool isCheckTreeList = true ,bool isPromoteChildren = false)
+        public bool RemoveAny([System.Diagnostics.CodeAnalysis.NotNull] ZNode znode, bool isCheckTreeList = true, bool isPromoteChildren = false)
         {
             if (znode == null)
             {
                 throw new ArgumentException("znode is null");
             }
-            if (!isCheckTreeList || (this.ToList()?.Contains(znode) ?? false))
+            if (!isCheckTreeList || (ToList()?.Contains(znode) ?? false))
             {
                 if (znode.ParentZNode == null)
                 {
@@ -305,16 +305,16 @@ namespace DubboNet.DubboService.DataModle
         public bool RemoveAny([System.Diagnostics.CodeAnalysis.NotNull] Func<ZNode, bool> removeNodeFilterFunc, bool isPromoteChildren = false)
         {
             List<ZNode> willRemoveNodeList = new List<ZNode>();
-            foreach(ZNode tempNode in this)
+            foreach (ZNode tempNode in this)
             {
-                if(removeNodeFilterFunc(tempNode))
+                if (removeNodeFilterFunc(tempNode))
                 {
                     willRemoveNodeList.Add(tempNode);
                 }
             }
             foreach (ZNode tempNode in willRemoveNodeList)
             {
-                this.RemoveAny(tempNode, false, isPromoteChildren);
+                RemoveAny(tempNode, false, isPromoteChildren);
             }
             return willRemoveNodeList.Count > 0;
         }
@@ -327,7 +327,7 @@ namespace DubboNet.DubboService.DataModle
         public List<ZNode> ToList()
         {
             List<ZNode> zNodes = new List<ZNode>();
-            foreach(ZNode node in this)
+            foreach (ZNode node in this)
             {
                 zNodes.Add(node);
             }
@@ -357,39 +357,39 @@ namespace DubboNet.DubboService.DataModle
         /// <param name="leafNodeFilterFunc">筛选器表达式（注意：满足条件将保留,请处理您传入函数的异常）</param>
         /// <param name="filterNodeDataType">设置匹配中节点数据类型（非必填，仅设置匹配节点，其上级节点虽然也会被保留但不会被设置该节点类型）</param>
         /// <returns>返回结果树（将会是一个新的ZNode，筛选不会改变当前树的结构）</returns>
-        public ZNode FilterLeafNode([System.Diagnostics.CodeAnalysis.NotNull] Func<ZNode,bool> leafNodeFilterFunc,string filterNodeDataType = null)
+        public ZNode FilterLeafNode([System.Diagnostics.CodeAnalysis.NotNull] Func<ZNode, bool> leafNodeFilterFunc, string filterNodeDataType = null)
         {
-            ZNode filterResultNode = this.DeepClone();
+            ZNode filterResultNode = DeepClone();
             List<ZNode> leafs = filterResultNode.GetLeafNodeList();
             List<ZNode> skipLeafs = new List<ZNode>();
             List<ZNode> willDelNodeList = filterResultNode.ToList();
-            foreach(var tempNode in leafs)
+            foreach (var tempNode in leafs)
             {
-                if(skipLeafs.Contains(tempNode))
+                if (skipLeafs.Contains(tempNode))
                 {
                     continue;
                 }
-                if(leafNodeFilterFunc(tempNode))
+                if (leafNodeFilterFunc(tempNode))
                 {
                     willDelNodeList.Remove(tempNode);
-                    if(!string.IsNullOrEmpty(filterNodeDataType))
+                    if (!string.IsNullOrEmpty(filterNodeDataType))
                     {
                         tempNode.NodeDataType = filterNodeDataType;
                     }
-                    if (tempNode.ParentZNode!=null)
+                    if (tempNode.ParentZNode != null)
                     {
                         //如果该叶子需要保留，则统一先处理他的兄弟节点，提前删除掉，避免反复遍历(因为如果后面发现兄弟节点也符合条件会反复保留其父节点)
                         foreach (ZNode brotherNode in tempNode.ParentZNode.ZNodeChildren)
                         {
-                            if(brotherNode == tempNode)
+                            if (brotherNode == tempNode)
                             {
                                 continue;
                             }
-                            if(brotherNode.HasChildren)
+                            if (brotherNode.HasChildren)
                             {
                                 continue;
                             }
-                            if(leafNodeFilterFunc(brotherNode))
+                            if (leafNodeFilterFunc(brotherNode))
                             {
                                 willDelNodeList.Remove(brotherNode);
                                 if (!string.IsNullOrEmpty(filterNodeDataType))
@@ -403,7 +403,7 @@ namespace DubboNet.DubboService.DataModle
 
                         //需要保留的叶子节点其父节点都需要保留
                         ZNode tempParent = tempNode.ParentZNode;
-                        while(tempParent != null)
+                        while (tempParent != null)
                         {
                             willDelNodeList.Remove(tempParent);
                             tempParent = tempParent.ParentZNode;
@@ -412,7 +412,7 @@ namespace DubboNet.DubboService.DataModle
                 }
             }
 
-            foreach(ZNode delNode in willDelNodeList)
+            foreach (ZNode delNode in willDelNodeList)
             {
                 filterResultNode.RemoveAny(delNode, false);
             }
@@ -430,22 +430,22 @@ namespace DubboNet.DubboService.DataModle
         /// <returns></returns>
         public ZNode DeepClone()
         {
-            ZNode cloneNode = new ZNode(null, this.Path, this.Value, this.Type);
-            cloneNode.NodeDataType = this.NodeDataType;
+            ZNode cloneNode = new ZNode(null, Path, Value, Type);
+            cloneNode.NodeDataType = NodeDataType;
             cloneNode.ParentZNode = null;//被克隆出来的node不保有父级关系
-            if(cloneNode.Tag is ICloneable)
+            if (cloneNode.Tag is ICloneable)
             {
-                cloneNode.Tag = ((ICloneable)this.Tag).Clone();
+                cloneNode.Tag = ((ICloneable)Tag).Clone();
             }
             else
             {
-                cloneNode.Tag = this.Tag;
+                cloneNode.Tag = Tag;
             }
             cloneNode._version = 0;//克隆Znode版本全部重置为0
-            if (this.ZNodeChildren?.Count > 0)
+            if (ZNodeChildren?.Count > 0)
             {
                 cloneNode.ZNodeChildren = new List<ZNode>();
-                foreach (ZNode childNode in this.ZNodeChildren)
+                foreach (ZNode childNode in ZNodeChildren)
                 {
                     cloneNode.AddChildren(childNode.DeepClone());
                 }
@@ -548,7 +548,7 @@ namespace DubboNet.DubboService.DataModle
                         }
 
                     }
-                    
+
                 }
             }
 
@@ -574,9 +574,9 @@ namespace DubboNet.DubboService.DataModle
         {
             if (!IsDisposed)
             {
-                if (this.HasChildren)
+                if (HasChildren)
                 {
-                    foreach (var child in this.ZNodeChildren)
+                    foreach (var child in ZNodeChildren)
                     {
                         child.Dispose();
                     }
@@ -604,7 +604,7 @@ namespace DubboNet.DubboService.DataModle
             // 不要更改此代码。请将清理代码放入“Dispose(bool disposing)”方法中
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
-        } 
+        }
         #endregion
 
     }

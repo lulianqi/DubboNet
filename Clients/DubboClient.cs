@@ -1,4 +1,5 @@
-﻿using DubboNet.DubboService;
+﻿using DubboNet.Clients.RegistryClient;
+using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
 using MyCommonHelper;
 using org.apache.zookeeper;
@@ -30,6 +31,14 @@ namespace DubboNet.Clients
             ConsistentHash
         }
 
+        public enum RegistryState
+        {
+            NotConnect,
+            Connecting,
+            Connected,
+            LostConnect
+        }
+
         internal class DubboClientZookeeperWatcher : Watcher
         {
 
@@ -57,10 +66,18 @@ namespace DubboNet.Clients
                     {
                         MyLogger.LogError("[DubboClientZookeeperWatcher] get empty path");
                     }
-                    else
+                    else if(InnerDubboClient.HasServiceDriver(@event.getPath()))
                     {
                         await InnerDubboClient.ReflushProviderAsync(@event.getPath());
                     }
+                    else
+                    {
+                        MyLogger.LogInfo($"[DubboClientZookeeperWatcher] service has removed {@event.getPath()}");
+                    }
+                }
+                else if(@event.get_Type() == Event.EventType.None && @event.getState() == Event.KeeperState.Disconnected)
+                {
+
                 }
                 //return Task.FromResult(0);
             }
@@ -167,6 +184,20 @@ namespace DubboNet.Clients
             }
         }
 
+        /// <summary>
+        /// 是否已经存在ServiceDriver（内部调用，不用暴露）
+        /// </summary>
+        /// <param name="serviceName"></param>
+        /// <returns></returns>
+        internal bool HasServiceDriver(string serviceName)
+        {
+            return _dubboDriverCollection.HasServiceDriver(serviceName);
+        }
+
+        internal async Task ReLoadDubboDriverCollection()
+        {
+
+        }
 
         public async Task<DubboRequestResult> SendRequestAsync(string req)
         {
@@ -211,18 +242,46 @@ namespace DubboNet.Clients
             //没有获取到可用的DubboActuatorSuite，因为服务里的节点信息为空
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
             {
-
+                //实际上是有watch会自动更新，这里主动更新一次可以兼容watch异常的情况（这里会触发同一个路径注册2个watch，不过重复的watch只会触发一次）
+                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPoints(nowServiceName);
+                string tempErrorMes = null;
+                if (serviceEndPointsInfo.ErrorInfo != null)
+                {
+                    tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
+                }
+                else if(serviceEndPointsInfo.EndPoints.Count>0)
+                {
+                    _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
+                    return await SendRequestAsync(funcEndPoint, req);
+                }
+                else
+                {
+                    tempErrorMes = $"[SendRequestAsync] fail {nowServiceName} do not has any Provider";
+                }
+                MyLogger.LogWarning(tempErrorMes);
+                return new DubboRequestResult()
+                {
+                    ServiceElapsed = -1,
+                    ErrorMeaasge = tempErrorMes
+                };
             }
             //没有获取到可用的DubboActuatorSuite，因为没有可用的DubboActuatorSuite（比如配置的资源耗尽）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator)
             {
-
+                return new DubboRequestResult()
+                {
+                    ServiceElapsed = -1,
+                    ErrorMeaasge = $"NoAvailableActuator in {nowServiceName}"
+                };
             }
             else
             {
-
+                return new DubboRequestResult()
+                {
+                    ServiceElapsed = -1,
+                    ErrorMeaasge = "Unkonw error"
+                };
             }
-            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -259,7 +318,7 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 根据服务名，在注册中心查找服务节点信息
+        /// 根据服务名，在注册中心查找服务节点信息(如果服务存在会默认注册_dubboClientZookeeperWatcher，以达到自动更新的目的)
         /// </summary>
         /// <param name="serviceName"></param>
         /// <param name="isFullPath"></param>

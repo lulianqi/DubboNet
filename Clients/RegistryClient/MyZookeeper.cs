@@ -1,5 +1,4 @@
-﻿using DubboNet.DubboService.DataModle;
-using MyCommonHelper;
+﻿using MyCommonHelper;
 using org.apache.zookeeper;
 using org.apache.zookeeper.data;
 using System;
@@ -10,9 +9,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace DubboNet.DubboService
+namespace DubboNet.Clients.RegistryClient
 {
-    public class MyZookeeper:IDisposable
+    public class MyZookeeper : IDisposable
     {
         public class MyStat : Stat, ICloneable
         {
@@ -166,7 +165,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 连接服务（请不要直接调用该方法，尝试使用ConnectZooKeeperAsync进行连接）
+        /// 连接服务（为避免应用层并行连接，请不要直接调用该方法，尝试使用ConnectZooKeeperAsync进行连接）
         /// </summary>
         /// <returns></returns>
         private async Task<bool> ConnectAsync()
@@ -505,7 +504,7 @@ namespace DubboNet.DubboService
         /// </summary>
         /// <param name="path">节点完全Path</param>
         /// <returns>ChildrenResult列表</returns>
-        public async Task<ChildrenResult> GetChildrenAsync(string path, Watcher watcher=null, int retryTime = 2)
+        public async Task<ChildrenResult> GetChildrenAsync(string path, Watcher watcher = null, int retryTime = 2)
         {
             //System.Diagnostics.Debug.WriteLine($"---------{path}----------\r\n{Thread.CurrentThread.ManagedThreadId}");
             if (watcher == null)

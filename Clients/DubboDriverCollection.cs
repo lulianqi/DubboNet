@@ -7,29 +7,14 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Net;
 using static DubboNet.Clients.DubboClient;
+using System.Collections;
+using DubboNet.Clients.RegistryClient;
 
 namespace DubboNet.Clients
 {
-    internal class DubboDriverCollection
+    internal class DubboDriverCollection:IEnumerable
     {
-        internal class AvailableDubboActuatorInfo
-        {
-            public enum GetDubboActuatorSuiteResultType
-            {
-                Unkonw,
-                GetDubboActuatorSuite,
-                NoDubboServiceDriver,
-                NoActuatorInService,
-                NoAvailableActuator,
-                NetworkError
-            }
-
-            public GetDubboActuatorSuiteResultType ResultType { get; set; }= GetDubboActuatorSuiteResultType.Unkonw;
-            public string ErrorMes { get; set; } = null;
-            public DubboServiceDriver NowDubboServiceDriver { get; set; }
-            public DubboActuatorSuite AvailableDubboActuatorSuite { get; set; }
-        }
-
+       
         /// <summary>
         /// 内部维持的DubboActuatorSuite（用于最大程度复用链接）
         /// </summary>
@@ -53,6 +38,16 @@ namespace DubboNet.Clients
             }
             _dubboServiceDriverCollection = new Dictionary<string, DubboServiceDriver>();
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
+        }
+
+        /// <summary>
+        /// 是否存在ServiceDriver
+        /// </summary>
+        /// <param name="serviceName"></param>
+        /// <returns></returns>
+        public bool HasServiceDriver(string serviceName)
+        {
+            return _dubboServiceDriverCollection.ContainsKey(serviceName);
         }
 
         /// <summary>
@@ -135,12 +130,53 @@ namespace DubboNet.Clients
             }
             return availableDubboActuatorInfo;
         }
-        
-        public async Task<DubboRequestResult> SendRequestAsync(string funcEntrance, string req)
+
+        #region 迭代器实现
+
+        public IEnumerator GetEnumerator()
         {
-            DubboActuatorSuite nowDubboActuator =GetDubboActuatorSuite(null).AvailableDubboActuatorSuite;
-            return await nowDubboActuator.SendQuery(funcEntrance, req);
+            return new DubboServiceDriverEnumerator(this);
         }
 
+        internal class DubboServiceDriverEnumerator : IEnumerator
+        {
+            Dictionary<string, DubboServiceDriver>.Enumerator _innerEnumerator = default;
+            private Dictionary<string, DubboServiceDriver> _driverCollection = null;
+
+            object IEnumerator.Current
+            {
+                get
+                {
+                    return Current;
+                }
+            }
+
+            public DubboServiceDriver Current
+            {
+                get
+                {
+                    return _innerEnumerator.Current.Value;
+                }
+            }
+
+
+            public DubboServiceDriverEnumerator(DubboDriverCollection dubboDriverCollection)
+            {
+                _driverCollection = dubboDriverCollection._dubboServiceDriverCollection;
+                _innerEnumerator = _driverCollection.GetEnumerator();
+            }
+
+            public bool MoveNext()
+            {
+                return _innerEnumerator.MoveNext();
+            }
+
+            public void Reset()
+            {
+                _innerEnumerator.Dispose();
+                _innerEnumerator = _driverCollection.GetEnumerator();
+            }
+        }
+        #endregion
     }
 }
