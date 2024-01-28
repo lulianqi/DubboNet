@@ -10,13 +10,18 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await TestForOverZookeeper();
+await TaskForDubboClient();
 Console.WriteLine("Enter to Exit");
+GC.Collect();
+GC.Collect();
+GC.Collect();
+GC.Collect();
+GC.Collect();
 Console.ReadLine();
 
 static async Task TaskForDubboClient()
 {
-    //await (new DubboClient("10.100.64.53:2181")).GetSeviceProviderEndPoints("com.byai.crm.aicrm.api.config.ConfigOptionFacade");
+    var x = (new DubboClient("10.100.64.53:2181")).DubboRootPath;
 }
 
 static async Task TestForOverZookeeper()

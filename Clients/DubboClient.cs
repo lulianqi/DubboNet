@@ -18,7 +18,7 @@ using System.Threading.Tasks;
 
 namespace DubboNet.Clients
 {
-    public class DubboClient
+    public class DubboClient:IDisposable
     {
 
         public enum LoadBalanceMode
@@ -45,6 +45,7 @@ namespace DubboNet.Clients
             public List<IPEndPoint> EndPoints { get;  set; } = new List<IPEndPoint>();
         }
 
+        private static MultiMyZookeeperStorage DubboClientMultiMyZookeeperStorage = new MultiMyZookeeperStorage();
 
         private MyZookeeper _innerMyZookeeper;
 
@@ -57,6 +58,8 @@ namespace DubboNet.Clients
         private ConcurrentDictionary<string, Task<ServiceEndPointsInfo>> _concurrentGetProviderEndPointsTasks = new ConcurrentDictionary<string, Task<ServiceEndPointsInfo>>();
 
         private volatile bool _isInReLoadDubboDriverCollectionTask = false;
+
+        private bool _isDisposed = false;
 
         /// <summary>
         /// 注册中心的状态（内部状态，对调用方隐藏。实际上DubboClient网络状态是自动维护的，对外接口使用上是无状态的）
@@ -100,7 +103,8 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentException($"“{nameof(zookeeperCoonectString)}” can not be null or empty", nameof(zookeeperCoonectString));
             }
-            _innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
+            //_innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
+            _innerMyZookeeper = DubboClientMultiMyZookeeperStorage.GetMyZookeeper(zookeeperCoonectString);
             _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
             _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection);
             DefaultFuncName = null;
@@ -516,6 +520,35 @@ namespace DubboNet.Clients
                 }
             }
             return resultZNodes;
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_isDisposed)
+            {
+                if (disposing)
+                {
+                    // TODO: 释放托管状态(托管对象)
+                }
+                DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(_innerMyZookeeper.ConnectionString);
+                // TODO: 释放未托管的资源(未托管的对象)并重写终结器
+                // TODO: 将大型字段设置为 null
+                _isDisposed = true;
+            }
+        }
+
+        // TODO: 仅当“Dispose(bool disposing)”拥有用于释放未托管资源的代码时才替代终结器
+        //~DubboClient()
+        //{
+        //    不要更改此代码。请将清理代码放入“Dispose(bool disposing)”方法中
+        //    Dispose(disposing: false);
+        //}
+
+        public void Dispose()
+        {
+            // 不要更改此代码。请将清理代码放入“Dispose(bool disposing)”方法中
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
         }
     }
 }
