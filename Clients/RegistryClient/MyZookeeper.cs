@@ -34,7 +34,7 @@ namespace DubboNet.Clients.RegistryClient
         /// </summary>
         private volatile bool innerLossConnectionFlag = false;
 
-        private ZooKeeper zooKeeper;
+        public ZooKeeper zooKeeper;
         private MyWatcher defaultWatch;
 
 
@@ -171,13 +171,17 @@ namespace DubboNet.Clients.RegistryClient
         private async Task<bool> ConnectAsync()
         {
             ShowLog("ConnectAsync");
+            if (zooKeeper != null)//用？判空，后面会await null
+            {
+                if(zooKeeper.getState() == ZooKeeper.States.CONNECTED|| zooKeeper.getState()== ZooKeeper.States.CONNECTEDREADONLY)
+                {
+                    return true;
+                }
+                await zooKeeper?.closeAsync();
+            }
             if (defaultWatch == null)
             {
                 defaultWatch = new MyWatcher("DefaultWatch");
-            }
-            if (zooKeeper != null)//用？判空，后面会await null
-            {
-                await zooKeeper?.closeAsync();
             }
             zooKeeper = new ZooKeeper(ConnectionString, SessionTimeOut, defaultWatch);
             await Task.Delay(20);

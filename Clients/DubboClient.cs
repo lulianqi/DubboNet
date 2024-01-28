@@ -32,75 +32,18 @@ namespace DubboNet.Clients
 
         public enum RegistryState
         {
-            Default,
-            DisConnect,
+            Default, //默认状态（在不需要关注状态的时候，该状态是不更新的，会保持默认状态）
+            DisConnect, //收到断开消息后，更新为DisConnect
             Connecting,
-            Connected,
-            TryConnect,
-            LostConnect
+            Connected, //连接成功后
+            TryConnect, //开始进入主动重新连接
+            LostConnect //主动重连超时了
         }
         public class ServiceEndPointsInfo
         {
             public string ErrorInfo { get;  set; } = null;
             public List<IPEndPoint> EndPoints { get;  set; } = new List<IPEndPoint>();
         }
-
-        internal class DubboClientZookeeperWatcher : Watcher
-        {
-
-            public string Name { get; private set; }
-            public DubboClient InnerDubboClient { get; private set; }
-
-            /// <summary>
-            /// DubboClientZookeeperWatcher构造函数(仅用于DubboClient内部使用)
-            /// </summary>
-            /// <param name="dubboClient"></param>
-            /// <param name="name"></param>
-            public DubboClientZookeeperWatcher(DubboClient dubboClient , string name = null)
-            {
-                Name = name?? "DubboClientZookeeperWatcher";
-                InnerDubboClient= dubboClient;
-            }
-
-            public override async Task process(WatchedEvent @event)
-            {
-                MyLogger.LogInfo($"{Name} recieve: Path-{@event.getPath()}     State-{@event.getState()}    Type-{@event.get_Type()}");
-                //节点信息发生变化
-                if (@event.get_Type() == Event.EventType.NodeChildrenChanged)
-                {
-                    //如果@event.getPath()为空ReflushProviderAsync会抛出异常
-                    if(string.IsNullOrEmpty(@event.getPath()))
-                    {
-                        MyLogger.LogError("[DubboClientZookeeperWatcher] get empty path");
-                    }
-                    else if(InnerDubboClient.HasServiceDriver(@event.getPath()))
-                    {
-                        await InnerDubboClient.ReflushProviderAsync(@event.getPath(),true);
-                    }
-                    else
-                    {
-                        MyLogger.LogInfo($"[DubboClientZookeeperWatcher] service has removed {@event.getPath()}");
-                    }
-                }
-                //注册中心断开时
-                else if(@event.get_Type() == Event.EventType.None && @event.getState() == Event.KeeperState.Disconnected)
-                {
-                    InnerDubboClient.InnerRegistryState = RegistryState.DisConnect;
-                    MyLogger.LogInfo($"[DubboClientZookeeperWatcher] Disconnected , TryDoConnectRegistryTaskAsync start ");
-                    if (await InnerDubboClient.TryDoConnectRegistryTaskAsync())
-                    {
-                        MyLogger.LogInfo($"[DubboClientZookeeperWatcher] Reconnect , ReLoadDubboDriverCollection start ");
-                        await InnerDubboClient.ReLoadDubboDriverCollection();
-                    }
-                    else
-                    {
-                        MyLogger.LogInfo($"[DubboClientZookeeperWatcher] LostConnect , TryDoConnectRegistryTaskAsync end and can not reconnect ");
-                    }
-                }
-                //return Task.FromResult(0);
-            }
-        }
-       
 
 
         private MyZookeeper _innerMyZookeeper;
@@ -113,11 +56,12 @@ namespace DubboNet.Clients
 
         private ConcurrentDictionary<string, Task<ServiceEndPointsInfo>> _concurrentGetProviderEndPointsTasks = new ConcurrentDictionary<string, Task<ServiceEndPointsInfo>>();
 
+        private volatile bool _isInReLoadDubboDriverCollectionTask = false;
 
         /// <summary>
         /// 注册中心的状态（内部状态，对调用方隐藏。实际上DubboClient网络状态是自动维护的，对外接口使用上是无状态的）
         /// </summary>
-        private RegistryState InnerRegistryState { get; set; } = RegistryState.Default;
+        internal RegistryState InnerRegistryState { get; set; } = RegistryState.Default;
 
         /// <summary>
         /// 获取只读的DubboActuatorSuiteCollection
@@ -225,7 +169,7 @@ namespace DubboNet.Clients
             //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
             {
-                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPointsAsync(nowServiceName);
+                ServiceEndPointsInfo serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(nowServiceName);
                 if (serviceEndPointsInfo.ErrorInfo != null)
                 {
                     string tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
@@ -246,7 +190,7 @@ namespace DubboNet.Clients
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
             {
                 //实际上是有watch会自动更新，这里主动更新一次可以兼容watch异常的情况（这里会触发同一个路径注册2个watch，不过重复的watch只会触发一次）
-                ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPointsAsync(nowServiceName);
+                ServiceEndPointsInfo serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(nowServiceName);
                 string tempErrorMes = null;
                 if (serviceEndPointsInfo.ErrorInfo != null)
                 {
@@ -299,14 +243,18 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 尝试重新连接注册中心
+        /// 尝试重新连接注册中心(用于注册中心断开后，开启一个重连任务)
+        /// 实际上ZooKeeper客户端会自动进行反复的重连，直到最终成功连接上ZooKeeper集群中的一台机器。再次连接上服务端的客户端有可能会处于以下两种状态之一。
+        /// CONNECTED：如果在会话超时时间内重新连接上了ZooKeeper集群中任意一台机器，那么被视为重连成功，EXPIRED：如果是在会话超时时间以外重新连接上，那么服务端其实已经对该会话进行了会话清理操作，因此再次连接上的会话将被视为非法会话。
+        /// 大部分情况都将是EXPIRED（同一个watch即使注册了很多path，也指挥收到一次）这个时候ZooKeeper是要重新构建才能正常使用的
         /// </summary>
         /// <param name="delayTime"></param>
         /// <param name="timeOut"></param>
         /// <returns></returns>
-        internal async Task<bool> TryDoConnectRegistryTaskAsync(int delayTime = 1000, int timeOut = 1000*60*10)
+        internal async Task<bool> TryDoConnectRegistryTaskAsync(int delayTime = 1000, int timeOut = 1000*60*30)
         {
             DateTime expiredTime = DateTime.Now.AddMilliseconds(timeOut);
+            //如果已经有TryDoConnectRegistryTaskAsync任务在进行，直接取结果，不用真的开启任务(这个时候是不会更新InnerRegistryState的)
             if (InnerRegistryState == RegistryState.TryConnect)
             {
                 while (DateTime.Now < expiredTime)
@@ -333,13 +281,21 @@ namespace DubboNet.Clients
                         }
                     }
                 }
-                return false;
+                return InnerRegistryState == RegistryState.Connected;
             }
             InnerRegistryState = RegistryState.TryConnect;
-            if(timeOut==0)
+            //如果timeOut为0则直接执行一次ConnectZooKeeperAsync
+            if (timeOut==0)
             {
-
+                if(await _innerMyZookeeper.ConnectZooKeeperAsync())
+                {
+                    InnerRegistryState = RegistryState.Connected;
+                    return true;
+                }
+                InnerRegistryState = RegistryState.LostConnect;
+                return false;
             }
+            //开始Retry任务
             while(DateTime.Now<expiredTime)
             {
                 if (_innerMyZookeeper.IsConnected)
@@ -364,10 +320,13 @@ namespace DubboNet.Clients
         /// <returns></returns>
         internal async Task ReLoadDubboDriverCollection()
         {
-            foreach(DubboServiceDriver dubboServiceDriverItem in _dubboDriverCollection)
+            if (_isInReLoadDubboDriverCollectionTask) return;
+            _isInReLoadDubboDriverCollectionTask = true;
+            foreach (DubboServiceDriver dubboServiceDriverItem in _dubboDriverCollection)
             {
                 await ReflushProviderAsync(dubboServiceDriverItem.ServiceName);
             }
+            _isInReLoadDubboDriverCollectionTask = false;
         }
 
         /// <summary>
@@ -376,9 +335,9 @@ namespace DubboNet.Clients
         /// <param name="serviceName"></param>
         /// <param name="isFullPath"></param>
         /// <returns></returns>
-        private async Task<bool> ReflushProviderAsync(string serviceName ,bool isFullPath = false)
+        internal async Task<bool> ReflushProviderAsync(string serviceName ,bool isFullPath = false)
         {
-            ServiceEndPointsInfo serviceEndPointsInfo = await GetSeviceProviderEndPointsAsync(serviceName,isFullPath);
+            ServiceEndPointsInfo serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(serviceName,isFullPath);
             if (serviceEndPointsInfo.ErrorInfo != null)
             {
                 MyLogger.LogError($"[ReflushProviderByPathAsync] fail by {serviceName} : serviceEndPointsInfo.ErrorInfo");
@@ -407,8 +366,9 @@ namespace DubboNet.Clients
         /// 对GetSeviceProviderEndPointsAsync重复并发的封装（用于应对短时间并行同时对同一个serviceName节点信息进行获取，同时重复获会耗费不必要的性能，这里会复用可复用的Task完成获取任务）
         /// </summary>
         /// <param name="serviceName"></param>
+        /// <param name="isFullPath"></param>
         /// <returns></returns>
-        private async Task<ServiceEndPointsInfo> ConcurrentGetProviderEndPoints(string serviceName)
+        private async Task<ServiceEndPointsInfo> ConcurrentGetProviderEndPoints(string serviceName, bool isFullPath = false)
         {
             if(_concurrentGetProviderEndPointsTasks.ContainsKey(serviceName))
             {
@@ -416,7 +376,7 @@ namespace DubboNet.Clients
             }
             else
             {
-                Task<ServiceEndPointsInfo> getProviderEndPointsTask = GetSeviceProviderEndPointsAsync(serviceName);
+                Task<ServiceEndPointsInfo> getProviderEndPointsTask = GetSeviceProviderEndPointsAsync(serviceName, isFullPath);
                 ServiceEndPointsInfo serviceEndPointsInfo = await getProviderEndPointsTask;
                 if(!_concurrentGetProviderEndPointsTasks.TryRemove(serviceName,out _))
                 {
@@ -459,6 +419,12 @@ namespace DubboNet.Clients
             }
             else
             {
+                //注册中心之前已经断开了，现在连接上了，需要重新更新watch
+                if(InnerRegistryState == RegistryState.LostConnect || InnerRegistryState == RegistryState.DisConnect)
+                {
+                    _ = ReLoadDubboDriverCollection();
+                }
+
                 ChildrenResult childrenResult = await _innerMyZookeeper.GetChildrenAsync(nowFullPath,_dubboClientZookeeperWatcher).ConfigureAwait(false);
                 if (childrenResult == null)
                 {
@@ -533,51 +499,6 @@ namespace DubboNet.Clients
                 funName = funcEndPoint;
             }
             return new Tuple<string,string>(serviceName, funName);
-        }
-
-
-
-
-        private async Task InitServiceHost()
-        {
-            string nowFuncPath = $"{DubboRootPath}{DefaultServiceName}";
-            ZNode tempZNode = await _innerMyZookeeper.GetZNodeTree(nowFuncPath);
-            if (tempZNode == null)
-            {
-                throw new Exception($"[GetServiceHost] error : can not GetZNodeTree from {DefaultServiceName} ");
-            }
-            List<ZNode> providersNodes = GetDubboProvidersNode(tempZNode);
-            //删除已经无效的节点
-            if (_dubboDriverCollection.Count > 0)
-            {
-                Func<DubboActuator, bool> filterFunc = new Func<DubboActuator, bool>((dt) =>
-                {
-                    bool isSholdAlive = false;
-                    foreach (ZNode providerNode in providersNodes)
-                    {
-                        string path = System.Web.HttpUtility.UrlDecode(providerNode.Path, System.Text.Encoding.UTF8);
-                        Uri uri = new Uri(path);
-                        if (dt.DubboHost == uri.Host && dt.DubboPort == uri.Port)
-                        {
-                            isSholdAlive = true;
-                            break;
-                        }
-                    }
-                    return !isSholdAlive;
-                });
-                //_dubboDriverCollection.RemoveByFilter(filterFunc);
-            }
-            //添加新节点
-            foreach (ZNode providerNode in providersNodes)
-            {
-                string path = System.Web.HttpUtility.UrlDecode(providerNode.Path, System.Text.Encoding.UTF8);
-                Uri uri = new Uri(path);
-                //if (!_dubboDriverCollection.IsInclude(uri.Host, uri.Port))
-                //{
-                //    _dubboDriverCollection.AddDubboMan(uri.Host, uri.Port);
-                //}
-            }
-
         }
 
 
