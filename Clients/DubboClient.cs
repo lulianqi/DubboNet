@@ -59,7 +59,7 @@ namespace DubboNet.Clients
 
         private volatile bool _isInReLoadDubboDriverCollectionTask = false;
 
-        private bool _isDisposed = false;
+        internal bool IsDisposed { get;private set;}= false;
 
         /// <summary>
         /// 注册中心的状态（内部状态，对调用方隐藏。实际上DubboClient网络状态是自动维护的，对外接口使用上是无状态的）
@@ -157,6 +157,10 @@ namespace DubboNet.Clients
 
         public async Task<DubboRequestResult> SendRequestAsync(string funcEndPoint, string req)
         {
+            if(IsDisposed)
+            {
+                throw new Exception("DubboClient is disposed");
+            }
             Tuple<string, string> tuple = GetSeviceNameFormFuncEndPoint(funcEndPoint);
             string nowServiceName = tuple.Item1;
             string nowFuncName = tuple.Item2;
@@ -302,6 +306,10 @@ namespace DubboNet.Clients
             //开始Retry任务
             while(DateTime.Now<expiredTime)
             {
+                if(IsDisposed)
+                {
+                    break;
+                }
                 if (_innerMyZookeeper.IsConnected)
                 {
                     InnerRegistryState = RegistryState.Connected;
@@ -381,6 +389,10 @@ namespace DubboNet.Clients
             else
             {
                 Task<ServiceEndPointsInfo> getProviderEndPointsTask = GetSeviceProviderEndPointsAsync(serviceName, isFullPath);
+                if(!_concurrentGetProviderEndPointsTasks.TryAdd(serviceName,getProviderEndPointsTask))
+                {
+                    MyLogger.LogError($"[ConcurrentGetProviderEndPoints] {serviceName} TryAdd fail");
+                }
                 ServiceEndPointsInfo serviceEndPointsInfo = await getProviderEndPointsTask;
                 if(!_concurrentGetProviderEndPointsTasks.TryRemove(serviceName,out _))
                 {
@@ -479,30 +491,30 @@ namespace DubboNet.Clients
         /// <returns></returns>
         private Tuple<string,string> GetSeviceNameFormFuncEndPoint(string funcEndPoint)
         {
-            string serviceName, funName = null;
+            string serviceName, funcName = null;
             if(string.IsNullOrEmpty(funcEndPoint))
             {
                 serviceName = DefaultServiceName;
-                funName = DefaultFuncName;
+                funcName = DefaultFuncName;
             }
             else if (funcEndPoint.Contains('#'))
             {
                 int tempSpitIndex = funcEndPoint.LastIndexOf('#');
-                serviceName = funcEndPoint.Substring(tempSpitIndex + 1);
-                funName = funcEndPoint.Remove(tempSpitIndex);
+                funcName = funcEndPoint.Substring(tempSpitIndex + 1);
+                serviceName = funcEndPoint.Remove(tempSpitIndex);
             }
-            else if (DefaultFuncName.Contains('.'))
+            else if (funcEndPoint.Contains('.'))
             {
                 int tempSpitIndex = funcEndPoint.LastIndexOf('.');
-                serviceName = funcEndPoint.Substring(tempSpitIndex + 1);
-                funName = funcEndPoint.Remove(tempSpitIndex);
+                funcName = funcEndPoint.Substring(tempSpitIndex + 1);
+                serviceName = funcEndPoint.Remove(tempSpitIndex);
             }
             else
             {
                 serviceName = DefaultServiceName;
-                funName = funcEndPoint;
+                funcName = funcEndPoint;
             }
-            return new Tuple<string,string>(serviceName, funName);
+            return new Tuple<string,string>(serviceName, funcName);
         }
 
 
@@ -524,7 +536,7 @@ namespace DubboNet.Clients
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!_isDisposed)
+            if (!IsDisposed)
             {
                 if (disposing)
                 {
@@ -533,16 +545,16 @@ namespace DubboNet.Clients
                 DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(_innerMyZookeeper.ConnectionString);
                 // TODO: 释放未托管的资源(未托管的对象)并重写终结器
                 // TODO: 将大型字段设置为 null
-                _isDisposed = true;
+                IsDisposed = true;
             }
         }
 
         // TODO: 仅当“Dispose(bool disposing)”拥有用于释放未托管资源的代码时才替代终结器
-        //~DubboClient()
-        //{
-        //    不要更改此代码。请将清理代码放入“Dispose(bool disposing)”方法中
-        //    Dispose(disposing: false);
-        //}
+        ~DubboClient()
+        {
+           //不要更改此代码。请将清理代码放入“Dispose(bool disposing)”方法中
+           Dispose(disposing: false);
+        }
 
         public void Dispose()
         {

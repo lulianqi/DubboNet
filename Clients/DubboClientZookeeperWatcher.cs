@@ -29,6 +29,11 @@ namespace DubboNet.Clients
         public override async Task process(WatchedEvent @event)
         {
             MyLogger.LogInfo($"{Name} recieve: Path-{@event.getPath()}     State-{@event.getState()}    Type-{@event.get_Type()}");
+            if(InnerDubboClient.IsDisposed)
+            {
+                MyLogger.LogWarning("[DubboClientZookeeperWatcher] dubbo client is disposed");
+                return;
+            }
             //节点信息发生变化
             if (@event.getState() == Event.KeeperState.SyncConnected && @event.get_Type() == Event.EventType.NodeChildrenChanged)
             {

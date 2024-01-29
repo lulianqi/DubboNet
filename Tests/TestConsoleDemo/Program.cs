@@ -12,16 +12,14 @@ using TestConsoleDemo.DataModle;
 Console.WriteLine("TestDemoConsole");
 await TaskForDubboClient();
 Console.WriteLine("Enter to Exit");
-GC.Collect();
-GC.Collect();
-GC.Collect();
-GC.Collect();
-GC.Collect();
+//GC.Collect();
 Console.ReadLine();
 
 static async Task TaskForDubboClient()
 {
-    var x = (new DubboClient("10.100.64.53:2181")).DubboRootPath;
+    var dubboClient  =new DubboClient("10.100.64.53:2181") ;
+    var result = await dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime","123392,1939");
+    Console.WriteLine(result.Result);
 }
 
 static async Task TestForOverZookeeper()
