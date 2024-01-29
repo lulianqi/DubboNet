@@ -145,15 +145,15 @@ namespace DubboNet.Clients
         {
             if (InnerActuatorSuites != null)
             {
-                foreach(var ias in InnerActuatorSuites)
+                foreach(var actuatorSuiteItem in InnerActuatorSuites)
                 {
-                    if(_sourceDubboActuatorSuiteCollection.ContainsKey(ias.Key))
+                    if(_sourceDubboActuatorSuiteCollection.ContainsKey(actuatorSuiteItem.Key))
                     {
-                        _sourceDubboActuatorSuiteCollection[ias.Key].ReferenceCount--;
-                        if(_sourceDubboActuatorSuiteCollection[ias.Key].ReferenceCount<=0)
+                        _sourceDubboActuatorSuiteCollection[actuatorSuiteItem.Key].ReferenceCount--;
+                        if(_sourceDubboActuatorSuiteCollection[actuatorSuiteItem.Key].ReferenceCount<=0)
                         {
-                            _sourceDubboActuatorSuiteCollection[ias.Key].ActuatorSuite.Dispose();
-                            _sourceDubboActuatorSuiteCollection.Remove(ias.Key);
+                            _sourceDubboActuatorSuiteCollection[actuatorSuiteItem.Key].ActuatorSuite.Dispose();
+                            _sourceDubboActuatorSuiteCollection.Remove(actuatorSuiteItem.Key);
                         }
                     }
                 }

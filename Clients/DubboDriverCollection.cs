@@ -10,7 +10,7 @@ using System.Collections.Concurrent;
 
 namespace DubboNet.Clients
 {
-    internal class DubboDriverCollection:IEnumerable
+    internal class DubboDriverCollection:IEnumerable,IDisposable
     {
        
         /// <summary>
@@ -184,5 +184,19 @@ namespace DubboNet.Clients
             }
         }
         #endregion
+
+        public void Dispose()
+        {
+            if(_dubboServiceDriverCollection!=null)
+            {
+                foreach(var item in _dubboServiceDriverCollection)
+                {
+                    item.Value.Dispose();
+                }
+            }
+            _dubboServiceDriverCollection = null;
+            _sourceDubboActuatorSuiteCollection = null;
+        }
+
     }
 }

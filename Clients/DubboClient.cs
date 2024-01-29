@@ -45,6 +45,13 @@ namespace DubboNet.Clients
             public List<IPEndPoint> EndPoints { get;  set; } = new List<IPEndPoint>();
         }
 
+        public class DubboClientConf
+        {
+            public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
+            public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
+
+        }
+
         private static MultiMyZookeeperStorage DubboClientMultiMyZookeeperStorage = new MultiMyZookeeperStorage();
 
         private MyZookeeper _innerMyZookeeper;
@@ -420,7 +427,11 @@ namespace DubboNet.Clients
             Stat stat =await _innerMyZookeeper.ExistsAsync(nowFullPath);
             if (stat==null)
             {
-                if((await _innerMyZookeeper.ExistsAsync($"{DubboRootPath}{serviceName}"))==null)
+                if(!_innerMyZookeeper.IsConnected)
+                {
+                    serviceEndPointsInfo.ErrorInfo = $"can not get [{serviceName}] that _innerMyZookeeper can not connect";
+                }
+                else if((await _innerMyZookeeper.ExistsAsync($"{DubboRootPath}{serviceName}"))==null)
                 {
                     serviceEndPointsInfo.ErrorInfo = $"serviceName [{serviceName}] is error";
                 }
@@ -542,9 +553,16 @@ namespace DubboNet.Clients
                 {
                     // TODO: 释放托管状态(托管对象)
                 }
-                DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(_innerMyZookeeper.ConnectionString);
                 // TODO: 释放未托管的资源(未托管的对象)并重写终结器
                 // TODO: 将大型字段设置为 null
+                DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(_innerMyZookeeper.ConnectionString);
+                _dubboDriverCollection.Dispose();
+                _dubboDriverCollection = null;
+                foreach(var item in _retainDubboActuatorSuiteCollection)
+                {
+                    item.Value?.ActuatorSuite.Dispose();
+                }
+                _retainDubboActuatorSuiteCollection = null;
                 IsDisposed = true;
             }
         }

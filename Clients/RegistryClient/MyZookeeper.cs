@@ -556,7 +556,7 @@ namespace DubboNet.Clients.RegistryClient
             T dataResult = default;
             try
             {
-                for (int i = retryTime; retryTime > 0; i--)
+                for (int i = retryTime; i > 0; i--)
                 {
                     if (await CheckConnectState())
                     {
