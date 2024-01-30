@@ -49,6 +49,7 @@ namespace DubboNet.Clients
         {
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
+            public int MaintainServiceNum { get; set; } = 20;
 
         }
 

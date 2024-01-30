@@ -54,6 +54,7 @@ namespace DubboNet.DubboService
         {
             public int MaxConnections { get; set; } = 20;
             public int AssistConnectionAliveTime { get; set; } = 60 * 5;
+            public int DubboRequestTimeout { get; set; } = 10 * 1000;
             public string DefaultServiceName { get; set; } = null;
 
         }
@@ -151,7 +152,7 @@ namespace DubboNet.DubboService
         /// <param name="Port">端口</param>
         /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
         /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
-        public DubboActuatorSuite(string Address, int Port, int CommandTimeout = 10 * 1000, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) : base(Address, Port, CommandTimeout, dubboActuatorSuiteConf?.DefaultServiceName)
+        public DubboActuatorSuite(string Address, int Port, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) : base(Address, Port, dubboActuatorSuiteConf?.DubboRequestTimeout?? 10 * 1000, dubboActuatorSuiteConf?.DefaultServiceName)
         {
             if(dubboActuatorSuiteConf!=null)
             {
@@ -176,7 +177,7 @@ namespace DubboNet.DubboService
         /// <param name="iPEndPoint"></param>
         /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
         /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
-        public DubboActuatorSuite(IPEndPoint iPEndPoint,int CommandTimeout = 10 * 1000, DubboActuatorSuiteConf dubboActuatorSuiteConf = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port,CommandTimeout,dubboActuatorSuiteConf)
+        public DubboActuatorSuite(IPEndPoint iPEndPoint, DubboActuatorSuiteConf dubboActuatorSuiteConf = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port,dubboActuatorSuiteConf)
         {
         }
 
