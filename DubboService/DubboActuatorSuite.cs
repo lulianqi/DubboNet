@@ -86,6 +86,7 @@ namespace DubboNet.DubboService
         /// </summary>
         public int AssistConnectionAliveTime { get;private set; } = 60 * 5;
 
+
         /// <summary>
         /// 当前DubboActuatorSuite是否可用（节点地址错误，都会导致连接失败，且这种错误不能通过自动重试恢复，
         /// </summary>

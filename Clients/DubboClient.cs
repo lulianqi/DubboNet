@@ -47,10 +47,14 @@ namespace DubboNet.Clients
 
         public class DubboClientConf
         {
+            public string DubboRootPath { get; set; } = "/dubbo/";
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
+            public int DubboRequestTimeout { get; set; } = 10 * 1000;
             public int MaintainServiceNum { get; set; } = 20;
-
+            public LoadBalanceMode NowLoadBalanceMode { get; set; } = LoadBalanceMode.Random;
+            public string DefaultFuncName { get; set; } = null;
+            public string DefaultServiceName { get; set; } = null;
         }
 
         private static MultiMyZookeeperStorage DubboClientMultiMyZookeeperStorage = new MultiMyZookeeperStorage();
@@ -82,22 +86,43 @@ namespace DubboNet.Clients
         /// <summary>
         /// Zookeeper上默认的Dubbo跟路径，默认/dubbo/
         /// </summary>
-        public string DubboRootPath { get; set; } = "/dubbo/";
+        public string DubboRootPath { get; private set; } = "/dubbo/";
 
         /// <summary>
         /// 默认当前Dubbo方法名称
         /// </summary>
-        public string DefaultFuncName { get; private set; }
+        public string DefaultFuncName { get; private set; } = null;
 
         /// <summary>
         /// 默认当前Dubbo服务名称
         /// </summary>
-        public string DefaultServiceName { get; private set; }
+        public string DefaultServiceName { get; private set; } = null;
 
         /// <summary>
         /// 获当前负载模式
         /// </summary>
         public LoadBalanceMode NowLoadBalanceMode { get; private set; } = LoadBalanceMode.Random;
+
+        /// <summary>
+        /// 单个Dubbo服务节点最多能开启的连接数量（默认情况会保持1个连接，当对单个节点出现并行请求时会自动开启更多连接）
+        /// </summary>
+        public int DubboActuatorSuiteMaxConnections { get;private set; } = 20;
+
+        /// <summary>
+        /// 单辅助连接不再活跃超过此时间时释放辅助连接（单位秒）
+        /// </summary>
+        public int DubboActuatorSuiteAssistConnectionAliveTime { get; private set; } = 60 * 5;
+
+        /// <summary>
+        /// Dubbo请求的最大超时时间
+        /// </summary>
+        public int DubboRequestTimeout { get; private set; } = 10 * 1000;
+
+        /// <summary>
+        /// DubboClient可最大缓存的复用服务数量（如果当前DubboClient实例会大量请求不同服务，可以扩大该数值）
+        /// </summary>
+        public int MaintainServiceNum { get;private set; } = 20;
+
 
 
         /// <summary>
@@ -119,21 +144,20 @@ namespace DubboNet.Clients
             DefaultServiceName = null;
         }
 
-        /// <summary>
-        /// 初始化DubboClient
-        /// </summary>
-        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
-        /// <param name="defaultServiceName">默认服务名称</param>
-        /// <param name="defaultFuncName">默认方法名称</param>
-        /// <exception cref="Exception"></exception>
-        public DubboClient(string zookeeperCoonectString, string defaultServiceName, string defaultFuncName) : this(zookeeperCoonectString)
+        public DubboClient(string zookeeperCoonectString , DubboClientConf dubboClientConf) : this(zookeeperCoonectString)
         {
-            DefaultServiceName = defaultServiceName;
-            DefaultFuncName = defaultFuncName;
-            if (string.IsNullOrEmpty(DefaultServiceName) && !string.IsNullOrEmpty(DefaultFuncName))
+            if(dubboClientConf == null)
             {
-                throw new Exception("defaultServiceName can not be null unless defaultFuncName is null");
+                throw new ArgumentNullException(nameof(dubboClientConf));   
             }
+            DubboRootPath = dubboClientConf.DubboRootPath;
+            DefaultFuncName = dubboClientConf.DefaultFuncName;
+            DefaultServiceName = dubboClientConf.DefaultServiceName;
+            NowLoadBalanceMode = dubboClientConf.NowLoadBalanceMode;
+            DubboActuatorSuiteMaxConnections = dubboClientConf.DubboActuatorSuiteMaxConnections;
+            DubboActuatorSuiteAssistConnectionAliveTime = dubboClientConf.DubboActuatorSuiteMaxConnections;
+            DubboRequestTimeout = dubboClientConf.DubboRequestTimeout;
+            MaintainServiceNum = dubboClientConf.MaintainServiceNum;
         }
 
         /// <summary>
