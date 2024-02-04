@@ -139,7 +139,7 @@ namespace DubboNet.Clients
             //_innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
             _innerMyZookeeper = DubboClientMultiMyZookeeperStorage.GetMyZookeeper(zookeeperCoonectString);
             _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
-            _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection);
+            _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection , new DubboDriverCollection.DubboDriverCollectionConf());
             DefaultFuncName = null;
             DefaultServiceName = null;
         }

@@ -10,9 +10,23 @@ using System.Collections.Concurrent;
 
 namespace DubboNet.Clients
 {
+    /// <summary>
+    /// 可复用连接器的集合
+    /// </summary>
     internal class DubboDriverCollection:IEnumerable,IDisposable
     {
-       
+
+        internal class DubboDriverCollectionConf
+        {
+            public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
+            public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
+            public int DubboRequestTimeout { get; set; } = 10 * 1000;
+            public int MaintainServiceNum { get; set; } = 20;
+            public LoadBalanceMode NowLoadBalanceMode { get; set; } = LoadBalanceMode.Random;
+            public string DefaultServiceName { get; set; } = null;
+        }
+
+
         /// <summary>
         /// 内部维持的DubboActuatorSuite（用于最大程度复用链接）
         /// </summary>
@@ -24,13 +38,11 @@ namespace DubboNet.Clients
         private ConcurrentDictionary<string, DubboServiceDriver> _dubboServiceDriverCollection = null;
 
 
-        public int MaxConnectionPerEndpoint{ get; set; } = 5;
-        public int CommandTimeout { get; set; } = 10 * 1000;
-        public string DefaultServiceName { get; set; }
+        private DubboDriverCollectionConf _innerDubboDriverCollectionConf = null;
 
         public int Count { get { return _dubboServiceDriverCollection?.Count ?? 0; } }
 
-        public DubboDriverCollection(Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection)
+        public DubboDriverCollection(Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection , DubboDriverCollectionConf dubboDriverCollectionConf)
         {
             if (dubboActuatorSuiteCollection == null)
             {
@@ -39,6 +51,7 @@ namespace DubboNet.Clients
             //_dubboServiceDriverCollection = new Dictionary<string, DubboServiceDriver>();
             _dubboServiceDriverCollection = new ConcurrentDictionary<string, DubboServiceDriver>();
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
+            _innerDubboDriverCollectionConf = dubboDriverCollectionConf ?? new DubboDriverCollectionConf();
         }
 
         /// <summary>
@@ -99,7 +112,7 @@ namespace DubboNet.Clients
             AvailableDubboActuatorInfo availableDubboActuatorInfo = new AvailableDubboActuatorInfo();
             if (string.IsNullOrEmpty(serviceName))
             {
-                serviceName = DefaultServiceName;
+                serviceName = _innerDubboDriverCollectionConf.DefaultServiceName;
             }
             if(string.IsNullOrEmpty(serviceName))
             {

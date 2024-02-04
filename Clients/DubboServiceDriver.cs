@@ -10,8 +10,22 @@ using static DubboNet.Clients.DubboClient;
 
 namespace DubboNet.Clients
 {
+    /// <summary>
+    /// 管理当个服务的所有连接器（单个服务可以有N个服务节点，每个服务节点可以有N个连接）
+    /// </summary>
     internal class DubboServiceDriver:IDisposable
     {
+        internal class DubboServiceDriverConf
+        {
+            public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
+            public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
+            public int DubboRequestTimeout { get; set; } = 10 * 1000;
+
+        }
+
+        /// <summary>
+        /// 服务名称
+        /// </summary>
         public string ServiceName { get; private set; }
 
         /// <summary>
@@ -23,7 +37,10 @@ namespace DubboNet.Clients
         /// DubboClient的源ActuatorSuiteCollection（不要直接使用，保留的这份引用是为了释放时同时清理）
         /// </summary>
         private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _sourceDubboActuatorSuiteCollection;
-        
+
+        private DubboServiceDriverConf _innerDubboServiceDriverConf = null;
+
+
         /// <summary>
         /// 初始化DubboServiceDriver
         /// </summary>
@@ -32,10 +49,11 @@ namespace DubboNet.Clients
         /// <param name="dubboActuatorSuiteCollection">内部dubboActuatorSuiteCollection</param>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="ArgumentNullException"></exception>
-        public DubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection)
+        public DubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList, DubboServiceDriverConf dubboServiceDriverConf, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection)
         {
             ServiceName = serviceName;
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
+            _innerDubboServiceDriverConf = dubboServiceDriverConf ?? new DubboServiceDriverConf();
             InnerActuatorSuites = new Dictionary<IPEndPoint, DubboActuatorSuite>();
             if (!(dbEpList?.Count > 0))
             {
