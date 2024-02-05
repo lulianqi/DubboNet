@@ -119,7 +119,7 @@ namespace DubboNet.Clients
         public int DubboRequestTimeout { get; private set; } = 10 * 1000;
 
         /// <summary>
-        /// DubboClient可最大缓存的复用服务数量（如果当前DubboClient实例会大量请求不同服务，可以扩大该数值）
+        /// DubboClient可最大缓存的复用服务数量,0表示无限制（如果当前DubboClient实例会大量请求不同服务，可以扩大该数值）
         /// </summary>
         public int MaintainServiceNum { get;private set; } = 20;
 
@@ -130,25 +130,20 @@ namespace DubboNet.Clients
         /// </summary>
         /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
         /// <exception cref="ArgumentException"></exception>
-        public DubboClient(string zookeeperCoonectString)
+        public DubboClient(string zookeeperCoonectString) : this(zookeeperCoonectString,new DubboClientConf())
+        {
+        }
+
+        public DubboClient(string zookeeperCoonectString , DubboClientConf dubboClientConf)
         {
             if (string.IsNullOrEmpty(zookeeperCoonectString))
             {
                 throw new ArgumentException($"“{nameof(zookeeperCoonectString)}” can not be null or empty", nameof(zookeeperCoonectString));
             }
-            //_innerMyZookeeper = new MyZookeeper(zookeeperCoonectString);
-            _innerMyZookeeper = DubboClientMultiMyZookeeperStorage.GetMyZookeeper(zookeeperCoonectString);
-            _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
-            _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection , new DubboDriverCollection.DubboDriverCollectionConf());
-            DefaultFuncName = null;
-            DefaultServiceName = null;
-        }
-
-        public DubboClient(string zookeeperCoonectString , DubboClientConf dubboClientConf) : this(zookeeperCoonectString)
-        {
-            if(dubboClientConf == null)
+            if (dubboClientConf == null)
             {
-                throw new ArgumentNullException(nameof(dubboClientConf));   
+                //throw new ArgumentNullException(nameof(dubboClientConf));
+                dubboClientConf = new DubboClientConf();
             }
             DubboRootPath = dubboClientConf.DubboRootPath;
             DefaultFuncName = dubboClientConf.DefaultFuncName;
@@ -158,6 +153,19 @@ namespace DubboNet.Clients
             DubboActuatorSuiteAssistConnectionAliveTime = dubboClientConf.DubboActuatorSuiteMaxConnections;
             DubboRequestTimeout = dubboClientConf.DubboRequestTimeout;
             MaintainServiceNum = dubboClientConf.MaintainServiceNum;
+
+            _innerMyZookeeper = DubboClientMultiMyZookeeperStorage.GetMyZookeeper(zookeeperCoonectString);
+            _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
+            _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection, new DubboDriverCollection.DubboDriverCollectionConf()
+            {
+                DefaultServiceName = DefaultServiceName,
+                DubboActuatorSuiteAssistConnectionAliveTime = DubboActuatorSuiteAssistConnectionAliveTime,
+                DubboActuatorSuiteMaxConnections = DubboActuatorSuiteMaxConnections,
+                DubboRequestTimeout = DubboRequestTimeout,
+                MaintainServiceNum = MaintainServiceNum,
+                NowLoadBalanceMode = NowLoadBalanceMode
+            });
+
         }
 
         /// <summary>
@@ -166,7 +174,7 @@ namespace DubboNet.Clients
         /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
         /// <param name="funcEndPoint">默认方法入口（完整名称包括服务名称 eg:ServiceName.FuncName）</param>
         /// <exception cref="ArgumentException"></exception>
-        public DubboClient(string zookeeperCoonectString, string funcEndPoint) : this(zookeeperCoonectString)
+        public DubboClient(string zookeeperCoonectString, string funcEndPoint ) : this(zookeeperCoonectString)
         {
             if (funcEndPoint.Contains('#'))
             {

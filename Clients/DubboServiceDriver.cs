@@ -7,6 +7,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using static DubboNet.Clients.DubboClient;
+using static DubboNet.DubboService.DubboActuatorSuite;
 
 namespace DubboNet.Clients
 {
@@ -29,6 +30,11 @@ namespace DubboNet.Clients
         public string ServiceName { get; private set; }
 
         /// <summary>
+        /// 最后激活时间
+        /// </summary>
+        public DateTime LastActivateTime { get; private set; } = default(DateTime);
+
+        /// <summary>
         /// 当前DubboServiceDriver可使用的各EndPoint的DubboActuatorSuite集合
         /// </summary>
         public Dictionary<IPEndPoint, DubboActuatorSuite> InnerActuatorSuites { get; private set; }
@@ -49,9 +55,10 @@ namespace DubboNet.Clients
         /// <param name="dubboActuatorSuiteCollection">内部dubboActuatorSuiteCollection</param>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="ArgumentNullException"></exception>
-        public DubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList, DubboServiceDriverConf dubboServiceDriverConf, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection)
+        public DubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection , DubboServiceDriverConf dubboServiceDriverConf = null)
         {
             ServiceName = serviceName;
+            LastActivateTime = DateTime.Now;
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
             _innerDubboServiceDriverConf = dubboServiceDriverConf ?? new DubboServiceDriverConf();
             InnerActuatorSuites = new Dictionary<IPEndPoint, DubboActuatorSuite>();
@@ -90,7 +97,10 @@ namespace DubboNet.Clients
                 DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo = new DubboActuatorSuiteEndPintInfo()
                 {
                     EndPoint = ep,
-                    ActuatorSuite = new DubboActuatorSuite(ep),
+                    ActuatorSuite = new DubboActuatorSuite(ep,new DubboActuatorSuiteConf() { 
+                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime, 
+                        DubboRequestTimeout=_innerDubboServiceDriverConf.DubboRequestTimeout, 
+                        MaxConnections=_innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections }),
                     ReferenceCount = 0
                 };
                 if(InnerActuatorSuites.TryAdd(ep, dubboActuatorSuiteEndPintInfo.ActuatorSuite))
@@ -151,7 +161,8 @@ namespace DubboNet.Clients
 
         public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode)
         {
-            if(InnerActuatorSuites.Count==0)
+            LastActivateTime = DateTime.Now;
+            if (InnerActuatorSuites.Count==0)
             {
                 return null;
             }

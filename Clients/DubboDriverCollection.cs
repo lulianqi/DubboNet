@@ -31,6 +31,7 @@ namespace DubboNet.Clients
         /// 内部维持的DubboActuatorSuite（用于最大程度复用链接）
         /// </summary>
         private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _sourceDubboActuatorSuiteCollection;
+
         /// <summary>
         /// 内部维持的DubboServiceDriver（使用_sourceDubboActuatorSuiteCollection资源，复用服务资源）
         /// </summary>
@@ -93,9 +94,20 @@ namespace DubboNet.Clients
             //需要创建新的DubboServiceDriver
             else
             {
-                DubboServiceDriver tempDubboServiceDriver = new DubboServiceDriver(serviceName, dbEpList, _sourceDubboActuatorSuiteCollection);
+                DubboServiceDriver tempDubboServiceDriver = new DubboServiceDriver(serviceName, dbEpList, _sourceDubboActuatorSuiteCollection,
+                    new DubboServiceDriver.DubboServiceDriverConf()
+                    {
+                        DubboActuatorSuiteAssistConnectionAliveTime = _innerDubboDriverCollectionConf.DubboActuatorSuiteAssistConnectionAliveTime,
+                        DubboActuatorSuiteMaxConnections = _innerDubboDriverCollectionConf.DubboActuatorSuiteMaxConnections,
+                        DubboRequestTimeout = _innerDubboDriverCollectionConf.DubboRequestTimeout
+                    });
                 //_dubboServiceDriverCollection.Add(serviceName, tempDubboServiceDriver);
                 _dubboServiceDriverCollection.TryAdd(serviceName, tempDubboServiceDriver);
+                if (_innerDubboDriverCollectionConf.MaintainServiceNum > 0 && _dubboServiceDriverCollection.Count > _innerDubboDriverCollectionConf.MaintainServiceNum)
+                {
+                    //移除最不活跃的服务
+                    var item = _dubboServiceDriverCollection.Min((it) => it.Value.LastActivateTime);
+                }
                 return true;
             }
         }
