@@ -3,6 +3,7 @@ using DubboNet.Clients;
 using DubboNet.Clients.RegistryClient;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
+using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using TestConsoleDemo.DataModle;
@@ -16,10 +17,15 @@ Console.ReadLine();
 GC.Collect();
 GC.WaitForPendingFinalizers();
 Console.ReadLine();
+
 static async Task TaskForDubboClient()
 {
-    var dubboClient  =new DubboClient("10.100.64.53:2181") ;
+    var dubboClient  =new DubboClient("10.100.64.198:2181") ;
     var result = await dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime","123392,1939");
+    for(int i =0;i<10; i++)
+    {
+        _ = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939").ContinueWith(rs => Console.WriteLine(rs.Result.Result));
+    }
     dubboClient = null;
     Console.WriteLine(result.Result);
 }

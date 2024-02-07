@@ -103,13 +103,44 @@ namespace DubboNet.Clients
                     });
                 //_dubboServiceDriverCollection.Add(serviceName, tempDubboServiceDriver);
                 _dubboServiceDriverCollection.TryAdd(serviceName, tempDubboServiceDriver);
-                if (_innerDubboDriverCollectionConf.MaintainServiceNum > 0 && _dubboServiceDriverCollection.Count > _innerDubboDriverCollectionConf.MaintainServiceNum)
+                while (_innerDubboDriverCollectionConf.MaintainServiceNum > 0 && _dubboServiceDriverCollection.Count > _innerDubboDriverCollectionConf.MaintainServiceNum)
                 {
                     //移除最不活跃的服务
-                    var item = _dubboServiceDriverCollection.Min((it) => it.Value.LastActivateTime);
+                    var inactivityItem = _dubboServiceDriverCollection.MinBy<KeyValuePair<string, DubboServiceDriver>,long>(it=>it.Value.LastActivateTime.Ticks);
+                    DubboServiceDriver inactivityServiceDriver = inactivityItem.Value;
+                    if (inactivityServiceDriver != null)
+                    {
+                        ReMoveDubboServiceDriver(inactivityServiceDriver.ServiceName);
+                    }
+
                 }
                 return true;
             }
+        }
+
+        /// <summary>
+        /// 根据服务名称移除DubboServiceDriver节点
+        /// </summary>
+        /// <param name="serviceName">服务名称</param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        private bool ReMoveDubboServiceDriver(string serviceName)
+        {
+            if (string.IsNullOrEmpty(serviceName))
+            {
+                throw new ArgumentNullException(nameof(serviceName));
+            }
+            if (_dubboServiceDriverCollection.ContainsKey(serviceName))
+            {
+                DubboServiceDriver removedServiceDriver;
+                _dubboServiceDriverCollection.Remove(serviceName, out removedServiceDriver);
+                if (removedServiceDriver != null)
+                {
+                    removedServiceDriver.Dispose();
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
