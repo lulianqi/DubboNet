@@ -73,6 +73,7 @@ namespace DubboNet.Clients
         /// <returns>添加或更新是否对当前DubboDriverCollection的DubboServiceDriver有实际影响</returns>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="ArgumentException"></exception>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
         public bool AddDubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList)
         {
             if (string.IsNullOrEmpty(serviceName))
@@ -124,6 +125,7 @@ namespace DubboNet.Clients
         /// <param name="serviceName">服务名称</param>
         /// <returns></returns>
         /// <exception cref="ArgumentNullException"></exception>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
         private bool ReMoveDubboServiceDriver(string serviceName)
         {
             if (string.IsNullOrEmpty(serviceName))
@@ -136,6 +138,7 @@ namespace DubboNet.Clients
                 _dubboServiceDriverCollection.Remove(serviceName, out removedServiceDriver);
                 if (removedServiceDriver != null)
                 {
+                    //DubboServiceDriver Disposes时会维护_sourceDubboActuatorSuiteCollection
                     removedServiceDriver.Dispose();
                     return true;
                 }

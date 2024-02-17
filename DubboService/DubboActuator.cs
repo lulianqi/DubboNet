@@ -53,6 +53,17 @@ namespace DubboNet.DubboService
         public string NowErrorMes { get; private set; }
 
         /// <summary>
+        /// 是否在外部调用队列中（内部属性，目前仅用在派生类DubboActuatorSuite中以精确标记DubboActuator被使用的状态）
+        /// 不完全依靠IsQuerySending是因为在短时高并的场景下不适用（不同task以IsQuerySending确认后并不会锁定资源）
+        /// </summary>
+        internal bool IsInUsedQueue{ get;  set; }=false;
+
+        /// <summary>
+        /// 获取DubboActuator唯一GUID
+        /// </summary>
+        public Guid DubboActuatorGUID { get; private set; } = Guid.NewGuid();
+
+        /// <summary>
         /// 当前DubboActuator备注名称（非必要信息，主要用于多DubboActuator场景下的区分）
         /// </summary>
         public string RemarkName { get; set; } = "DubboActuator";
@@ -82,24 +93,6 @@ namespace DubboNet.DubboService
         /// 最后激活时间，标记最后一次向dubbo服务发送业务请求的时间（连接、关闭连接不属于业务请求不更新LastActivateTime）
         /// </summary>
         public DateTime LastActivateTime { get; private set; }=default(DateTime);
-
-
-        public DubboActuator(string address, int port, int commandTimeout = 10 * 1000, string defaultServiceName = null)
-        {
-            DubboHost = address;
-            DubboPort = port;
-            DubboRequestTimeout = commandTimeout;
-
-            dubboTelnet = new ExTelnet(address, port, commandTimeout);
-            dubboTelnet.DefautExpectPattern = _dubboTelnetDefautExpectPattern;
-            dubboTelnet.ReceiveBuffLength = _dubboTelnetReceiveBuffLength;
-            dubboTelnet.IsSaveTerminalData = false;
-            dubboTelnet.MaxMaintainDataLength = _dubboTelnetMaxMaintainDataLength; //dubbo 默认最大返回为8MB
-        }
-
-        public DubboActuator(IPEndPoint iPEndPoint, int commandTimeout = 10 * 1000, string defaultServiceName = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port, commandTimeout, defaultServiceName)
-        {
-        }
 
         /// <summary>
         /// 当前DubboTester是否处于连接状态
@@ -141,6 +134,12 @@ namespace DubboNet.DubboService
         {
             get
             {
+                //正在连接（在高并发下可能会有正在连接的节点被查询到）
+                if(_isConnecting)
+                {
+                    return true;
+                }
+                //从未连接过，直接返回
                 if (!IsConnected || sendQueryAutoResetEvent == null)
                 {
                     return false;
@@ -154,12 +153,35 @@ namespace DubboNet.DubboService
             }
         }
 
+        public DubboActuator(string address, int port, int commandTimeout = 10 * 1000, string defaultServiceName = null)
+        {
+            DubboHost = address;
+            DubboPort = port;
+            DubboRequestTimeout = commandTimeout;
+
+            dubboTelnet = new ExTelnet(address, port, commandTimeout);
+            dubboTelnet.DefautExpectPattern = _dubboTelnetDefautExpectPattern;
+            dubboTelnet.ReceiveBuffLength = _dubboTelnetReceiveBuffLength;
+            dubboTelnet.IsSaveTerminalData = false;
+            dubboTelnet.MaxMaintainDataLength = _dubboTelnetMaxMaintainDataLength; //dubbo 默认最大返回为8MB
+        }
+
+        public DubboActuator(IPEndPoint iPEndPoint, int commandTimeout = 10 * 1000, string defaultServiceName = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port, commandTimeout, defaultServiceName)
+        {
+        }
+
+
         /// <summary>
         /// 连接DubboTester (使用时可以不用调用，会在需要的时候自动连接)
         /// </summary>
         /// <returns>是否连接成功（连接失败请通过NowErrorMes属性查看错误信息）</returns>
         public async Task<bool> Connect()
         {
+            if(_isConnecting)
+            {
+                NowErrorMes = "another task is connecting";
+                return false;
+            }
             //return telnet.Connect();
             _isConnecting = true;
             if (await dubboTelnet.ConnectAsync(_dubboTelnetKeepAliveTime, _dubboTelnetTelnetAlivePeriod, _dubboTelnetConnectTimeOut))

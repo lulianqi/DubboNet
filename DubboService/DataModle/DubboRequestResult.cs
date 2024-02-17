@@ -93,6 +93,10 @@ namespace DubboNet.DubboService.DataModle
             return dubboRequestResult;
         }
 
+        public override string ToString()
+        {
+            return $"Result:{Result}{System.Environment.NewLine}ServiceElapsed:{ServiceElapsed}{System.Environment.NewLine}RequestElapsed:{RequestElapsed}{System.Environment.NewLine}ErrorMeaasge:{ErrorMeaasge??""}";
+        }
     }
 
     public class DubboRequestResult<T> : DubboRequestResult  //where T :class

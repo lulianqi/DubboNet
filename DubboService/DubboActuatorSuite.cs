@@ -39,9 +39,13 @@ namespace DubboNet.DubboService
             /// </summary>
             public bool IsAlive => InnerDubboActuator?.IsConnected ?? false;
             /// <summary>
-            /// 
+            /// 获取InnerDubboActuator是否处于请求发送中状态
             /// </summary>
             public bool IsFreeForQuery => IsAlive && (!InnerDubboActuator?.IsQuerySending ?? false);
+            /// <summary>
+            /// 获取InnerDubboActuator是否处于使用队列中
+            /// </summary>
+            public bool IsInUsedQueue => InnerDubboActuator?.IsInUsedQueue ?? false;
 
             /// <summary>
             /// 初始化DubboSuiteCell
@@ -92,11 +96,15 @@ namespace DubboNet.DubboService
         /// </summary>
         public bool IsRead { get; private set; } = true;
 
+        /// <summary>
+        /// 最后激活时间 (覆盖基类DubboActuator中的LastActivateTime属性)
+        /// </summary>
+        public new DateTime LastActivateTime { get; private set; }=default(DateTime);
 
         /// <summary>
         /// 获取默认服务名称
         /// </summary>
-        public string DefaultServiceName { get; private set; }
+        public new string DefaultServiceName { get; private set; }
 
         /// <summary>
         /// 获取当前DubboActuatorSuite内所有DubboSuiteCell执行单元
@@ -108,9 +116,14 @@ namespace DubboNet.DubboService
         public DubboStatusInfo StatusInfo { get;private set; }
 
         #region 静态成员
+        //DubboSuiteTimer执行的job间隔时间（单位毫秒）
         private const int InnetTimerInterval = 1000 * 10;
         //定时器是全局公用的，无论有多少DubboActuatorSuite实例正在运行，都将最多只有一个定时器
         private static System.Timers.Timer DubboSuiteTimer;
+        //StatusInfo更新时间间隔
+        private const int StatusInfoIntervalTime = 1000 * 20;
+        //StatusInfo更新进入休眠状态需要的时间
+        private const int StatusInfoDormantIntervalTime = 1000 * 120;
         protected delegate void DubboSuiteCruiseEventHandler(object sender, ElapsedEventArgs e);
         protected static event DubboSuiteCruiseEventHandler DubboSuiteCruiseEvent;
 
@@ -208,11 +221,20 @@ namespace DubboNet.DubboService
                                 dubboSuiteCell.InnerDubboActuator.DisConnect();
                         }
                     }
-                    //获取最新节点信息
-                    StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
-                    if(StatusInfo==null)
+                    //更新StatusInfo，有以下3种情况需要更新StatusInfo
+                    //StatusInfo为null时，首次更新
+                    //当LastActivateTime没有超过StatusInfoDormantIntervalTime时，活跃状态状态，更新间隔为StatusInfoIntervalTime
+                    //当LastActivateTime已经超过StatusInfoDormantIntervalTime时，进入休眠状态，更新间隔为StatusInfoDormantIntervalTime
+                    if((StatusInfo==null) || 
+                    ((DateTime.Now - LastActivateTime).TotalMilliseconds <=  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoIntervalTime )||
+                    ((DateTime.Now - LastActivateTime).TotalMilliseconds >  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoDormantIntervalTime ) )
                     {
-                        throw new Exception(this.NowErrorMes);
+                        //获取最新节点信息（GetDubboStatusInfoAsync调用的是基类的SendCommandAsync，所以一定是由主节点执行，同时不会更新重写的LastActivateTime属性）
+                        StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+                        if(StatusInfo==null)
+                        {
+                            throw new Exception(this.NowErrorMes);
+                        }
                     }
                 }
             } 
@@ -254,28 +276,37 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 获取一个可用的DubboActuator（如果没有则返回null）
+        /// 获取一个可用的DubboActuator（如果没有则返回null,返回的DubboActuator的IsInUsedQueue属性会被设置为true）
         /// </summary>
         /// <returns></returns>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
         private DubboActuator GetAvailableDubboActuator()
         {
             if (!IsRead)
             {
                 return null;
             }
-            if (!this.IsQuerySending)
+            if (!this.IsInUsedQueue && !this.IsQuerySending)
             {
+                Console.WriteLine($"+++++++++++++++++++++++{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 //注意this的运行时类型是DubboActuatorSuite
+                this.IsInUsedQueue=true;
                 return this;
             }
             else
             {
-                DubboSuiteCell nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => dsc.IsFreeForQuery);
+                //空闲且处于连接状态的DubboActuator
+                DubboSuiteCell nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => !dsc.IsInUsedQueue && dsc.IsFreeForQuery);
                 if (nowDubboSuiteCell == null)
                 {
-                    nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => !dsc.IsAlive);
+                    //选择未连接的DubboActuator
+                    nowDubboSuiteCell = _actuatorSuiteCellList.FirstOrDefault<DubboSuiteCell>((dsc) => !dsc.IsInUsedQueue && !dsc.IsAlive);
                 }
-                if (nowDubboSuiteCell != null) nowDubboSuiteCell.Version++;
+                if (nowDubboSuiteCell != null)
+                { 
+                    nowDubboSuiteCell.Version++;
+                    nowDubboSuiteCell.InnerDubboActuator.IsInUsedQueue=true;
+                }
                 return nowDubboSuiteCell?.InnerDubboActuator;
             }
         }
@@ -294,8 +325,10 @@ namespace DubboNet.DubboService
             }
             else
             {
+                LastActivateTime = DateTime.Now;
                 try
                 {
+                    Console.WriteLine($"[SendCommandAsync]{DateTime.Now}-{availableDubboActuator.DubboActuatorGUID}");
                     TelnetRequestResult telnetRequestResult = null;
                     //因为GetAvailableDubboActuatorAsync返回的DubboActuator可能是DubboActuatorSuite，如果是DubboActuatorSuite会循环调用override的SendCommandAsync方法，这里需要区分开
                     if (availableDubboActuator == this)
@@ -320,63 +353,9 @@ namespace DubboNet.DubboService
                 }
                 finally
                 {
+                    availableDubboActuator.IsInUsedQueue=false;
                     _eventWaitHandle.Set();
                 }
-            }
-        }
-
-
-        /// <summary>
-        /// 初始化DubboTesterSuite，获取Func列表及详情
-        /// </summary>
-        /// <param name="serviceName">serviceName将被设置为DefaultServiceName，并且只会获取DefaultService里的Func（默认为空将使用DefaultServiceName，如果DefaultServiceName为空，将获取所有service里的Func列表,如果使用*将将DefaultServiceName设置为null）</param>
-        /// <returns>是否成功（成功后DubboServiceFuncCollection将被跟新，否则DubboServiceFuncCollection被清空）</returns>
-        public async ValueTask<bool> InitServiceAsync(string serviceName = null)
-        {
-            if (!string.IsNullOrEmpty(serviceName))
-            {
-                if (serviceName == "*")
-                {
-                    DefaultServiceName = null;
-                }
-                DefaultServiceName = serviceName;
-            }
-            DubboServiceFuncCollection = new Dictionary<string, Dictionary<string, DubboFuncInfo>>();
-            //空的serviceNam且也没有默认值的情况下获取当前主机上所有服务提供的方法列表
-            if (string.IsNullOrEmpty(DefaultServiceName))
-            {
-                //DefaulDubboServiceFuncs = new Dictionary<string, DubboFuncInfo>();
-                List<string> tempSeviceList = (await GetDubboLsInfoAsync())?.Providers;
-                if (tempSeviceList?.Count > 0)
-                {
-                    foreach (var nowService in tempSeviceList)
-                    {
-                        Dictionary<string, DubboFuncInfo> tempDc = await GetDubboServiceFuncAsync(nowService);
-                        if (tempDc == null)
-                        {
-                            MyLogger.LogError($"GetDubboServiceFuncAsyncfailed in[InitServiceAsync] that Service is {nowService}");
-                            continue;
-                        }
-                        DubboServiceFuncCollection.Add(nowService, tempDc);
-                        //foreach(var tempFunc in tempDc)
-                        //{
-                        //    if (!DefaulDubboServiceFuncs.TryAdd(tempFunc.Key, tempFunc.Value))
-                        //    {
-                        //        ShowError($"DubboServiceFuncDc TryAdd failed in[InitServiceAsync] that key is {tempFunc.Key}");
-                        //    }
-                        //}
-                    }
-                }
-                return DubboServiceFuncCollection?.Count > 0;
-            }
-            else
-            {
-                DefaulDubboServiceFuncs = await GetDubboServiceFuncAsync(DefaultServiceName);
-                if (DefaulDubboServiceFuncs != null)
-                {
-                    DubboServiceFuncCollection.Add(DefaultServiceName, DefaulDubboServiceFuncs);
-                }
-                return DefaulDubboServiceFuncs != null;
             }
         }
 
