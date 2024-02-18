@@ -95,7 +95,7 @@ namespace DubboNet.DubboService
         public DateTime LastActivateTime { get; private set; }=default(DateTime);
 
         /// <summary>
-        /// 当前DubboTester是否处于连接状态
+        /// 当前DubboActuator是否处于连接状态
         /// </summary>
         public bool IsConnected
         {
@@ -110,7 +110,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 获取当前DubboTester状态
+        /// 获取当前DubboActuator状态
         /// </summary>
         public DubboActuatorStatus State
         {
@@ -128,7 +128,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 获取当前DubboTester是否处于请求发送中状态
+        /// 获取当前DubboActuator是否处于请求发送中状态
         /// </summary>
         public bool IsQuerySending
         {
@@ -153,6 +153,13 @@ namespace DubboNet.DubboService
             }
         }
 
+        /// <summary>
+        /// DubboActuator构造函数
+        /// </summary>
+        /// <param name="address">节点地址（ip地址）</param>
+        /// <param name="port">节点端口号</param>
+        /// <param name="commandTimeout">请求超时时间</param>
+        /// <param name="defaultServiceName">默认服务名称（默认为null）</param>
         public DubboActuator(string address, int port, int commandTimeout = 10 * 1000, string defaultServiceName = null)
         {
             DubboHost = address;
@@ -172,7 +179,7 @@ namespace DubboNet.DubboService
 
 
         /// <summary>
-        /// 连接DubboTester (使用时可以不用调用，会在需要的时候自动连接)
+        /// 连接DubboActuator (使用时可以不用调用，会在需要的时候自动连接)
         /// </summary>
         /// <returns>是否连接成功（连接失败请通过NowErrorMes属性查看错误信息）</returns>
         public async Task<bool> Connect()
@@ -509,7 +516,7 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 获取指定服务方法的TraceInfo (失败返回null)(因为获取trace可能耗时比较长，会启一个独立的DubboTester，获取完成后自动释放)
+        /// 获取指定服务方法的TraceInfo (失败返回null)(因为获取trace可能耗时比较长，会启一个独立的DubboActuator，获取完成后自动释放)
         /// </summary>
         /// <param name="serviceName"></param>
         /// <param name="methodName"></param>
@@ -517,14 +524,14 @@ namespace DubboNet.DubboService
         /// <returns></returns>
         public async Task<DubboFuncTraceInfo> GetDubboFuncTraceInfoAsync(string serviceName, string methodName, int timeoutSecond = 300)
         {
-            DubboActuator innerDubboTester = new DubboActuator(dubboTelnet.TelnetEndPoint.Address.ToString(), dubboTelnet.TelnetEndPoint.Port, 120 * 1000);
+            DubboActuator innerDubboActuator = new DubboActuator(dubboTelnet.TelnetEndPoint.Address.ToString(), dubboTelnet.TelnetEndPoint.Port, 120 * 1000);
             DubboFuncTraceInfo dubboFuncTraceInfo = null;
-            if (await innerDubboTester.Connect())
+            if (await innerDubboActuator.Connect())
             {
                 DateTime endTime = DateTime.Now.AddSeconds(timeoutSecond);
                 while (DateTime.Now < endTime)
                 {
-                    TelnetRequestResult requestResult = await innerDubboTester.SendCommandAsync($"trace {serviceName} {methodName} 1");
+                    TelnetRequestResult requestResult = await innerDubboActuator.SendCommandAsync($"trace {serviceName} {methodName} 1");
                     if (requestResult != null)
                     {
                         dubboFuncTraceInfo = DubboFuncTraceInfo.GetTraceInfo(requestResult.Result);
@@ -538,12 +545,12 @@ namespace DubboNet.DubboService
                     }
                 }
             }
-            innerDubboTester.Dispose();
+            innerDubboActuator.Dispose();
             return dubboFuncTraceInfo;
         }
 
         /// <summary>
-        /// 获取指定服务方法的TraceInfo (失败返回null)(因为获取trace可能耗时比较长，会启一个独立的DubboTester，获取完成后自动释放)
+        /// 获取指定服务方法的TraceInfo (失败返回null)(因为获取trace可能耗时比较长，会启一个独立的DubboActuator，获取完成后自动释放)
         /// </summary>
         /// <param name="dubboEndPoint"></param>
         /// <param name="timeoutSecond"></param>

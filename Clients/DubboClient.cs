@@ -150,7 +150,7 @@ namespace DubboNet.Clients
             DefaultServiceName = dubboClientConf.DefaultServiceName;
             NowLoadBalanceMode = dubboClientConf.NowLoadBalanceMode;
             DubboActuatorSuiteMaxConnections = dubboClientConf.DubboActuatorSuiteMaxConnections;
-            DubboActuatorSuiteAssistConnectionAliveTime = dubboClientConf.DubboActuatorSuiteMaxConnections;
+            DubboActuatorSuiteAssistConnectionAliveTime = dubboClientConf.DubboActuatorSuiteAssistConnectionAliveTime;
             DubboRequestTimeout = dubboClientConf.DubboRequestTimeout;
             MaintainServiceNum = dubboClientConf.MaintainServiceNum;
 

@@ -67,7 +67,7 @@ namespace DubboNet.DubboService
         private List<DubboSuiteCell> _actuatorSuiteCellList;
         //标记当前Cruise是否正在进行中
         private bool _innerFlagForInCruiseTask = false;
-
+        //在高并发场景下用于通知GetAvailableDubboActuatorAsync获取资源的合适时机
         private EventWaitHandle _eventWaitHandle = null;
 
         /// <summary>
@@ -90,14 +90,13 @@ namespace DubboNet.DubboService
         /// </summary>
         public int AssistConnectionAliveTime { get;private set; } = 60 * 5;
 
-
         /// <summary>
         /// 当前DubboActuatorSuite是否可用（节点地址错误，都会导致连接失败，且这种错误不能通过自动重试恢复，
         /// </summary>
         public bool IsRead { get; private set; } = true;
 
         /// <summary>
-        /// 最后激活时间 (覆盖基类DubboActuator中的LastActivateTime属性)
+        /// 最后激活时间 (覆盖基类DubboActuator中的LastActivateTime属性,这里的LastActivateTime是整个DubboActuatorSuite的最后激活时间，不是里面每个套接字的最后激活时间)
         /// </summary>
         public new DateTime LastActivateTime { get; private set; }=default(DateTime);
 
@@ -230,7 +229,7 @@ namespace DubboNet.DubboService
                     ((DateTime.Now - LastActivateTime).TotalMilliseconds >  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoDormantIntervalTime ) )
                     {
                         //获取最新节点信息（GetDubboStatusInfoAsync调用的是基类的SendCommandAsync，所以一定是由主节点执行，同时不会更新重写的LastActivateTime属性）
-                        StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+                        StatusInfo = base.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
                         if(StatusInfo==null)
                         {
                             throw new Exception(this.NowErrorMes);
@@ -268,6 +267,7 @@ namespace DubboNet.DubboService
                 {
                     break;
                 }
+                //如果GetAvailableDubboActuator已经不能返回可用资源，马上再次GetAvailableDubboActuator大概率同样无法有空闲资源，使用_eventWaitHandle通知（SendCommandAsync完成后会有信号，这个时候同时意味着有资源被释放）可以避免高频调用，同时带来即时性能
                 //_eventWaitHandle.WaitOne();
                 await _eventWaitHandle.WaitOneAsync(remainingTimeout);
                 nowDubboActuator = GetAvailableDubboActuator();
