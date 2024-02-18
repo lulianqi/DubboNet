@@ -217,7 +217,7 @@ namespace DubboNet.DubboService
                     {
                         if(dubboSuiteCell.IsAlive)
                         {
-                            if((e.SignalTime - dubboSuiteCell.LastActivateTime).TotalSeconds> AssistConnectionAliveTime)
+                            if((e.SignalTime - dubboSuiteCell.LastActivateTime).TotalSeconds > AssistConnectionAliveTime)
                                 dubboSuiteCell.InnerDubboActuator.DisConnect();
                         }
                     }
@@ -288,7 +288,7 @@ namespace DubboNet.DubboService
             }
             if (!this.IsInUsedQueue && !this.IsQuerySending)
             {
-                Console.WriteLine($"+++++++++++++++++++++++{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
+                Console.WriteLine($"++++++++++++++++++++++B[{this.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 //注意this的运行时类型是DubboActuatorSuite
                 this.IsInUsedQueue=true;
                 return this;
@@ -306,7 +306,8 @@ namespace DubboNet.DubboService
                 { 
                     nowDubboSuiteCell.Version++;
                     nowDubboSuiteCell.InnerDubboActuator.IsInUsedQueue=true;
-                }
+                }                
+                Console.WriteLine($"+++++++++++++++++++++++A[{nowDubboSuiteCell.InnerDubboActuator.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 return nowDubboSuiteCell?.InnerDubboActuator;
             }
         }

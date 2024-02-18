@@ -10,7 +10,6 @@ using System.Text.Json;
 using TestConsoleDemo.DataModle;
 
 
-
 Console.WriteLine("TestDemoConsole");
 await StressTestForDubboClient();
 Console.WriteLine("Enter to Exit");

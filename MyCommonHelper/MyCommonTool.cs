@@ -21,7 +21,7 @@ namespace MyCommonHelper
         /// <param name="debugLog"></param>
         public static void ShowDebugLog(string debugLog, string title = null, bool isErrorLog = false)
         {
-#if INTEST
+#if INTEST && DEBUG
             string prefixStr = isErrorLog ? errorLogPrefixStr : infoLogPrefixStr;
             System.Diagnostics.Debug.WriteLine($"{prefixStr}{title ?? ""}[{DateTime.Now.ToString("HH:mm:ss fff")}]{prefixStr}");
             System.Diagnostics.Debug.WriteLine(debugLog);
@@ -35,7 +35,7 @@ namespace MyCommonHelper
         /// <param name="hexaDecimal"></param>
         public static void ShowDebugLog(byte[] debugLog, string title = null, HexaDecimal hexaDecimal = HexaDecimal.hex16, bool isErrorLog = false)
         {
-#if INTEST
+#if INTEST && DEBUG
             string prefixStr = isErrorLog ? errorLogPrefixStr : infoLogPrefixStr;
             System.Diagnostics.Debug.WriteLine($"{prefixStr}{title ?? ""}[{DateTime.Now.ToString("HH:mm:ss fff")}]{prefixStr}");
             System.Diagnostics.Debug.WriteLine($"byte[] leng is : {debugLog.Length}");

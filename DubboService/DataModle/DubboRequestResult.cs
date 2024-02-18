@@ -20,6 +20,10 @@ namespace DubboNet.DubboService.DataModle
         private const string _dubboResultSpit_ms = " ms.";
 
         /// <summary>
+        /// DubboRequestResult对象创建时间
+        /// </summary>
+        public DateTime CreatTime { get;private set; } = DateTime.Now;
+        /// <summary>
         /// 请求结果
         /// </summary>
         public string Result { get; set; }
@@ -95,7 +99,7 @@ namespace DubboNet.DubboService.DataModle
 
         public override string ToString()
         {
-            return $"Result:{Result}{System.Environment.NewLine}ServiceElapsed:{ServiceElapsed}{System.Environment.NewLine}RequestElapsed:{RequestElapsed}{System.Environment.NewLine}ErrorMeaasge:{ErrorMeaasge??""}";
+            return $"CreatTime:{CreatTime.ToString("yyyy-MM-dd HH:mm:ss.fff")}{System.Environment.NewLine}Result:{Result}{System.Environment.NewLine}ServiceElapsed:{ServiceElapsed}{System.Environment.NewLine}RequestElapsed:{RequestElapsed}{System.Environment.NewLine}ErrorMeaasge:{ErrorMeaasge??""}";
         }
     }
 
