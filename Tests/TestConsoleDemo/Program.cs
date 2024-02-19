@@ -11,12 +11,27 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await StressTestForDubboClient();
+await TestForFinalize();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
-GC.Collect();
-GC.WaitForPendingFinalizers();
-Console.ReadLine();
+for (int i = 0; i < 10; i++)
+{
+    //GC.Collect();
+    GC.Collect(2, GCCollectionMode.Forced);
+    GC.WaitForPendingFinalizers();
+    Console.ReadLine();
+}
+
+static async Task TestForFinalize()
+{
+    Console.WriteLine("Enter to start TestForFinalize");
+    Console.ReadLine();
+    DubboActuator dubboActuator = new DubboActuator("10.100.64.181", 7100);
+    //await dubboActuator.Connect();
+    Console.WriteLine($"NowErrorMes:{dubboActuator.NowErrorMes}");
+    Console.ReadLine();
+
+}
 
 static async Task StressTestForDubboClient()
 {
@@ -26,7 +41,7 @@ static async Task StressTestForDubboClient()
     List<Task<DubboRequestResult>> tasks = new List<Task<DubboRequestResult>>();
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.Start();
-    for(int i =0;i<10; i++)
+    for(int i =0;i<1; i++)
     {
         Task<DubboRequestResult> task = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939");
         tasks.Add(task);

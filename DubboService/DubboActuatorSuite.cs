@@ -290,7 +290,7 @@ namespace DubboNet.DubboService
             }
             if (!this.IsInUsedQueue && !this.IsQuerySending)
             {
-                Console.WriteLine($"++++++++++++++++++++++B[{this.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
+                MyLogger.LogDebug($"[GetAvailableDubboActuator]B[{this.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 //注意this的运行时类型是DubboActuatorSuite
                 this.IsInUsedQueue=true;
                 return this;
@@ -308,8 +308,8 @@ namespace DubboNet.DubboService
                 { 
                     nowDubboSuiteCell.Version++;
                     nowDubboSuiteCell.InnerDubboActuator.IsInUsedQueue=true;
-                }                
-                Console.WriteLine($"+++++++++++++++++++++++A[{nowDubboSuiteCell.InnerDubboActuator.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
+                }
+                MyLogger.LogDebug($"[GetAvailableDubboActuator]A[{nowDubboSuiteCell.InnerDubboActuator.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 return nowDubboSuiteCell?.InnerDubboActuator;
             }
         }
@@ -320,7 +320,7 @@ namespace DubboNet.DubboService
         /// <param name="command"></param>
         /// <param name="isDiagnosisCommand">是否为诊断命令，默认false（内部包装好的的非invoke控制命令）</param>
         /// <returns></returns>
-        internal override async Task<TelnetRequestResult> SendCommandAsync(string command ,bool isDiagnosisCommand)
+        internal override async Task<TelnetRequestResult> SendCommandAsync(string command ,bool isDiagnosisCommand = false)
         {
             DubboActuator availableDubboActuator =await GetAvailableDubboActuatorAsync(base.DubboRequestTimeout);
             if(availableDubboActuator==null)
@@ -336,7 +336,7 @@ namespace DubboNet.DubboService
                 }
                 try
                 {
-                    Console.WriteLine($"[SendCommandAsync]{DateTime.Now}-{availableDubboActuator.DubboActuatorGUID}");
+                    MyLogger.LogDebug($"[SendCommandAsync]{DateTime.Now}-{availableDubboActuator.DubboActuatorGUID}");
                     TelnetRequestResult telnetRequestResult = null;
                     //因为GetAvailableDubboActuatorAsync返回的DubboActuator可能是DubboActuatorSuite，如果是DubboActuatorSuite会循环调用override的SendCommandAsync方法，这里需要区分开
                     if (availableDubboActuator == this)

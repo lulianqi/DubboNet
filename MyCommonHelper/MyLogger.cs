@@ -1,5 +1,5 @@
-﻿#define LogDebug
-#define LogDiagnostics
+﻿#define LogDiagnostics
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -45,7 +45,7 @@ namespace MyCommonHelper
 
         public static void LogDebug(string mes, Exception ex = null)
         {
-            #if LogDebug
+            #if DEBUG
             if (ex == null)
             {
                 Print($"[{DateTime.Now}] {mes}" , LogType.Debug);
