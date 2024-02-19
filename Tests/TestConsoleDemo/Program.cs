@@ -41,7 +41,7 @@ static async Task StressTestForDubboClient()
         Console.WriteLine("-------------------");
         Console.WriteLine(task.Result.ToString());
     }
-    dubboClient.Dispose();
+    //dubboClient.Dispose();
 }
 
 static async Task TestForDubboClient()

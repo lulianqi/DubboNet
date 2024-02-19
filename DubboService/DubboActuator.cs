@@ -391,9 +391,10 @@ namespace DubboNet.DubboService
         /// <summary>
         /// 执行telnet DoRequestAsync （原数据请求，所有请求，包括诊断类型请求最终都会使用该入口发送网络数据）
         /// </summary>
-        /// <param name="command"></param>
+        /// <param name="command">命令内容</param>
+        /// <param name="isDiagnosisCommand">是否为诊断命令，默认false（内部包装好的的非invoke控制命令）</param>
         /// <returns>返回结果，如果为null表示执行失败（错误请查看NowErrorMes）</returns>
-        internal virtual async Task<TelnetRequestResult> SendCommandAsync(string command)
+        internal virtual async Task<TelnetRequestResult> SendCommandAsync(string command ,bool isDiagnosisCommand = false)
         {
             if (!IsConnected && !await Connect())
             {
@@ -430,7 +431,7 @@ namespace DubboNet.DubboService
             {
                 throw new ArgumentException("[GetDubboServiceFuncAsync] serviceName is empty");
             }
-            TelnetRequestResult tempResult = await SendCommandAsync($"ls -l {serviceName}");
+            TelnetRequestResult tempResult = await SendCommandAsync($"ls -l {serviceName}",true);
             if (tempResult == null || string.IsNullOrEmpty(tempResult.Result))
             {
                 NowErrorMes = "[GetDubboServiceFuncAsync] tempResult or tempResult.Result is NullOrEmpty";
@@ -455,7 +456,7 @@ namespace DubboNet.DubboService
         /// <returns>PROVIDER列表</returns>
         public async Task<DubboLsInfo> GetDubboLsInfoAsync()
         {
-            TelnetRequestResult tempResult = await SendCommandAsync($"ls");
+            TelnetRequestResult tempResult = await SendCommandAsync($"ls",true);
             if (tempResult == null)
             {
                 NowErrorMes = "[GetDubboLsInfoAsync] SendCommandAsync fail";
@@ -477,7 +478,7 @@ namespace DubboNet.DubboService
         /// <returns></returns>
         public async Task<DubboPsInfo> GetDubboPsInfoAsync()
         {
-            TelnetRequestResult tempResult = await SendCommandAsync($"ps -l {DubboPort}");
+            TelnetRequestResult tempResult = await SendCommandAsync($"ps -l {DubboPort}",true);
             if (tempResult == null)
             {
                 NowErrorMes = "[GetDubboPsInfoAsync] SendCommandAsync fail";
@@ -499,7 +500,7 @@ namespace DubboNet.DubboService
         /// <returns></returns>
         public async Task<DubboStatusInfo> GetDubboStatusInfoAsync()
         {
-            TelnetRequestResult tempResult = await SendCommandAsync($"status -l");
+            TelnetRequestResult tempResult = await SendCommandAsync($"status -l",true);
             if (tempResult == null)
             {
                 NowErrorMes = "[GetDubboStatusInfoAsync] SendCommandAsync fail";
@@ -531,7 +532,7 @@ namespace DubboNet.DubboService
                 DateTime endTime = DateTime.Now.AddSeconds(timeoutSecond);
                 while (DateTime.Now < endTime)
                 {
-                    TelnetRequestResult requestResult = await innerDubboActuator.SendCommandAsync($"trace {serviceName} {methodName} 1");
+                    TelnetRequestResult requestResult = await innerDubboActuator.SendCommandAsync($"trace {serviceName} {methodName} 1",true);
                     if (requestResult != null)
                     {
                         dubboFuncTraceInfo = DubboFuncTraceInfo.GetTraceInfo(requestResult.Result);

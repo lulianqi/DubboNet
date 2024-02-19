@@ -96,7 +96,8 @@ namespace DubboNet.DubboService
         public bool IsRead { get; private set; } = true;
 
         /// <summary>
-        /// 最后激活时间 (覆盖基类DubboActuator中的LastActivateTime属性,这里的LastActivateTime是整个DubboActuatorSuite的最后激活时间，不是里面每个套接字的最后激活时间)
+        /// 最后激活时间，覆盖基类DubboActuator中的LastActivateTime属性，不是里面每个套接字的最后激活时间
+        /// 这里的LastActivateTime是整个DubboActuatorSuite的最后激活时间（只关心调用DubboActuatorSuite发送请求，不关心内部诊断请求，而DubboActuator中的LastActivateTime是成功调用发送命令的时间，包括诊断请求）
         /// </summary>
         public new DateTime LastActivateTime { get; private set; }=default(DateTime);
 
@@ -229,7 +230,8 @@ namespace DubboNet.DubboService
                     ((DateTime.Now - LastActivateTime).TotalMilliseconds >  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoDormantIntervalTime ) )
                     {
                         //获取最新节点信息（GetDubboStatusInfoAsync调用的是基类的SendCommandAsync，所以一定是由主节点执行，同时不会更新重写的LastActivateTime属性）
-                        StatusInfo = base.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+                        //StatusInfo = base.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+                        StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
                         if(StatusInfo==null)
                         {
                             throw new Exception(this.NowErrorMes);
@@ -316,8 +318,9 @@ namespace DubboNet.DubboService
         /// 重写SendCommandAsync可用改变所有基类SendQuery行为，因为所有SendQuery最终出口都是SendCommandAsync
         /// </summary>
         /// <param name="command"></param>
+        /// <param name="isDiagnosisCommand">是否为诊断命令，默认false（内部包装好的的非invoke控制命令）</param>
         /// <returns></returns>
-        internal override async Task<TelnetRequestResult> SendCommandAsync(string command)
+        internal override async Task<TelnetRequestResult> SendCommandAsync(string command ,bool isDiagnosisCommand)
         {
             DubboActuator availableDubboActuator =await GetAvailableDubboActuatorAsync(base.DubboRequestTimeout);
             if(availableDubboActuator==null)
@@ -326,7 +329,11 @@ namespace DubboNet.DubboService
             }
             else
             {
-                LastActivateTime = DateTime.Now;
+                //诊断命令不更新DubboActuatorSuite的LastActivateTime
+                if(!isDiagnosisCommand)
+                {
+                    LastActivateTime = DateTime.Now;
+                }
                 try
                 {
                     Console.WriteLine($"[SendCommandAsync]{DateTime.Now}-{availableDubboActuator.DubboActuatorGUID}");
