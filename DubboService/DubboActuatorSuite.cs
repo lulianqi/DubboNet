@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -58,6 +59,7 @@ namespace DubboNet.DubboService
         {
             public int MaxConnections { get; set; } = 20;
             public int AssistConnectionAliveTime { get; set; } = 60 * 5;
+            public int MasterConnectionAliveTime { get; set; } = 60 * 10;
             public int DubboRequestTimeout { get; set; } = 10 * 1000;
             public string DefaultServiceName { get; set; } = null;
 
@@ -86,9 +88,15 @@ namespace DubboNet.DubboService
         public int MaxConnections { get;private set; } = 20;
 
         /// <summary>
-        /// 辅助执行单元连接的最大保活时间（单位秒，默认300s）
+        /// 辅助执行单元连接的最大保活时间（单位秒，默认300s，0表示永久保活）
         /// </summary>
         public int AssistConnectionAliveTime { get;private set; } = 60 * 5;
+
+        /// <summary>
+        /// 主执行单元连接的最大保活时间（单位秒，默认1200s ，0表示永久保活）
+        /// </summary>
+        public int MasterConnectionAliveTime { get;private set; } = 60 * 20;
+
 
         /// <summary>
         /// 当前DubboActuatorSuite是否可用（节点地址错误，都会导致连接失败，且这种错误不能通过自动重试恢复，
@@ -172,6 +180,7 @@ namespace DubboNet.DubboService
             {
                 DefaultServiceName = dubboActuatorSuiteConf.DefaultServiceName;
                 AssistConnectionAliveTime = dubboActuatorSuiteConf.AssistConnectionAliveTime;
+                MasterConnectionAliveTime = dubboActuatorSuiteConf.MasterConnectionAliveTime;
                 MaxConnections = dubboActuatorSuiteConf.MaxConnections;
             }
             _eventWaitHandle = new EventWaitHandle(true, EventResetMode.ManualReset);
@@ -217,9 +226,39 @@ namespace DubboNet.DubboService
                     {
                         if(dubboSuiteCell.IsAlive)
                         {
-                            if((e.SignalTime - dubboSuiteCell.LastActivateTime).TotalSeconds > AssistConnectionAliveTime)
+                            //主连接
+                            if(dubboSuiteCell.InnerDubboActuator==this)
+                            {
+                                if(MasterConnectionAliveTime==0)
+                                {
+                                    continue;
+                                }
+                                if((e.SignalTime - this.LastActivateTime).TotalSeconds > MasterConnectionAliveTime)
+                                {
+                                    dubboSuiteCell.InnerDubboActuator.DisConnect();
+                                    //主连接关闭后，自动关闭所有辅助连接
+                                    foreach(DubboSuiteCell cell in _actuatorSuiteCellList)
+                                    {
+                                        if(dubboSuiteCell.IsAlive)
+                                        {
+                                            cell.InnerDubboActuator.DisConnect();
+                                        }
+                                    }
+                                    break;
+                                    
+                                }
+                            }
+                            else if(AssistConnectionAliveTime!=0 && (e.SignalTime - dubboSuiteCell.LastActivateTime).TotalSeconds > AssistConnectionAliveTime)
+                            {
                                 dubboSuiteCell.InnerDubboActuator.DisConnect();
+                            }
                         }
+                    }
+                    //是否需要静默,静默不再更新StatusInfo
+                    bool isShouldSilent = MasterConnectionAliveTime!=0 && (e.SignalTime - this.LastActivateTime).TotalSeconds > MasterConnectionAliveTime;
+                    if(isShouldSilent)
+                    {
+                        return;
                     }
                     //更新StatusInfo，有以下3种情况需要更新StatusInfo
                     //StatusInfo为null时，首次更新
@@ -229,6 +268,7 @@ namespace DubboNet.DubboService
                     ((DateTime.Now - LastActivateTime).TotalMilliseconds <=  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoIntervalTime )||
                     ((DateTime.Now - LastActivateTime).TotalMilliseconds >  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoDormantIntervalTime ) )
                     {
+
                         //获取最新节点信息（GetDubboStatusInfoAsync调用的是基类的SendCommandAsync，所以一定是由主节点执行，同时不会更新重写的LastActivateTime属性）
                         //StatusInfo = base.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
                         StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();

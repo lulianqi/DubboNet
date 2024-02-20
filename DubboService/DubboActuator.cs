@@ -45,7 +45,6 @@ namespace DubboNet.DubboService
         private ExTelnet dubboTelnet;
         private AutoResetEvent sendQueryAutoResetEvent = null;
         private bool _isConnecting = false;
-        private string _dubboResponseNewline = "\r\n";
 
         /// <summary>
         /// 获取最近的错误信息(仅用于同步调用)
