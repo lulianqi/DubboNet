@@ -59,7 +59,7 @@ namespace DubboNet.DubboService
         {
             public int MaxConnections { get; set; } = 20;
             public int AssistConnectionAliveTime { get; set; } = 60 * 5;
-            public int MasterConnectionAliveTime { get; set; } = 60 * 10;
+            public int MasterConnectionAliveTime { get; set; } = 60 * 20;
             public int DubboRequestTimeout { get; set; } = 10 * 1000;
             public string DefaultServiceName { get; set; } = null;
 
@@ -107,7 +107,7 @@ namespace DubboNet.DubboService
         /// 最后激活时间，覆盖基类DubboActuator中的LastActivateTime属性，不是里面每个套接字的最后激活时间
         /// 这里的LastActivateTime是整个DubboActuatorSuite的最后激活时间（只关心调用DubboActuatorSuite发送请求，不关心内部诊断请求，而DubboActuator中的LastActivateTime是成功调用发送命令的时间，包括诊断请求）
         /// </summary>
-        public new DateTime LastActivateTime { get; private set; }=default(DateTime);
+        public new DateTime LastActivateTime { get; private set; }=DateTime.Now;
 
         /// <summary>
         /// 获取默认服务名称

@@ -91,7 +91,7 @@ namespace DubboNet.DubboService
         /// <summary>
         /// 最后激活时间，标记最后一次向dubbo服务发送业务请求的时间（连接、关闭连接不属于业务请求不更新LastActivateTime）
         /// </summary>
-        public DateTime LastActivateTime { get; private set; }=default(DateTime);
+        public DateTime LastActivateTime { get; private set; } = DateTime.Now;
 
         /// <summary>
         /// 当前DubboActuator是否处于连接状态

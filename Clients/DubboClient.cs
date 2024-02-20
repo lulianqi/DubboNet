@@ -50,7 +50,8 @@ namespace DubboNet.Clients
             public string DubboRootPath { get; set; } = "/dubbo/";
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
-            public int DubboRequestTimeout { get; set; } = 10 * 1000;
+            public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
+            public int DubboRequestTimeout { get; set; } = 60 * 1000;
             public int MaintainServiceNum { get; set; } = 20;
             public LoadBalanceMode NowLoadBalanceMode { get; set; } = LoadBalanceMode.Random;
             public string DefaultFuncName { get; set; } = null;
@@ -109,14 +110,19 @@ namespace DubboNet.Clients
         public int DubboActuatorSuiteMaxConnections { get;private set; } = 20;
 
         /// <summary>
-        /// 单辅助连接不再活跃超过此时间时释放辅助连接（单位秒）
+        /// 服务节点辅助连接不再活跃超过此时间时释放辅助连接（单位秒,默认300s，0表示不进行主动释放）
         /// </summary>
         public int DubboActuatorSuiteAssistConnectionAliveTime { get; private set; } = 60 * 5;
 
         /// <summary>
+        /// 服务节点主连接不再活跃超过此时间时释放辅助连接（单位秒,默认1200s，0表示不进行主动释放）
+        /// </summary>
+        public int DubboActuatorSuiteMasterConnectionAliveTime { get; private set; } = 60 * 20;
+
+        /// <summary>
         /// Dubbo请求的最大超时时间
         /// </summary>
-        public int DubboRequestTimeout { get; private set; } = 10 * 1000;
+        public int DubboRequestTimeout { get; private set; } = 60 * 1000;
 
         /// <summary>
         /// DubboClient可最大缓存的复用服务数量,0表示无限制（如果当前DubboClient实例会大量请求不同服务，可以扩大该数值）
@@ -151,6 +157,7 @@ namespace DubboNet.Clients
             NowLoadBalanceMode = dubboClientConf.NowLoadBalanceMode;
             DubboActuatorSuiteMaxConnections = dubboClientConf.DubboActuatorSuiteMaxConnections;
             DubboActuatorSuiteAssistConnectionAliveTime = dubboClientConf.DubboActuatorSuiteAssistConnectionAliveTime;
+            DubboActuatorSuiteMasterConnectionAliveTime = dubboClientConf.DubboActuatorSuiteMasterConnectionAliveTime;
             DubboRequestTimeout = dubboClientConf.DubboRequestTimeout;
             MaintainServiceNum = dubboClientConf.MaintainServiceNum;
 
@@ -160,6 +167,7 @@ namespace DubboNet.Clients
             {
                 DefaultServiceName = DefaultServiceName,
                 DubboActuatorSuiteAssistConnectionAliveTime = DubboActuatorSuiteAssistConnectionAliveTime,
+                DubboActuatorSuiteMasterConnectionAliveTime = DubboActuatorSuiteMasterConnectionAliveTime,
                 DubboActuatorSuiteMaxConnections = DubboActuatorSuiteMaxConnections,
                 DubboRequestTimeout = DubboRequestTimeout,
                 MaintainServiceNum = MaintainServiceNum,

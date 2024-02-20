@@ -20,7 +20,8 @@ namespace DubboNet.Clients
         {
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
-            public int DubboRequestTimeout { get; set; } = 10 * 1000;
+            public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
+            public int DubboRequestTimeout { get; set; } = 60 * 1000;
             public int MaintainServiceNum { get; set; } = 20;
             public LoadBalanceMode NowLoadBalanceMode { get; set; } = LoadBalanceMode.Random;
             public string DefaultServiceName { get; set; } = null;
@@ -99,6 +100,7 @@ namespace DubboNet.Clients
                     new DubboServiceDriver.DubboServiceDriverConf()
                     {
                         DubboActuatorSuiteAssistConnectionAliveTime = _innerDubboDriverCollectionConf.DubboActuatorSuiteAssistConnectionAliveTime,
+                        DubboActuatorSuiteMasterConnectionAliveTime = _innerDubboDriverCollectionConf.DubboActuatorSuiteMasterConnectionAliveTime,
                         DubboActuatorSuiteMaxConnections = _innerDubboDriverCollectionConf.DubboActuatorSuiteMaxConnections,
                         DubboRequestTimeout = _innerDubboDriverCollectionConf.DubboRequestTimeout
                     });

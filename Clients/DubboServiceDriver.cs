@@ -20,8 +20,8 @@ namespace DubboNet.Clients
         {
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
-            public int DubboRequestTimeout { get; set; } = 10 * 1000;
-
+            public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
+            public int DubboRequestTimeout { get; set; } = 60 * 1000;
         }
 
         /// <summary>
@@ -99,6 +99,7 @@ namespace DubboNet.Clients
                     EndPoint = ep,
                     ActuatorSuite = new DubboActuatorSuite(ep,new DubboActuatorSuiteConf() { 
                         AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime, 
+                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
                         DubboRequestTimeout=_innerDubboServiceDriverConf.DubboRequestTimeout, 
                         MaxConnections=_innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections }),
                     ReferenceCount = 0
