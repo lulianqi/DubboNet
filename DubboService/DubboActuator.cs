@@ -605,10 +605,6 @@ namespace DubboNet.DubboService
             dubboTelnet?.Dispose();
         }
 
-        ~DubboActuator()
-        {
-        }
-
         /// <summary>
         /// deep clone （使用当前配置返回一个新的DubboActuator）
         /// </summary>

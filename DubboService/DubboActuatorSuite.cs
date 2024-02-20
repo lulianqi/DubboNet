@@ -239,7 +239,7 @@ namespace DubboNet.DubboService
                                     //主连接关闭后，自动关闭所有辅助连接
                                     foreach(DubboSuiteCell cell in _actuatorSuiteCellList)
                                     {
-                                        if(dubboSuiteCell.IsAlive)
+                                        if(cell.IsAlive)
                                         {
                                             cell.InnerDubboActuator.DisConnect();
                                         }

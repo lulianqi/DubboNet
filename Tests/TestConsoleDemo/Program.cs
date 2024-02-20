@@ -11,7 +11,7 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await TestForFinalize();
+await StressTestForDubboClient();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
 for (int i = 0; i < 10; i++)
@@ -37,11 +37,11 @@ static async Task StressTestForDubboClient()
 {
     Console.WriteLine("Enter to start StressTestForDubboClient");
     Console.ReadLine();
-    var dubboClient  =new DubboClient("10.100.64.198:2181") ;
+    var dubboClient  =new DubboClient("10.100.64.198:2181" , new DubboClient.DubboClientConf() { DubboActuatorSuiteMasterConnectionAliveTime = 120 }) ;
     List<Task<DubboRequestResult>> tasks = new List<Task<DubboRequestResult>>();
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.Start();
-    for(int i =0;i<1; i++)
+    for(int i =0;i<10; i++)
     {
         Task<DubboRequestResult> task = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939");
         tasks.Add(task);
