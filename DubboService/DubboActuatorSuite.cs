@@ -349,7 +349,7 @@ namespace DubboNet.DubboService
                     nowDubboSuiteCell.Version++;
                     nowDubboSuiteCell.InnerDubboActuator.IsInUsedQueue=true;
                 }
-                MyLogger.LogDebug($"[GetAvailableDubboActuator]A[{nowDubboSuiteCell.InnerDubboActuator.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
+                MyLogger.LogDebug($"[GetAvailableDubboActuator]A[{nowDubboSuiteCell?.InnerDubboActuator?.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 return nowDubboSuiteCell?.InnerDubboActuator;
             }
         }

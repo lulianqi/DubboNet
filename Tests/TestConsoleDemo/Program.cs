@@ -11,7 +11,7 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await StressTestForDubboClient();
+await TestForFinalize();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
 for (int i = 0; i < 10; i++)
@@ -27,7 +27,8 @@ static async Task TestForFinalize()
     Console.WriteLine("Enter to start TestForFinalize");
     Console.ReadLine();
     DubboActuator dubboActuator = new DubboActuator("10.100.64.181", 7100);
-    //await dubboActuator.Connect();
+    await dubboActuator.Connect();
+    dubboActuator.Dispose();
     Console.WriteLine($"NowErrorMes:{dubboActuator.NowErrorMes}");
     Console.ReadLine();
 
@@ -37,11 +38,11 @@ static async Task StressTestForDubboClient()
 {
     Console.WriteLine("Enter to start StressTestForDubboClient");
     Console.ReadLine();
-    var dubboClient  =new DubboClient("10.100.64.198:2181" , new DubboClient.DubboClientConf() { DubboActuatorSuiteMasterConnectionAliveTime = 120 }) ;
+    var dubboClient  =new DubboClient("10.100.64.198:2181" , new DubboClient.DubboClientConf() { DubboActuatorSuiteMasterConnectionAliveTime = 600 }) ;
     List<Task<DubboRequestResult>> tasks = new List<Task<DubboRequestResult>>();
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.Start();
-    for(int i =0;i<10; i++)
+    for(int i =0;i<50; i++)
     {
         Task<DubboRequestResult> task = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939");
         tasks.Add(task);
@@ -56,7 +57,7 @@ static async Task StressTestForDubboClient()
         Console.WriteLine("-------------------");
         Console.WriteLine(task.Result.ToString());
     }
-    //dubboClient.Dispose();
+    dubboClient.Dispose();
 }
 
 static async Task TestForDubboClient()

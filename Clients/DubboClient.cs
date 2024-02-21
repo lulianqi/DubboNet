@@ -400,7 +400,7 @@ namespace DubboNet.Clients
             ServiceEndPointsInfo serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(serviceName,isFullPath);
             if (serviceEndPointsInfo.ErrorInfo != null)
             {
-                MyLogger.LogError($"[ReflushProviderByPathAsync] fail by {serviceName} : serviceEndPointsInfo.ErrorInfo");
+                MyLogger.LogError($"[ReflushProviderByPathAsync] fail by {serviceName} : {serviceEndPointsInfo.ErrorInfo}");
                 return false;
             }
             else
@@ -596,7 +596,9 @@ namespace DubboNet.Clients
                 }
                 // TODO: 释放未托管的资源(未托管的对象)并重写终结器
                 // TODO: 将大型字段设置为 null
+                IsDisposed = true;
                 DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(_innerMyZookeeper.ConnectionString);
+                _dubboClientZookeeperWatcher = null;
                 _dubboDriverCollection.Dispose();
                 _dubboDriverCollection = null;
                 foreach(var item in _retainDubboActuatorSuiteCollection)
@@ -604,7 +606,6 @@ namespace DubboNet.Clients
                     item.Value?.ActuatorSuite.Dispose();
                 }
                 _retainDubboActuatorSuiteCollection = null;
-                IsDisposed = true;
             }
         }
 

@@ -93,6 +93,11 @@ namespace DubboNet.Clients
 
         private async Task StartConnecTaskAsync(int timeout = 0)
         {
+            if (InnerDubboClient.IsDisposed)
+            {
+                MyLogger.LogWarning("[StartConnecTaskAsync] dubbo client is disposed");
+                return;
+            }
             if (await InnerDubboClient.TryDoConnectRegistryTaskAsync(1000, timeout))
             {
                 MyLogger.LogInfo($"[DubboClientZookeeperWatcher] Reconnect , ReLoadDubboDriverCollection start ");
