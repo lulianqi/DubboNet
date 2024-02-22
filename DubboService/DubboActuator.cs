@@ -200,6 +200,7 @@ namespace DubboNet.DubboService
                     {
                         sendQueryAutoResetEvent.Set();
                     }
+                    sendQueryAutoResetEvent.Dispose();
                 }
                 sendQueryAutoResetEvent = new AutoResetEvent(true);
                 return true;
@@ -603,6 +604,7 @@ namespace DubboNet.DubboService
         {
             DisConnect();
             dubboTelnet?.Dispose();
+            sendQueryAutoResetEvent?.Dispose();
         }
 
         /// <summary>

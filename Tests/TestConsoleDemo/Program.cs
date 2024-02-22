@@ -3,6 +3,7 @@ using DubboNet.Clients;
 using DubboNet.Clients.RegistryClient;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
+using NetService.Telnet;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Encodings.Web;
@@ -11,7 +12,14 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await StressTestForDubboClient();
+using (var evt = new AutoResetEvent(false))
+{
+    evt.WaitOne(2000);
+    Console.WriteLine("Enter to end using");
+    Console.ReadLine();
+}
+//await TestForExTelnet();
+//await StressTestForDubboClient();
 //await TestForFinalize();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
@@ -29,10 +37,20 @@ static async Task TestForFinalize()
     Console.ReadLine();
     DubboActuator dubboActuator = new DubboActuator("10.100.64.181", 7100);
     await dubboActuator.Connect();
-    dubboActuator.Dispose();
     Console.WriteLine($"NowErrorMes:{dubboActuator.NowErrorMes}");
     Console.ReadLine();
+    dubboActuator.Dispose();
+}
 
+static async Task TestForExTelnet()
+{
+    Console.WriteLine("Enter to start TestForExTelnet");
+    Console.ReadLine();
+    ExTelnet tl = new ExTelnet("10.100.64.181", 7100);
+    await tl.ConnectAsync();
+    tl.Dispose();
+    Console.WriteLine($"NowErrorMes:{tl.NowErrorMes}");
+    Console.ReadLine();
 }
 
 static async Task StressTestForDubboClient()

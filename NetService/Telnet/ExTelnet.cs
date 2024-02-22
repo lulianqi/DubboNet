@@ -122,6 +122,11 @@ namespace NetService.Telnet
         public event delegateDataOut OnMesageReport;
 
         /// <summary>
+        /// 是否已经被释放
+        /// </summary>
+        internal bool IsDisposed { get; private set; } = false;
+
+        /// <summary>
         /// 获取当前Telnet的IPEndPoint
         /// </summary>
         public IPEndPoint TelnetEndPoint
@@ -374,6 +379,7 @@ namespace NetService.Telnet
             {
                 // Try a blocking connection to the server
                 //socketType参数指定类的类型 Socket ， protocolType 参数指定所使用的协议 Socket 。 这两个参数不是独立的。 通常， Socket 类型在协议中是隐式的。 如果 Socket 类型类型和协议类型的组合导致无效，则 Socket 此构造函数引发 SocketException
+                mySocket?.Dispose();
                 mySocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 //mySocket.Connect(iep);//如果需要同步连接的方法，可以使用Connect
                 //如果设置过连接超时
@@ -466,6 +472,10 @@ namespace NetService.Telnet
             //打印调试信息收到数据报文的处理线程
             //TelnetOptionHelper.ShowDebugLog($"-----------------OnRecievedData CallBack CurrentThread Id:{Thread.CurrentThread.ManagedThreadId}--------------------");
             receiveDone.WaitOne();
+            if(IsDisposed)
+            {
+                return;
+            }
             StateObject so = (StateObject)ar.AsyncState;
             Socket nowSocket = so.workSocket;
             if (nowSocket == null)
@@ -964,14 +974,20 @@ namespace NetService.Telnet
 
         public void Dispose()
         {
-            _telnetKeepliveTimer?.Dispose();
-            mySocket?.Dispose();
-            requestStream?.Dispose();
-            terminalStream?.Dispose();
+            if (!IsDisposed)
+            {
+                IsDisposed = true;
+                _telnetKeepliveTimer?.Dispose();
+                mySocket?.Dispose();
+                requestStream?.Dispose();
+                terminalStream?.Dispose();
 
-            sendDone.Dispose();
-            receiveDone.Dispose();
-            getReceiveData.Dispose();
+                receiveDone.Set();
+                Task.Delay(100).Wait();
+                sendDone.Dispose();
+                receiveDone.Dispose();
+                getReceiveData.Dispose();
+            }
         }
     }
 }
