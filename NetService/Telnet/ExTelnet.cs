@@ -968,6 +968,10 @@ namespace NetService.Telnet
             mySocket?.Dispose();
             requestStream?.Dispose();
             terminalStream?.Dispose();
+
+            sendDone.Dispose();
+            receiveDone.Dispose();
+            getReceiveData.Dispose();
         }
     }
 }

@@ -11,7 +11,8 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await TestForFinalize();
+await StressTestForDubboClient();
+//await TestForFinalize();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
 for (int i = 0; i < 10; i++)
