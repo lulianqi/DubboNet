@@ -980,13 +980,18 @@ namespace NetService.Telnet
                 _telnetKeepliveTimer?.Dispose();
                 mySocket?.Dispose();
                 requestStream?.Dispose();
+                requestStream = null;
                 terminalStream?.Dispose();
+                requestStream = null;
 
                 receiveDone.Set();
                 Task.Delay(100).Wait();
                 sendDone.Dispose();
+                sendDone = null;
                 receiveDone.Dispose();
+                receiveDone = null;
                 getReceiveData.Dispose();
+                getReceiveData = null;
             }
         }
     }

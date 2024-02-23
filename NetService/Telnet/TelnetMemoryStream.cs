@@ -191,6 +191,8 @@ namespace NetService.Telnet
 
         public void Dispose()
         {
+            autoResetEvent.Dispose();
+            autoResetEvent = null;
             memoryStream?.Dispose();
             memoryStream = null;
         }

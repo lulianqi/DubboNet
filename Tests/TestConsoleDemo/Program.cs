@@ -12,13 +12,7 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-using (var evt = new AutoResetEvent(false))
-{
-    evt.WaitOne(2000);
-    Console.WriteLine("Enter to end using");
-    Console.ReadLine();
-}
-//await TestForExTelnet();
+await TestForExTelnet();
 //await StressTestForDubboClient();
 //await TestForFinalize();
 Console.WriteLine("Enter to Exit");
@@ -46,11 +40,17 @@ static async Task TestForExTelnet()
 {
     Console.WriteLine("Enter to start TestForExTelnet");
     Console.ReadLine();
+    //using (var evt = new AutoResetEvent(false))
+    //{
+    //    evt.WaitOne(2000);
+    //    Console.WriteLine("Enter to end using");
+    //    Console.ReadLine();
+    //}
     ExTelnet tl = new ExTelnet("10.100.64.181", 7100);
     await tl.ConnectAsync();
-    tl.Dispose();
     Console.WriteLine($"NowErrorMes:{tl.NowErrorMes}");
     Console.ReadLine();
+    tl.Dispose();
 }
 
 static async Task StressTestForDubboClient()
