@@ -979,10 +979,11 @@ namespace NetService.Telnet
                 IsDisposed = true;
                 _telnetKeepliveTimer?.Dispose();
                 mySocket?.Dispose();
+                mySocket = null;
                 requestStream?.Dispose();
                 requestStream = null;
                 terminalStream?.Dispose();
-                requestStream = null;
+                terminalStream = null;
 
                 receiveDone.Set();
                 Task.Delay(100).Wait();
