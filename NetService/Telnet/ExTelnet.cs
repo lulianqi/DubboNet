@@ -471,11 +471,12 @@ namespace NetService.Telnet
         {
             //打印调试信息收到数据报文的处理线程
             //TelnetOptionHelper.ShowDebugLog($"-----------------OnRecievedData CallBack CurrentThread Id:{Thread.CurrentThread.ManagedThreadId}--------------------");
-            receiveDone.WaitOne();
-            if(IsDisposed)
+            //关闭或释放连接时会直接促发OnRecievedData
+            if (IsDisposed)
             {
                 return;
             }
+            receiveDone.WaitOne(); 
             StateObject so = (StateObject)ar.AsyncState;
             Socket nowSocket = so.workSocket;
             if (nowSocket == null)
@@ -746,7 +747,8 @@ namespace NetService.Telnet
                         return false;
                     }
                     //getReceiveData.WaitOne(waitTime);
-                    await getReceiveData.WaitOneAsync(waitTime);//WaitHandle 的异步等待方法
+                    await getReceiveData?.WaitOneAsync(waitTime);//WaitHandle 的异步等待方法
+                    if (IsDisposed) break;
                 }
                 return isFind;
             }
@@ -795,7 +797,8 @@ namespace NetService.Telnet
             {
                 return false;
             }
-            sendDone.WaitOne();
+            sendDone?.WaitOne();
+            if (IsDisposed) return false;
             try
             {
                 //SocketFlags可以设置Flag位
@@ -978,6 +981,7 @@ namespace NetService.Telnet
             {
                 IsDisposed = true;
                 _telnetKeepliveTimer?.Dispose();
+                DisConnect();
                 mySocket?.Dispose();
                 mySocket = null;
                 requestStream?.Dispose();
@@ -985,8 +989,17 @@ namespace NetService.Telnet
                 terminalStream?.Dispose();
                 terminalStream = null;
 
-                receiveDone.Set();
-                Task.Delay(100).Wait();
+                if(!sendDone.WaitOne(0))
+                {
+                    sendDone.Set();
+                    Thread.Yield();
+                }
+                if (!getReceiveData.WaitOne(0))
+                {
+                    getReceiveData.Set();
+                    Thread.Yield();
+                }
+
                 sendDone.Dispose();
                 sendDone = null;
                 receiveDone.Dispose();

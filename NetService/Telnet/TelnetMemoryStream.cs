@@ -27,6 +27,11 @@ namespace NetService.Telnet
         }
 
         /// <summary>
+        /// 是否已经被释放
+        /// </summary>
+        internal bool IsDisposed { get; private set; } = false;
+
+        /// <summary>
         /// 初始化TelnetMemoryStream
         /// </summary>
         /// <param name="maxLength">预期保持数据的长度，数据可能会短时间超过该值</param>
@@ -47,6 +52,7 @@ namespace NetService.Telnet
             if (memoryStream.Length> keepLength)
             {
                 autoResetEvent.WaitOne();
+                if(IsDisposed) return;
                 byte[] tempBytes = new byte[keepLength];
                 memoryStream.Position = memoryStream.Position - keepLength;
                 await memoryStream.ReadAsync(tempBytes, 0, tempBytes.Length);
@@ -69,6 +75,7 @@ namespace NetService.Telnet
                 await DropHistoricalData();
             }
             autoResetEvent.WaitOne();
+            if (IsDisposed) return;
             await memoryStream.WriteAsync(bytes, 0, bytes.Length);
             autoResetEvent.Set();
         }
@@ -96,6 +103,7 @@ namespace NetService.Telnet
             }
             long findIndx = 0;
             autoResetEvent.WaitOne();
+            if (IsDisposed) return -1;
             byte[] buffer = new byte[findBytes.Length];
             bool tempFind = true;
             for (findIndx = startIndex; findIndx< memoryStream.Length- findBytes.Length +1; findIndx++)
@@ -142,6 +150,7 @@ namespace NetService.Telnet
                 return false;
             }
             autoResetEvent.WaitOne();
+            if (IsDisposed) return false;
             memoryStream.Position = memoryStream.Position - endFlagBytes.Length;
             for(int i =0;i< endFlagBytes.Length;i++)
             {
@@ -169,6 +178,7 @@ namespace NetService.Telnet
                 isRemoveEndFlag = IsGetEndFlag(endFlagBytes);
             }
             autoResetEvent.WaitOne();
+            if (IsDisposed) return null;
             long tempLength = memoryStream.Length - (isRemoveEndFlag ? endFlagBytes.Length:0);
             byte[] resultBytes = new byte[tempLength];
             memoryStream.Position = 0;
@@ -191,10 +201,19 @@ namespace NetService.Telnet
 
         public void Dispose()
         {
-            autoResetEvent.Dispose();
-            autoResetEvent = null;
-            memoryStream?.Dispose();
-            memoryStream = null;
+            if (!IsDisposed)
+            {
+                IsDisposed = true;
+                if (!autoResetEvent.WaitOne(0))
+                {
+                    autoResetEvent.Set();
+                    Thread.Yield();
+                }
+                autoResetEvent.Dispose();
+                autoResetEvent = null;
+                memoryStream?.Dispose();
+                memoryStream = null;
+            }
         }
     }
 }

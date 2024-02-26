@@ -13,6 +13,8 @@ using TestConsoleDemo.DataModle;
 
 Console.WriteLine("TestDemoConsole");
 await TestForExTelnet();
+await TestForExTelnet();
+await TestForExTelnet();
 //await StressTestForDubboClient();
 //await TestForFinalize();
 Console.WriteLine("Enter to Exit");
@@ -30,10 +32,16 @@ static async Task TestForFinalize()
     Console.WriteLine("Enter to start TestForFinalize");
     Console.ReadLine();
     DubboActuator dubboActuator = new DubboActuator("10.100.64.181", 7100);
+    DubboActuator dubboActuator2 = new DubboActuator("10.100.64.181", 7100);
+    DubboActuator dubboActuator3 = new DubboActuator("10.100.64.181", 7100);
     await dubboActuator.Connect();
+    await dubboActuator2.Connect();
+    await dubboActuator3.Connect();
     Console.WriteLine($"NowErrorMes:{dubboActuator.NowErrorMes}");
     Console.ReadLine();
-    dubboActuator.Dispose();
+    dubboActuator.Dispose(); 
+    dubboActuator2.Dispose();
+    dubboActuator3.Dispose();
 }
 
 static async Task TestForExTelnet()
@@ -48,9 +56,15 @@ static async Task TestForExTelnet()
     //}
     ExTelnet tl = new ExTelnet("10.100.64.181", 7100);
     await tl.ConnectAsync();
+    //ExTelnet t2 = new ExTelnet("10.100.64.181", 7100);
+    //await t2.ConnectAsync();
+    //ExTelnet t3 = new ExTelnet("10.100.64.181", 7100);
+    //await t3.ConnectAsync();
     Console.WriteLine($"NowErrorMes:{tl.NowErrorMes}");
     Console.ReadLine();
     tl.Dispose();
+    //t2.Dispose();
+    //t3.Dispose();
 }
 
 static async Task StressTestForDubboClient()
