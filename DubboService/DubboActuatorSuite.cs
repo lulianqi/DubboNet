@@ -73,6 +73,11 @@ namespace DubboNet.DubboService
         private EventWaitHandle _eventWaitHandle = null;
 
         /// <summary>
+        /// 是否已经被释放
+        /// </summary>
+        internal bool IsDisposed { get; private set; } = false;
+
+        /// <summary>
         /// 获取当前节点服务及Func信息
         /// </summary>
         public Dictionary<string, Dictionary<string, DubboFuncInfo>> DubboServiceFuncCollection { get; private set; }
@@ -410,18 +415,33 @@ namespace DubboNet.DubboService
 
         public new void Dispose()
         {
-            //取消事件订阅，如果需要暂停DubboSuiteTimer
-            DubboSuiteCruiseEvent -= CruiseTaskEvent;
-            if (DubboSuiteCruiseEvent == null || DubboSuiteCruiseEvent.GetInvocationList().Length == 0)
+            if (!IsDisposed)
             {
-                DubboSuiteTimer.Stop();
+                IsDisposed = true;
+                //取消事件订阅，如果需要暂停DubboSuiteTimer
+                DubboSuiteCruiseEvent -= CruiseTaskEvent;
+                if (DubboSuiteCruiseEvent == null || DubboSuiteCruiseEvent.GetInvocationList().Length == 0)
+                {
+                    DubboSuiteTimer.Stop();
+                }
+                //释放连接
+                foreach (DubboSuiteCell dscItem in _actuatorSuiteCellList)
+                {
+                    dscItem.InnerDubboActuator.Dispose();
+                }
+                base.Dispose();
+
+                _eventWaitHandle?.Dispose();
+                _eventWaitHandle=null;
+                //托管资源正常不用单独置Null，不过Socket的缓存机制可能导致有一个副本残留，把下面大对象置Null可减少残留对象关联的内存对象数量。
+                _actuatorSuiteCellList?.Clear();
+                _actuatorSuiteCellList = null;
+                DubboServiceFuncCollection?.Clear();
+                DubboServiceFuncCollection = null;
+                DefaulDubboServiceFuncs?.Clear();
+                DefaulDubboServiceFuncs=null;
+                StatusInfo = null;
             }
-            //释放连接
-            foreach(DubboSuiteCell dscItem in _actuatorSuiteCellList)
-            {
-                dscItem.InnerDubboActuator.Dispose();
-            }
-            base.Dispose();
         }
 
     }

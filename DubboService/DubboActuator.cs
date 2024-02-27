@@ -47,6 +47,11 @@ namespace DubboNet.DubboService
         private bool _isConnecting = false;
 
         /// <summary>
+        /// 是否已经被释放
+        /// </summary>
+        internal bool IsDisposed { get; private set; } = false;
+
+        /// <summary>
         /// 获取最近的错误信息(仅用于同步调用)
         /// </summary>
         public string NowErrorMes { get; private set; }
@@ -224,6 +229,7 @@ namespace DubboNet.DubboService
                     sendQueryAutoResetEvent.Set();
                 }
             }
+            sendQueryAutoResetEvent?.Dispose();
             sendQueryAutoResetEvent = null;
         }
 
@@ -602,9 +608,13 @@ namespace DubboNet.DubboService
 
         public void Dispose()
         {
-            DisConnect();
-            dubboTelnet?.Dispose();
-            sendQueryAutoResetEvent?.Dispose();
+            if (!IsDisposed)
+            {
+                IsDisposed = true;
+                DisConnect();
+                dubboTelnet?.Dispose();
+                sendQueryAutoResetEvent?.Dispose();
+            }
         }
 
         /// <summary>

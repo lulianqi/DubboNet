@@ -14,10 +14,10 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-CasTest();
 //await TestForExTelnet();
 //await SendHttpRequestAsync(new Uri("http://baidu.com"));
-//await StressTestForDubboClient();
+await StressTestForDubboClient();
+await StressTestForDubboClient();
 //await TestForFinalize();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
@@ -84,9 +84,9 @@ static async Task TestForFinalize()
 {
     Console.WriteLine("Enter to start TestForFinalize");
     Console.ReadLine();
-    DubboActuator dubboActuator = new DubboActuator("10.100.64.181", 7100);
-    DubboActuator dubboActuator2 = new DubboActuator("10.100.64.181", 7100);
-    DubboActuator dubboActuator3 = new DubboActuator("10.100.64.181", 7100);
+    DubboActuatorSuite dubboActuator = new DubboActuatorSuite("10.100.64.211", 20890);
+    DubboActuatorSuite dubboActuator2 = new DubboActuatorSuite("10.100.64.211", 20890);
+    DubboActuatorSuite dubboActuator3 = new DubboActuatorSuite("10.100.64.211", 20890);
     await dubboActuator.Connect();
     await dubboActuator2.Connect();
     await dubboActuator3.Connect();
@@ -124,7 +124,7 @@ static async Task StressTestForDubboClient()
 {
     Console.WriteLine("Enter to start StressTestForDubboClient");
     Console.ReadLine();
-    var dubboClient  =new DubboClient("10.100.64.198:2181" , new DubboClient.DubboClientConf() { DubboActuatorSuiteMasterConnectionAliveTime = 600 }) ;
+    var dubboClient  =new DubboClient("10.100.64.198:2181" , new DubboClient.DubboClientConf() { DubboActuatorSuiteMasterConnectionAliveTime = 1200 }) ;
     List<Task<DubboRequestResult>> tasks = new List<Task<DubboRequestResult>>();
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.Start();
@@ -154,6 +154,7 @@ static async Task TestForDubboClient()
     {
         _ = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939").ContinueWith(rs => Console.WriteLine(rs.Result.Result));
     }
+    dubboClient.Dispose();
     dubboClient = null;
     Console.WriteLine(result.Result);
 }
@@ -233,16 +234,3 @@ static async Task TestForSendQuery()
     Console.WriteLine(JsonSerializer.Serialize(DrModle_PlainResult.ResultModle, option));
 
 }
-
-static void CasTest()
-{
-    Cas cas = new Cas();
-    Cas cas1 = new Cas();
-    Cas cas2 = new Cas();
-}
-public class Cas
-{
-    static string Name = "1233";
-    public string ID = "";
-}
-
