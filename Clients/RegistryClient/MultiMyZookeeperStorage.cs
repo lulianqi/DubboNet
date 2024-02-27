@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace DubboNet.Clients.RegistryClient
 {
 
-    internal class MultiMyZookeeperStorage
+    internal class MultiMyZookeeperStorage:IDisposable
     {
         internal class MyZookeeperStorageInfo
         {
@@ -56,6 +56,19 @@ namespace DubboNet.Clients.RegistryClient
                     _innerMultiMyZookeeperCollection[ConnectionString].NowMyZookeeper.Dispose();
                     _innerMultiMyZookeeperCollection.Remove(ConnectionString);
                 }
+            }
+        }
+
+        public void Dispose()
+        {
+            if(_innerMultiMyZookeeperCollection!=null)
+            {
+                foreach(var item in _innerMultiMyZookeeperCollection)
+                {
+                    item.Value.NowMyZookeeper.Dispose();
+                }
+                _innerMultiMyZookeeperCollection.Clear();
+                _innerMultiMyZookeeperCollection = null;
             }
         }
     }

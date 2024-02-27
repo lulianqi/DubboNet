@@ -605,6 +605,7 @@ namespace DubboNet.Clients
                 {
                     item.Value?.ActuatorSuite.Dispose();
                 }
+                _retainDubboActuatorSuiteCollection.Clear();
                 _retainDubboActuatorSuiteCollection = null;
             }
         }
