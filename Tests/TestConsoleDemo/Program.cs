@@ -3,22 +3,16 @@ using DubboNet.Clients;
 using DubboNet.Clients.RegistryClient;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
-using NetService.Telnet;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Linq;
-using System.Net.Sockets;
-using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-//await TestForExTelnet();
-//await SendHttpRequestAsync(new Uri("http://baidu.com"));
 await StressTestForDubboClient();
-await StressTestForDubboClient();
-//await TestForFinalize();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
 for (int i = 0; i < 10; i++)
@@ -29,106 +23,26 @@ for (int i = 0; i < 10; i++)
     Console.ReadLine();
 }
 
-static async Task SendHttpRequestAsync(Uri? uri = null, int port = 80, CancellationToken cancellationToken = default)
-{
-    uri ??= new Uri("http://example.com");
-
-    // Construct a minimalistic HTTP/1.1 request
-    byte[] requestBytes = Encoding.ASCII.GetBytes(@$"GET {uri.AbsoluteUri} HTTP/1.1
-Host: {uri.Host}
-Connection: Close
-
-");
-
-    // Create and connect a dual-stack socket
-    using Socket socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-    await socket.ConnectAsync(uri.Host, port, cancellationToken);
-
-    // Send the request.
-    // For the tiny amount of data in this example, the first call to SendAsync() will likely deliver the buffer completely,
-    // however this is not guaranteed to happen for larger real-life buffers.
-    // The best practice is to iterate until all the data is sent.
-    int bytesSent = 0;
-    while (bytesSent < requestBytes.Length)
-    {
-        bytesSent += await socket.SendAsync(requestBytes.AsMemory(bytesSent), SocketFlags.None);
-    }
-
-    // Do minimalistic buffering assuming ASCII response
-    byte[] responseBytes = new byte[256];
-    char[] responseChars = new char[256];
-
-    while (true)
-    {
-        int bytesReceived = await socket.ReceiveAsync(responseBytes, SocketFlags.None, cancellationToken);
-
-        // Receiving 0 bytes means EOF has been reached
-        if (bytesReceived == 0) break;
-
-        // Convert byteCount bytes to ASCII characters using the 'responseChars' buffer as destination
-        int charCount = Encoding.ASCII.GetChars(responseBytes, 0, bytesReceived, responseChars, 0);
-
-        // Print the contents of the 'responseChars' buffer to Console.Out
-        await Console.Out.WriteAsync(responseChars.AsMemory(0, charCount), cancellationToken);
-
-        Console.WriteLine("e to Exit");
-        if(Console.ReadLine()=="e")
-        {
-            break;
-        }
-    }
-    socket.Dispose();
-}
-
 static async Task TestForFinalize()
 {
     Console.WriteLine("Enter to start TestForFinalize");
     Console.ReadLine();
-    DubboActuatorSuite dubboActuator = new DubboActuatorSuite("10.100.64.211", 20890);
-    DubboActuatorSuite dubboActuator2 = new DubboActuatorSuite("10.100.64.211", 20890);
-    DubboActuatorSuite dubboActuator3 = new DubboActuatorSuite("10.100.64.211", 20890);
-    await dubboActuator.Connect();
-    await dubboActuator2.Connect();
-    await dubboActuator3.Connect();
+    DubboActuator dubboActuator = new DubboActuator("10.100.64.181", 7100);
+    //await dubboActuator.Connect();
     Console.WriteLine($"NowErrorMes:{dubboActuator.NowErrorMes}");
     Console.ReadLine();
-    dubboActuator.Dispose(); 
-    dubboActuator2.Dispose();
-    dubboActuator3.Dispose();
-}
 
-static async Task TestForExTelnet()
-{
-    Console.WriteLine("Enter to start TestForExTelnet");
-    Console.ReadLine();
-    //using (var evt = new AutoResetEvent(false))
-    //{
-    //    evt.WaitOne(2000);
-    //    Console.WriteLine("Enter to end using");
-    //    Console.ReadLine();
-    //}
-    ExTelnet tl = new ExTelnet("10.100.64.181", 7100);
-    await tl.ConnectAsync();
-    //ExTelnet t2 = new ExTelnet("10.100.64.181", 7100);
-    //await t2.ConnectAsync();
-    //ExTelnet t3 = new ExTelnet("10.100.64.181", 7100);
-    //await t3.ConnectAsync();
-    Console.WriteLine($"NowErrorMes:{tl.NowErrorMes}");
-    Console.ReadLine();
-    tl.Dispose();
-    //t2.Dispose();
-    //t3.Dispose();
 }
 
 static async Task StressTestForDubboClient()
 {
     Console.WriteLine("Enter to start StressTestForDubboClient");
     Console.ReadLine();
-    var dubboClient  =new DubboClient("10.100.64.198:2181" , new DubboClient.DubboClientConf() { DubboActuatorSuiteMasterConnectionAliveTime = 1200 }) ;
+    var dubboClient  =new DubboClient("10.100.64.198:2181" , new DubboClient.DubboClientConf() { DubboActuatorSuiteMasterConnectionAliveTime = 120 }) ;
     List<Task<DubboRequestResult>> tasks = new List<Task<DubboRequestResult>>();
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.Start();
-    for(int i =0;i<50; i++)
+    for(int i =0;i<10; i++)
     {
         Task<DubboRequestResult> task = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939");
         tasks.Add(task);
@@ -143,7 +57,7 @@ static async Task StressTestForDubboClient()
         Console.WriteLine("-------------------");
         Console.WriteLine(task.Result.ToString());
     }
-    dubboClient.Dispose();
+    //dubboClient.Dispose();
 }
 
 static async Task TestForDubboClient()
@@ -154,7 +68,6 @@ static async Task TestForDubboClient()
     {
         _ = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939").ContinueWith(rs => Console.WriteLine(rs.Result.Result));
     }
-    dubboClient.Dispose();
     dubboClient = null;
     Console.WriteLine(result.Result);
 }

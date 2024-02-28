@@ -9,6 +9,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
@@ -21,6 +22,9 @@ namespace DubboNet.Clients
     public class DubboClient:IDisposable
     {
 
+        /// <summary>
+        /// 负载模式
+        /// </summary>
         public enum LoadBalanceMode
         {
             Random,
@@ -30,6 +34,9 @@ namespace DubboNet.Clients
             ConsistentHash
         }
 
+        /// <summary>
+        /// 注册中心状态
+        /// </summary>
         public enum RegistryState
         {
             Default, //默认状态（在不需要关注状态的时候，该状态是不更新的，会保持默认状态）
@@ -39,10 +46,96 @@ namespace DubboNet.Clients
             TryConnect, //开始进入主动重新连接
             LostConnect //主动重连超时了
         }
+        
+        /// <summary>
+        /// 服务端点信息(信息来源dubbo uri)
+        /// </summary>
+        public class DubboServiceEndPointInfo
+        {
+            public IPEndPoint EndPoint{ get;  set; } =null;
+            public bool? Anyhost { get;  set; } = null;
+            public string Application { get;  set; } = null;
+            public string BeanName { get;  set; } = null;
+            public bool? Deprecated { get;  set; } = null;
+            public string Dubbo { get;  set; } = null;
+            public bool? Dynamic { get;  set; } = null;
+            public bool? Generic { get;  set; } = null;
+            public string Interface { get;  set; } = null;
+            public string Loadbalance { get;  set; } = null;
+            public int? Pid { get;  set; } = null;
+            public string Methods { get;  set; } = null;
+            public bool? Register { get;  set; } = null;
+            public string Revision { get;  set; } = null;
+            public string Side { get;  set; } = null;
+            public string Threads { get;  set; } = null;
+            public int? Timeout { get;  set; } = null;
+            public long? Timestamp { get;  set; } = null;
+            public int Weight { get;  set; } = 100;
+
+            public static DubboServiceEndPointInfo GetDubboServiceEndPointInfo(Uri dubboUri)
+            {
+                if(dubboUri == null)
+                {
+                    throw new ArgumentNullException(nameof(dubboUri));
+                }
+                DubboServiceEndPointInfo dubboServiceEndPointInfo = new DubboServiceEndPointInfo();
+                dubboServiceEndPointInfo.EndPoint = new IPEndPoint(IPAddress.Parse(dubboUri.Host), dubboUri.Port);
+                NameValueCollection queryParameters = System.Web.HttpUtility.ParseQueryString(dubboUri.Query);
+                int tempIntValue = 0;
+                bool tempBoolValue = false;
+                long tempLongValue = 0;
+                if(bool.TryParse(queryParameters["anyhost"], out tempBoolValue))
+                {
+                    dubboServiceEndPointInfo.Anyhost = tempBoolValue;
+                }
+                dubboServiceEndPointInfo.Application = queryParameters["application"];
+                dubboServiceEndPointInfo.BeanName = queryParameters["bean.name"];
+                if(bool.TryParse(queryParameters["dynamic"], out tempBoolValue))
+                {
+                    dubboServiceEndPointInfo.Dynamic = tempBoolValue;
+                }
+                dubboServiceEndPointInfo.Dubbo = queryParameters["dubbo"];
+                if(bool.TryParse(queryParameters["generic"], out tempBoolValue))
+                {
+                    dubboServiceEndPointInfo.Generic = tempBoolValue;
+                }
+                dubboServiceEndPointInfo.Interface = queryParameters["interface"];
+                dubboServiceEndPointInfo.Loadbalance = queryParameters["loadbalance"];
+                 if(int.TryParse(queryParameters["pid"], out tempIntValue))
+                {
+                    dubboServiceEndPointInfo.Pid = tempIntValue;
+                }
+                dubboServiceEndPointInfo.Methods = queryParameters["methods"];
+                if(bool.TryParse(queryParameters["register"], out tempBoolValue))
+                {
+                    dubboServiceEndPointInfo.Register = tempBoolValue;
+                }
+                dubboServiceEndPointInfo.Revision = queryParameters["revision"];
+                dubboServiceEndPointInfo.Side = queryParameters["side"];
+                dubboServiceEndPointInfo.Threads = queryParameters["threads"];
+                if(int.TryParse(queryParameters["timeout"], out tempIntValue))
+                {
+                    dubboServiceEndPointInfo.Timeout = tempIntValue;
+                }
+                if(long.TryParse(queryParameters["timestamp"], out tempLongValue))
+                {
+                    dubboServiceEndPointInfo.Timestamp = tempLongValue;
+                }
+                if(int.TryParse(queryParameters["weight"], out tempIntValue))
+                {
+                    dubboServiceEndPointInfo.Weight = tempIntValue;
+                }
+                return dubboServiceEndPointInfo;
+            }
+        }
+
+        /// <summary>
+        /// 服务端点信息集合
+        /// </summary>
         public class ServiceEndPointsInfo
         {
             public string ErrorInfo { get;  set; } = null;
-            public List<IPEndPoint> EndPoints { get;  set; } = new List<IPEndPoint>();
+            public List<DubboServiceEndPointInfo> EndPoints { get;  set; } = new List<DubboServiceEndPointInfo>();
         }
 
         public class DubboClientConf
@@ -507,10 +600,9 @@ namespace DubboNet.Clients
                             Uri nowDubboUri;
                             if(Uri.TryCreate(nowDubboPath, UriKind.Absolute, out nowDubboUri))
                             {
-                                IPAddress nowIp;
-                                if (IPAddress.TryParse(nowDubboUri.Host, out nowIp))
+                                if (IPAddress.TryParse(nowDubboUri.Host, out _))
                                 {
-                                    serviceEndPointsInfo.EndPoints.Add(new IPEndPoint(nowIp, nowDubboUri.Port));
+                                    serviceEndPointsInfo.EndPoints.Add(DubboServiceEndPointInfo.GetDubboServiceEndPointInfo(nowDubboUri));
                                 }
                                 else
                                 {

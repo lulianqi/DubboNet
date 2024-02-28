@@ -75,7 +75,7 @@ namespace DubboNet.Clients
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="ArgumentException"></exception>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
-        public bool AddDubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList)
+        public bool AddDubboServiceDriver(string serviceName, List<DubboServiceEndPointInfo> dbEpList)
         {
             if (string.IsNullOrEmpty(serviceName))
             {
