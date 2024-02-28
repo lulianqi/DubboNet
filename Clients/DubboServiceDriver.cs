@@ -1,4 +1,5 @@
-﻿using DubboNet.DubboService;
+﻿using DubboNet.Clients.DataModle;
+using DubboNet.DubboService;
 using MyCommonHelper;
 using System;
 using System.Collections.Generic;
@@ -120,7 +121,7 @@ namespace DubboNet.Clients
         /// <param name="dbEpList"></param>
         /// <returns>返回更新的节点数</returns>    
         /// <exception cref="ArgumentException"></exception>
-        public int UpdateActuatorSuiteEndPoints(List<IPEndPoint> dbEpList)
+        public int UpdateActuatorSuiteEndPoints(List<DubboServiceEndPointInfo> dbEpList)
         {
             if (!(dbEpList?.Count > 0))
             {
@@ -130,7 +131,9 @@ namespace DubboNet.Clients
             //移出多余节点
             foreach(var insItem in InnerActuatorSuites)
             {
-                if(!dbEpList.Contains(insItem.Key))
+                
+                //if (!dbEpList.Contains(insItem.Key))
+                if(dbEpList.FirstOrDefault((it) => it.EndPoint.Equals(insItem)) == null)
                 {
                     InnerActuatorSuites.Remove(insItem.Key);
                     changeCount++;

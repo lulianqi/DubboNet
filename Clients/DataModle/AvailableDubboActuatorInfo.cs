@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DubboNet.Clients
+namespace DubboNet.Clients.DataModle
 {
     /// <summary>
     /// 可用的DubboActuatorSuite信息·

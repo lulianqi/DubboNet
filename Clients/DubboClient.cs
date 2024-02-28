@@ -1,4 +1,5 @@
-﻿using DubboNet.Clients.RegistryClient;
+﻿using DubboNet.Clients.DataModle;
+using DubboNet.Clients.RegistryClient;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
 using MyCommonHelper;
@@ -47,96 +48,7 @@ namespace DubboNet.Clients
             LostConnect //主动重连超时了
         }
         
-        /// <summary>
-        /// 服务端点信息(信息来源dubbo uri)
-        /// </summary>
-        public class DubboServiceEndPointInfo
-        {
-            public IPEndPoint EndPoint{ get;  set; } =null;
-            public bool? Anyhost { get;  set; } = null;
-            public string Application { get;  set; } = null;
-            public string BeanName { get;  set; } = null;
-            public bool? Deprecated { get;  set; } = null;
-            public string Dubbo { get;  set; } = null;
-            public bool? Dynamic { get;  set; } = null;
-            public bool? Generic { get;  set; } = null;
-            public string Interface { get;  set; } = null;
-            public string Loadbalance { get;  set; } = null;
-            public int? Pid { get;  set; } = null;
-            public string Methods { get;  set; } = null;
-            public bool? Register { get;  set; } = null;
-            public string Revision { get;  set; } = null;
-            public string Side { get;  set; } = null;
-            public string Threads { get;  set; } = null;
-            public int? Timeout { get;  set; } = null;
-            public long? Timestamp { get;  set; } = null;
-            public int Weight { get;  set; } = 100;
-
-            public static DubboServiceEndPointInfo GetDubboServiceEndPointInfo(Uri dubboUri)
-            {
-                if(dubboUri == null)
-                {
-                    throw new ArgumentNullException(nameof(dubboUri));
-                }
-                DubboServiceEndPointInfo dubboServiceEndPointInfo = new DubboServiceEndPointInfo();
-                dubboServiceEndPointInfo.EndPoint = new IPEndPoint(IPAddress.Parse(dubboUri.Host), dubboUri.Port);
-                NameValueCollection queryParameters = System.Web.HttpUtility.ParseQueryString(dubboUri.Query);
-                int tempIntValue = 0;
-                bool tempBoolValue = false;
-                long tempLongValue = 0;
-                if(bool.TryParse(queryParameters["anyhost"], out tempBoolValue))
-                {
-                    dubboServiceEndPointInfo.Anyhost = tempBoolValue;
-                }
-                dubboServiceEndPointInfo.Application = queryParameters["application"];
-                dubboServiceEndPointInfo.BeanName = queryParameters["bean.name"];
-                if(bool.TryParse(queryParameters["dynamic"], out tempBoolValue))
-                {
-                    dubboServiceEndPointInfo.Dynamic = tempBoolValue;
-                }
-                dubboServiceEndPointInfo.Dubbo = queryParameters["dubbo"];
-                if(bool.TryParse(queryParameters["generic"], out tempBoolValue))
-                {
-                    dubboServiceEndPointInfo.Generic = tempBoolValue;
-                }
-                dubboServiceEndPointInfo.Interface = queryParameters["interface"];
-                dubboServiceEndPointInfo.Loadbalance = queryParameters["loadbalance"];
-                 if(int.TryParse(queryParameters["pid"], out tempIntValue))
-                {
-                    dubboServiceEndPointInfo.Pid = tempIntValue;
-                }
-                dubboServiceEndPointInfo.Methods = queryParameters["methods"];
-                if(bool.TryParse(queryParameters["register"], out tempBoolValue))
-                {
-                    dubboServiceEndPointInfo.Register = tempBoolValue;
-                }
-                dubboServiceEndPointInfo.Revision = queryParameters["revision"];
-                dubboServiceEndPointInfo.Side = queryParameters["side"];
-                dubboServiceEndPointInfo.Threads = queryParameters["threads"];
-                if(int.TryParse(queryParameters["timeout"], out tempIntValue))
-                {
-                    dubboServiceEndPointInfo.Timeout = tempIntValue;
-                }
-                if(long.TryParse(queryParameters["timestamp"], out tempLongValue))
-                {
-                    dubboServiceEndPointInfo.Timestamp = tempLongValue;
-                }
-                if(int.TryParse(queryParameters["weight"], out tempIntValue))
-                {
-                    dubboServiceEndPointInfo.Weight = tempIntValue;
-                }
-                return dubboServiceEndPointInfo;
-            }
-        }
-
-        /// <summary>
-        /// 服务端点信息集合
-        /// </summary>
-        public class ServiceEndPointsInfo
-        {
-            public string ErrorInfo { get;  set; } = null;
-            public List<DubboServiceEndPointInfo> EndPoints { get;  set; } = new List<DubboServiceEndPointInfo>();
-        }
+        
 
         public class DubboClientConf
         {
@@ -161,7 +73,7 @@ namespace DubboNet.Clients
 
         private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _retainDubboActuatorSuiteCollection = new Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>();
 
-        private ConcurrentDictionary<string, Task<ServiceEndPointsInfo>> _concurrentGetProviderEndPointsTasks = new ConcurrentDictionary<string, Task<ServiceEndPointsInfo>>();
+        private ConcurrentDictionary<string, Task<DubboServiceEndPointInfos>> _concurrentGetProviderEndPointsTasks = new ConcurrentDictionary<string, Task<DubboServiceEndPointInfos>>();
 
         private volatile bool _isInReLoadDubboDriverCollectionTask = false;
 
@@ -318,7 +230,7 @@ namespace DubboNet.Clients
             //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
             {
-                ServiceEndPointsInfo serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(nowServiceName);
+                DubboServiceEndPointInfos serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(nowServiceName);
                 if (serviceEndPointsInfo.ErrorInfo != null)
                 {
                     string tempErrorMes = $"[SendRequestAsync] GetSeviceProviderEndPoints fail {nowServiceName} -> {serviceEndPointsInfo.ErrorInfo}";
@@ -339,7 +251,7 @@ namespace DubboNet.Clients
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService)
             {
                 //实际上是有watch会自动更新，这里主动更新一次可以兼容watch异常的情况（这里会触发同一个路径注册2个watch，不过重复的watch只会触发一次）
-                ServiceEndPointsInfo serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(nowServiceName);
+                DubboServiceEndPointInfos serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(nowServiceName);
                 string tempErrorMes = null;
                 if (serviceEndPointsInfo.ErrorInfo != null)
                 {
@@ -490,7 +402,7 @@ namespace DubboNet.Clients
         /// <returns></returns>
         internal async Task<bool> ReflushProviderAsync(string serviceName ,bool isFullPath = false)
         {
-            ServiceEndPointsInfo serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(serviceName,isFullPath);
+            DubboServiceEndPointInfos serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(serviceName,isFullPath);
             if (serviceEndPointsInfo.ErrorInfo != null)
             {
                 MyLogger.LogError($"[ReflushProviderByPathAsync] fail by {serviceName} : {serviceEndPointsInfo.ErrorInfo}");
@@ -521,7 +433,7 @@ namespace DubboNet.Clients
         /// <param name="serviceName"></param>
         /// <param name="isFullPath"></param>
         /// <returns></returns>
-        private async Task<ServiceEndPointsInfo> ConcurrentGetProviderEndPoints(string serviceName, bool isFullPath = false)
+        private async Task<DubboServiceEndPointInfos> ConcurrentGetProviderEndPoints(string serviceName, bool isFullPath = false)
         {
             if(_concurrentGetProviderEndPointsTasks.ContainsKey(serviceName))
             {
@@ -529,12 +441,12 @@ namespace DubboNet.Clients
             }
             else
             {
-                Task<ServiceEndPointsInfo> getProviderEndPointsTask = GetSeviceProviderEndPointsAsync(serviceName, isFullPath);
+                Task<DubboServiceEndPointInfos> getProviderEndPointsTask = GetSeviceProviderEndPointsAsync(serviceName, isFullPath);
                 if(!_concurrentGetProviderEndPointsTasks.TryAdd(serviceName,getProviderEndPointsTask))
                 {
                     MyLogger.LogError($"[ConcurrentGetProviderEndPoints] {serviceName} TryAdd fail");
                 }
-                ServiceEndPointsInfo serviceEndPointsInfo = await getProviderEndPointsTask;
+                DubboServiceEndPointInfos serviceEndPointsInfo = await getProviderEndPointsTask;
                 if(!_concurrentGetProviderEndPointsTasks.TryRemove(serviceName,out _))
                 {
                     MyLogger.LogError($"[ConcurrentGetProviderEndPoints] {serviceName} TryRemove fail");
@@ -550,14 +462,14 @@ namespace DubboNet.Clients
         /// <param name="isFullPath"></param>
         /// <returns></returns>
         /// <exception cref="ArgumentNullException"></exception>
-        private async Task<ServiceEndPointsInfo> GetSeviceProviderEndPointsAsync(string serviceName ,bool isFullPath = false)
+        private async Task<DubboServiceEndPointInfos> GetSeviceProviderEndPointsAsync(string serviceName ,bool isFullPath = false)
         {
             if(string.IsNullOrEmpty(serviceName))
             {
                 throw new ArgumentNullException(nameof(serviceName));
             }
             string nowFullPath = isFullPath? serviceName: $"{DubboRootPath}{serviceName}/providers";
-            ServiceEndPointsInfo serviceEndPointsInfo = new ServiceEndPointsInfo();
+            DubboServiceEndPointInfos serviceEndPointsInfo = new DubboServiceEndPointInfos();
             Stat stat =await _innerMyZookeeper.ExistsAsync(nowFullPath);
             if (stat==null)
             {

@@ -7,6 +7,7 @@ using System.Net;
 using static DubboNet.Clients.DubboClient;
 using System.Collections;
 using System.Collections.Concurrent;
+using DubboNet.Clients.DataModle;
 
 namespace DubboNet.Clients
 {
