@@ -56,7 +56,7 @@ namespace DubboNet.Clients
         /// <param name="dubboActuatorSuiteCollection">内部dubboActuatorSuiteCollection</param>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="ArgumentNullException"></exception>
-        public DubboServiceDriver(string serviceName, List<IPEndPoint> dbEpList, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection , DubboServiceDriverConf dubboServiceDriverConf = null)
+        public DubboServiceDriver(string serviceName, List<DubboServiceEndPointInfo> dbEpList, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection , DubboServiceDriverConf dubboServiceDriverConf = null)
         {
             ServiceName = serviceName;
             LastActivateTime = DateTime.Now;
@@ -71,7 +71,7 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentNullException(nameof(dubboActuatorSuiteCollection));
             }
-            foreach (IPEndPoint ep in dbEpList)
+            foreach (DubboServiceEndPointInfo ep in dbEpList)
             {
                 AddActuatorSuite(ep);
             }
@@ -98,18 +98,19 @@ namespace DubboNet.Clients
             {
                 DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo = new DubboActuatorSuiteEndPintInfo()
                 {
-                    EndPoint = ep,
-                    ActuatorSuite = new DubboActuatorSuite(ep,new DubboActuatorSuiteConf() { 
+                    EndPoint = ep.EndPoint,
+                    ActuatorSuite = new DubboActuatorSuite(ep.EndPoint,new DubboActuatorSuiteConf() { 
                         AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime, 
                         MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
                         DubboRequestTimeout=_innerDubboServiceDriverConf.DubboRequestTimeout, 
                         MaxConnections=_innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections }),
                     ReferenceCount = 0
                 };
-                if(InnerActuatorSuites.TryAdd(ep, dubboActuatorSuiteEndPintInfo.ActuatorSuite))
+                ep.InnerDubboActuatorSuite = dubboActuatorSuiteEndPintInfo.ActuatorSuite;
+                if (InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
                     dubboActuatorSuiteEndPintInfo.ReferenceCount++;
-                    _sourceDubboActuatorSuiteCollection.Add(ep, dubboActuatorSuiteEndPintInfo);
+                    _sourceDubboActuatorSuiteCollection.Add(ep.EndPoint, dubboActuatorSuiteEndPintInfo);
                     return true;
                 }
             }
@@ -156,7 +157,7 @@ namespace DubboNet.Clients
             //添加新增节点
             foreach(var epItem in dbEpList)
             {
-                if(!InnerActuatorSuites.ContainsKey(epItem))
+                if(!InnerActuatorSuites.ContainsKey(epItem.EndPoint))
                 {
                     if(AddActuatorSuite(epItem)) changeCount++;
                 }
@@ -172,7 +173,7 @@ namespace DubboNet.Clients
                 return null;
             }
             //未实现
-            return InnerActuatorSuites.First().Value;
+            return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
         }
 
         public void Dispose()
@@ -192,7 +193,9 @@ namespace DubboNet.Clients
                     }
                 }
             }
+            InnerActuatorSuites.Clear();
             InnerActuatorSuites = null;
+            //_sourceDubboActuatorSuiteCollection是外部传入的公用对象，不要在这里做Clear操作
             _sourceDubboActuatorSuiteCollection = null;
         }
     }

@@ -42,7 +42,7 @@ static async Task StressTestForDubboClient()
     List<Task<DubboRequestResult>> tasks = new List<Task<DubboRequestResult>>();
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.Start();
-    for(int i =0;i<10; i++)
+    for(int i =0;i<1; i++)
     {
         Task<DubboRequestResult> task = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939");
         tasks.Add(task);
@@ -57,7 +57,7 @@ static async Task StressTestForDubboClient()
         Console.WriteLine("-------------------");
         Console.WriteLine(task.Result.ToString());
     }
-    //dubboClient.Dispose();
+    dubboClient.Dispose();
 }
 
 static async Task TestForDubboClient()
