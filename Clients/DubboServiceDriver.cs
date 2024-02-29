@@ -38,7 +38,7 @@ namespace DubboNet.Clients
         /// <summary>
         /// 当前DubboServiceDriver可使用的各EndPoint的DubboActuatorSuite集合
         /// </summary>
-        public Dictionary<IPEndPoint, DubboActuatorSuite> InnerActuatorSuites { get; private set; }
+        public Dictionary<IPEndPoint, DubboServiceEndPointInfo> InnerActuatorSuites { get; private set; }
 
         /// <summary>
         /// DubboClient的源ActuatorSuiteCollection（不要直接使用，保留的这份引用是为了释放时同时清理）
@@ -62,7 +62,7 @@ namespace DubboNet.Clients
             LastActivateTime = DateTime.Now;
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
             _innerDubboServiceDriverConf = dubboServiceDriverConf ?? new DubboServiceDriverConf();
-            InnerActuatorSuites = new Dictionary<IPEndPoint, DubboActuatorSuite>();
+            InnerActuatorSuites = new Dictionary<IPEndPoint, DubboServiceEndPointInfo>();
             if (!(dbEpList?.Count > 0))
             {
                 throw new ArgumentException("dbEpList can not be empty", nameof(dbEpList));
@@ -82,14 +82,15 @@ namespace DubboNet.Clients
         /// </summary>
         /// <param name="ep">IPEndPoint</param>
         /// <returns>是否添加成功</returns>
-        private bool AddActuatorSuite(IPEndPoint ep)
+        private bool AddActuatorSuite(DubboServiceEndPointInfo ep)
         {
-            if (_sourceDubboActuatorSuiteCollection.ContainsKey(ep))
+            if (_sourceDubboActuatorSuiteCollection.ContainsKey(ep.EndPoint))
             {
                 //InnerActuatorSuites.Add(ep, _sourceDubboActuatorSuiteCollection[ep].ActuatorSuite);
-                if(InnerActuatorSuites.TryAdd(ep, _sourceDubboActuatorSuiteCollection[ep].ActuatorSuite))
+                ep.InnerDubboActuatorSuite=_sourceDubboActuatorSuiteCollection[ep.EndPoint].ActuatorSuite;
+                if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
-                    _sourceDubboActuatorSuiteCollection[ep].ReferenceCount++;
+                    _sourceDubboActuatorSuiteCollection[ep.EndPoint].ReferenceCount++;
                     return true;
                 }
             }
