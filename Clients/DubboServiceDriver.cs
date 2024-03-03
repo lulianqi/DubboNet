@@ -135,7 +135,7 @@ namespace DubboNet.Clients
             {
                 
                 //if (!dbEpList.Contains(insItem.Key))
-                if(dbEpList.FirstOrDefault((it) => it.EndPoint.Equals(insItem)) == null)
+                if(dbEpList.FirstOrDefault((it) => it.EndPoint.Equals(insItem.Key)) == null)
                 {
                     InnerActuatorSuites.Remove(insItem.Key);
                     changeCount++;
