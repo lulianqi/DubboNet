@@ -28,10 +28,25 @@ namespace DubboNet.Clients
         /// </summary>
         public enum LoadBalanceMode
         {
+            /// <summary>
+            /// 加权随机，按权重设置随机概率。
+            /// </summary>
             Random,
+            /// <summary>
+            /// 加权最短响应优先，在最近一个滑动窗口中，响应时间越短，越优先调用。相同响应时间的进行加权随机。
+            /// </summary>
             ShortestResponse,
+            /// <summary>
+            /// 加权轮询，按公约后的权重设置轮询比率，循环调用节点(实现平滑加权轮询算法)
+            /// </summary>
             RoundRobin,
+            /// <summary>
+            /// 加权最少活跃调用优先，活跃数越低，越优先调用，相同活跃数的进行加权随机。活跃数指调用前后计数差（针对特定提供者：请求发送数 - 响应返回数），表示特定提供者的任务堆积量，活跃数越低，代表该提供者处理能力越强。
+            /// </summary>
             LeastActive,
+            /// <summary>
+            /// 一致性 Hash，相同参数的请求总是发到同一提供者。
+            /// </summary>
             ConsistentHash
         }
 

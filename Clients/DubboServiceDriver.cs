@@ -172,6 +172,35 @@ namespace DubboNet.Clients
             {
                 return null;
             }
+            if (InnerActuatorSuites.Count == 1)
+            {
+                return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
+            }
+            int totalWeight = InnerActuatorSuites.Sum(item => item.Value.Weight);
+            DubboServiceEndPointInfo dubboServiceEndPointInfo = null;
+            switch (loadBalanceMode)
+            {
+                case LoadBalanceMode.Random:
+                    Random random = new Random();
+                    int randomNumber = random.Next(0, totalWeight);
+                    foreach(var weightedItem in InnerActuatorSuites)
+                    {
+                        if(randomNumber < weightedItem.Value.Weight)
+                        {
+                            dubboServiceEndPointInfo = weightedItem.Value;
+                            break;
+                        }
+                    }
+                    if(dubboServiceEndPointInfo ==null)
+                    {
+                        throw new Exception("[GetDubboActuatorSuite] fialed get DubboActuatorSuite ,that dubboServiceEndPointInfo is null");
+                    }
+                    break;
+                case LoadBalanceMode.RoundRobin:
+                    break;
+                default: 
+                    break;
+            }
             //未实现
             return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
         }
