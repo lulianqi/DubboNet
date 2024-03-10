@@ -47,6 +47,7 @@ namespace DubboNet.Clients
 
         private DubboServiceDriverConf _innerDubboServiceDriverConf = null;
 
+        private int TotalWeightForActuatorSuites = 0;
 
         /// <summary>
         /// 初始化DubboServiceDriver
@@ -75,6 +76,22 @@ namespace DubboNet.Clients
             {
                 AddActuatorSuite(ep);
             }
+            UpdateTotalWeight();
+        }
+
+        /// <summary>
+        /// 更新TotalWeightForActuatorSuites
+        /// </summary>
+        private void UpdateTotalWeight()
+        {
+            if (InnerActuatorSuites != null)
+            {
+                TotalWeightForActuatorSuites = InnerActuatorSuites.Sum(item => item.Value.Weight);
+            }
+            else
+            {
+                TotalWeightForActuatorSuites = 0;
+            }
         }
 
         /// <summary>
@@ -91,6 +108,7 @@ namespace DubboNet.Clients
                 if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
                     _sourceDubboActuatorSuiteCollection[ep.EndPoint].ReferenceCount++;
+                    UpdateTotalWeight();
                     return true;
                 }
             }
@@ -111,6 +129,7 @@ namespace DubboNet.Clients
                 {
                     dubboActuatorSuiteEndPintInfo.ReferenceCount++;
                     _sourceDubboActuatorSuiteCollection.Add(ep.EndPoint, dubboActuatorSuiteEndPintInfo);
+                    UpdateTotalWeight();
                     return true;
                 }
             }
@@ -162,6 +181,10 @@ namespace DubboNet.Clients
                     if(AddActuatorSuite(epItem)) changeCount++;
                 }
             }
+            if(changeCount!=0)
+            {
+                UpdateTotalWeight();
+            }
             return changeCount;
         }
 
@@ -176,13 +199,12 @@ namespace DubboNet.Clients
             {
                 return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
             }
-            int totalWeight = InnerActuatorSuites.Sum(item => item.Value.Weight);
             DubboServiceEndPointInfo dubboServiceEndPointInfo = null;
             switch (loadBalanceMode)
             {
                 case LoadBalanceMode.Random:
                     Random random = new Random();
-                    int randomNumber = random.Next(0, totalWeight);
+                    int randomNumber = random.Next(0, TotalWeightForActuatorSuites);
                     foreach(var weightedItem in InnerActuatorSuites)
                     {
                         if(randomNumber < weightedItem.Value.Weight)

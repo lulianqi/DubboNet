@@ -15,8 +15,10 @@ namespace DubboNet.Clients.DataModle
     public class DubboServiceEndPointInfo
     {
         public IPEndPoint EndPoint { get; set; } = null;
-
         public DubboActuatorSuite InnerDubboActuatorSuite { get; set; }
+        public int NowDispatchWeight { get; set; } = 0;
+
+
 
         public bool? Anyhost { get; set; } = null;
         public string Application { get; set; } = null;
@@ -36,6 +38,7 @@ namespace DubboNet.Clients.DataModle
         public int? Timeout { get; set; } = null;
         public long? Timestamp { get; set; } = null;
         public int Weight { get; set; } = 100;
+
 
         public static DubboServiceEndPointInfo GetDubboServiceEndPointInfo(Uri dubboUri)
         {
