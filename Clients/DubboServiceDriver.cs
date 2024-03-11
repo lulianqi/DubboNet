@@ -188,6 +188,12 @@ namespace DubboNet.Clients
             return changeCount;
         }
 
+        /// <summary>
+        /// 以指定负载策略返回可用DubboActuatorSuite
+        /// </summary>
+        /// <param name="loadBalanceMode">负载策略</param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
         public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode)
         {
             LastActivateTime = DateTime.Now;
@@ -204,14 +210,15 @@ namespace DubboNet.Clients
             {
                 case LoadBalanceMode.Random:
                     Random random = new Random();
-                    int randomNumber = random.Next(0, TotalWeightForActuatorSuites);
+                    int randomNumber = random.Next(0, TotalWeightForActuatorSuites) + 1;
                     foreach(var weightedItem in InnerActuatorSuites)
                     {
-                        if(randomNumber < weightedItem.Value.Weight)
+                        if(randomNumber <= weightedItem.Value.Weight)
                         {
                             dubboServiceEndPointInfo = weightedItem.Value;
                             break;
                         }
+                        randomNumber = randomNumber - weightedItem.Value.Weight;
                     }
                     if(dubboServiceEndPointInfo ==null)
                     {
