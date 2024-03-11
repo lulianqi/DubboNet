@@ -65,6 +65,13 @@ namespace DubboNet.DubboService
 
         }
 
+        public class DubboActuatorSuiteStatus
+        {
+            public DubboStatusInfo StatusInfo { get; internal set; }
+            public DubboLsInfo LsInfo { get; internal set; }
+            public long LastQueryElapsed { get; internal set; }
+        }
+
         //内部DubboSuiteCell（只要DubboActuatorSuite初始化_actuatorSuiteCellList就不会为null）
         private List<DubboSuiteCell> _actuatorSuiteCellList;
         //标记当前Cruise是否正在进行中
@@ -126,7 +133,7 @@ namespace DubboNet.DubboService
         /// <summary>
         /// 获取当前节点Status信息
         /// </summary>
-        public DubboStatusInfo StatusInfo { get;private set; }
+        public DubboActuatorSuiteStatus ActuatorSuiteStatusInfo { get;private set; } = new DubboActuatorSuiteStatus();
 
         #region 静态成员
         //DubboSuiteTimer执行的job间隔时间（单位毫秒）
@@ -269,15 +276,20 @@ namespace DubboNet.DubboService
                     //StatusInfo为null时，首次更新
                     //当LastActivateTime没有超过StatusInfoDormantIntervalTime时，活跃状态状态，更新间隔为StatusInfoIntervalTime
                     //当LastActivateTime已经超过StatusInfoDormantIntervalTime时，进入休眠状态，更新间隔为StatusInfoDormantIntervalTime
-                    if((StatusInfo==null) || 
-                    ((DateTime.Now - LastActivateTime).TotalMilliseconds <=  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoIntervalTime )||
-                    ((DateTime.Now - LastActivateTime).TotalMilliseconds >  StatusInfoDormantIntervalTime && (DateTime.Now-StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoDormantIntervalTime ) )
+                    if((ActuatorSuiteStatusInfo.StatusInfo == null) || 
+                    ((DateTime.Now - LastActivateTime).TotalMilliseconds <=  StatusInfoDormantIntervalTime && (DateTime.Now-ActuatorSuiteStatusInfo.StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoIntervalTime )||
+                    ((DateTime.Now - LastActivateTime).TotalMilliseconds >  StatusInfoDormantIntervalTime && (DateTime.Now-ActuatorSuiteStatusInfo.StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoDormantIntervalTime ) )
                     {
 
                         //获取最新节点信息（GetDubboStatusInfoAsync调用的是基类的SendCommandAsync，所以一定是由主节点执行，同时不会更新重写的LastActivateTime属性）
                         //StatusInfo = base.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
-                        StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
-                        if(StatusInfo==null)
+                        ActuatorSuiteStatusInfo.StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+                        if(ActuatorSuiteStatusInfo.StatusInfo ==null)
+                        {
+                            throw new Exception(this.NowErrorMes);
+                        }
+                        ActuatorSuiteStatusInfo.LsInfo = this.GetDubboLsInfoAsync().GetAwaiter().GetResult();
+                        if (ActuatorSuiteStatusInfo.LsInfo == null)
                         {
                             throw new Exception(this.NowErrorMes);
                         }
@@ -397,6 +409,7 @@ namespace DubboNet.DubboService
                     {
                         throw new Exception(availableDubboActuator.NowErrorMes);
                     }
+                    ActuatorSuiteStatusInfo.LastQueryElapsed = telnetRequestResult.ElapsedMilliseconds;
                     return telnetRequestResult;
                 }
                 catch (Exception ex)
@@ -440,7 +453,7 @@ namespace DubboNet.DubboService
                 DubboServiceFuncCollection = null;
                 DefaulDubboServiceFuncs?.Clear();
                 DefaulDubboServiceFuncs=null;
-                StatusInfo = null;
+                ActuatorSuiteStatusInfo = null;
             }
         }
 

@@ -205,7 +205,7 @@ namespace DubboNet.Clients
             {
                 return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
             }
-            DubboServiceEndPointInfo dubboServiceEndPointInfo = null;
+            DubboServiceEndPointInfo selectedDubboServiceEndPointInfo = null;
             switch (loadBalanceMode)
             {
                 case LoadBalanceMode.Random:
@@ -215,21 +215,29 @@ namespace DubboNet.Clients
                     {
                         if(randomNumber <= weightedItem.Value.Weight)
                         {
-                            dubboServiceEndPointInfo = weightedItem.Value;
+                            selectedDubboServiceEndPointInfo = weightedItem.Value;
                             break;
                         }
                         randomNumber = randomNumber - weightedItem.Value.Weight;
                     }
-                    if(dubboServiceEndPointInfo ==null)
-                    {
-                        throw new Exception("[GetDubboActuatorSuite] fialed get DubboActuatorSuite ,that dubboServiceEndPointInfo is null");
-                    }
                     break;
                 case LoadBalanceMode.RoundRobin:
+                    foreach (var weightedItem in InnerActuatorSuites)
+                    {
+                        weightedItem.Value.NowDispatchWeight += weightedItem.Value.Weight;
+                    }
+                    var maxDispatchWeightItem = InnerActuatorSuites.MaxBy<KeyValuePair<IPEndPoint,DubboServiceEndPointInfo>,int>(it=>it.Value.NowDispatchWeight);
+                    maxDispatchWeightItem.Value.NowDispatchWeight -= TotalWeightForActuatorSuites;
+                    selectedDubboServiceEndPointInfo = maxDispatchWeightItem.Value;
                     break;
                 default: 
                     break;
             }
+            if (selectedDubboServiceEndPointInfo == null)
+            {
+                throw new Exception("[GetDubboActuatorSuite] fialed get DubboActuatorSuite ,that selectedDubboServiceEndPointInfo is null");
+            }
+            return selectedDubboServiceEndPointInfo.InnerDubboActuatorSuite;
             //未实现
             return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
         }
