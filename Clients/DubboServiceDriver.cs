@@ -1,4 +1,5 @@
 ﻿using DubboNet.Clients.DataModle;
+using DubboNet.Clients.Helper;
 using DubboNet.DubboService;
 using MyCommonHelper;
 using System;
@@ -47,7 +48,9 @@ namespace DubboNet.Clients
 
         private DubboServiceDriverConf _innerDubboServiceDriverConf = null;
 
-        private int TotalWeightForActuatorSuites = 0;
+        private int _totalWeightForActuatorSuites = 0;
+
+        private DubboSuiteConsistentHash _dubboSuiteConsistentHash = new DubboSuiteConsistentHash(16);
 
         /// <summary>
         /// 初始化DubboServiceDriver
@@ -86,11 +89,26 @@ namespace DubboNet.Clients
         {
             if (InnerActuatorSuites != null)
             {
-                TotalWeightForActuatorSuites = InnerActuatorSuites.Sum(item => item.Value.Weight);
+                _totalWeightForActuatorSuites = InnerActuatorSuites.Sum(item => item.Value.Weight);
             }
             else
             {
-                TotalWeightForActuatorSuites = 0;
+                _totalWeightForActuatorSuites = 0;
+            }
+        }
+
+        /// <summary>
+        /// 更新一致性Hash环
+        /// </summary>
+        private void UpdateConsistentHash()
+        {
+            if(InnerActuatorSuites?.Count>0)
+            {
+                _dubboSuiteConsistentHash.Init(InnerActuatorSuites.Keys);
+            }
+            else
+            {
+                _dubboSuiteConsistentHash.Init();
             }
         }
 
@@ -210,7 +228,7 @@ namespace DubboNet.Clients
             {
                 case LoadBalanceMode.Random:
                     Random random = new Random();
-                    int randomNumber = random.Next(0, TotalWeightForActuatorSuites) + 1;
+                    int randomNumber = random.Next(0, _totalWeightForActuatorSuites) + 1;
                     foreach(var weightedItem in InnerActuatorSuites)
                     {
                         if(randomNumber <= weightedItem.Value.Weight)
@@ -227,8 +245,10 @@ namespace DubboNet.Clients
                         weightedItem.Value.NowDispatchWeight += weightedItem.Value.Weight;
                     }
                     var maxDispatchWeightItem = InnerActuatorSuites.MaxBy<KeyValuePair<IPEndPoint,DubboServiceEndPointInfo>,int>(it=>it.Value.NowDispatchWeight);
-                    maxDispatchWeightItem.Value.NowDispatchWeight -= TotalWeightForActuatorSuites;
+                    maxDispatchWeightItem.Value.NowDispatchWeight -= _totalWeightForActuatorSuites;
                     selectedDubboServiceEndPointInfo = maxDispatchWeightItem.Value;
+                    break;
+                case LoadBalanceMode.ConsistentHash:
                     break;
                 default: 
                     break;
