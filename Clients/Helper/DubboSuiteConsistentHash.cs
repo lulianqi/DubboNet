@@ -11,5 +11,12 @@ namespace DubboNet.Clients.Helper
     public class DubboSuiteConsistentHash:ConsistentHash<IPEndPoint>
     {
         public DubboSuiteConsistentHash(int replicate = 100):base(replicate) { }
+
+        public override int GetInHash(IPEndPoint node, int replicateIndex)
+        {
+            node.
+            return base.GetInHash(node, replicateIndex);
+        }
+
     }
 }

@@ -25,7 +25,7 @@ namespace DubboNet.Clients.Helper
             Init(nodes, _replicate);
         }
 
-        public void Init(IEnumerable<T> nodes =null, int replicate)
+        public void Init(IEnumerable<T> nodes , int replicate)
         {
             _replicate = replicate;
 
@@ -51,7 +51,8 @@ namespace DubboNet.Clients.Helper
         {
             for (int i = 0; i < _replicate; i++)
             {
-                int hash = BetterHash(node.GetHashCode().ToString() + i);
+                //int hash = BetterHash(node.GetHashCode().ToString() + i);
+                int hash = GetInHash(node,i);
                 circle[hash] = node;
             }
 
@@ -138,6 +139,11 @@ namespace DubboNet.Clients.Helper
             //int diff = circle.Keys[first] - hash;
 
             return circle[ayKeys[first]];
+        }
+
+        public virtual int GetInHash(T node , int replicateIndex)
+        {
+            return BetterHash(node.GetHashCode().ToString() + replicateIndex);
         }
 
         //default String.GetHashCode() can't well spread strings like "1", "2", "3"
