@@ -52,7 +52,7 @@ namespace DubboNet.Clients.Helper
             for (int i = 0; i < _replicate; i++)
             {
                 //int hash = BetterHash(node.GetHashCode().ToString() + i);
-                int hash = GetInHash(node,i);
+                int hash = AddNodeHash(node,i);
                 circle[hash] = node;
             }
 
@@ -66,7 +66,8 @@ namespace DubboNet.Clients.Helper
         {
             for (int i = 0; i < _replicate; i++)
             {
-                int hash = BetterHash(node.GetHashCode().ToString() + i);
+                //int hash = BetterHash(node.GetHashCode().ToString() + i);
+                int hash = AddNodeHash(node, i);
                 if (!circle.Remove(hash))
                 {
                     throw new Exception("can not remove a node that not added");
@@ -78,7 +79,7 @@ namespace DubboNet.Clients.Helper
         //we keep this function just for performance compare
         private T GetNode_slow(String key)
         {
-            int hash = BetterHash(key);
+            int hash = GetNodeHash(key);
             if (circle.ContainsKey(hash))
             {
                 return circle[hash];
@@ -132,7 +133,7 @@ namespace DubboNet.Clients.Helper
         {
             //return GetNode_slow(key);
 
-            int hash = BetterHash(key);
+            int hash = GetNodeHash(key);
 
             int first = First_ge(ayKeys, hash);
 
@@ -141,9 +142,14 @@ namespace DubboNet.Clients.Helper
             return circle[ayKeys[first]];
         }
 
-        public virtual int GetInHash(T node , int replicateIndex)
+        public virtual int AddNodeHash(T node , int replicateIndex)
         {
             return BetterHash(node.GetHashCode().ToString() + replicateIndex);
+        }
+
+        public virtual int GetNodeHash(String key)
+        {
+            return BetterHash(key);
         }
 
         //default String.GetHashCode() can't well spread strings like "1", "2", "3"
