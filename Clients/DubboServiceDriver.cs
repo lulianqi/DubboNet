@@ -80,6 +80,7 @@ namespace DubboNet.Clients
                 AddActuatorSuite(ep);
             }
             UpdateTotalWeight();
+            UpdateConsistentHash();
         }
 
         /// <summary>
@@ -119,6 +120,11 @@ namespace DubboNet.Clients
         /// <returns>是否添加成功</returns>
         private bool AddActuatorSuite(DubboServiceEndPointInfo ep)
         {
+            //判断服务节点是否禁用
+            if(ep.Disabled==true)
+            {
+                return false;
+            }
             if (_sourceDubboActuatorSuiteCollection.ContainsKey(ep.EndPoint))
             {
                 //InnerActuatorSuites.Add(ep, _sourceDubboActuatorSuiteCollection[ep].ActuatorSuite);
@@ -202,6 +208,7 @@ namespace DubboNet.Clients
             if(changeCount!=0)
             {
                 UpdateTotalWeight();
+                UpdateConsistentHash();
             }
             return changeCount;
         }

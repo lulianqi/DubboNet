@@ -24,6 +24,7 @@ namespace DubboNet.Clients.DataModle
         public string Application { get; set; } = null;
         public string BeanName { get; set; } = null;
         public bool? Deprecated { get; set; } = null;
+        public bool? Disabled { get; set; } = null;
         public string Dubbo { get; set; } = null;
         public bool? Dynamic { get; set; } = null;
         public bool? Generic { get; set; } = null;
@@ -57,6 +58,14 @@ namespace DubboNet.Clients.DataModle
                 dubboServiceEndPointInfo.Anyhost = tempBoolValue;
             }
             dubboServiceEndPointInfo.Application = queryParameters["application"];
+            if (bool.TryParse(queryParameters["deprecated"], out tempBoolValue))
+            {
+                dubboServiceEndPointInfo.Deprecated = tempBoolValue;
+            }
+            if (bool.TryParse(queryParameters["disabled"], out tempBoolValue))
+            {
+                dubboServiceEndPointInfo.Disabled = tempBoolValue;
+            }
             dubboServiceEndPointInfo.BeanName = queryParameters["bean.name"];
             if (bool.TryParse(queryParameters["dynamic"], out tempBoolValue))
             {
@@ -73,6 +82,24 @@ namespace DubboNet.Clients.DataModle
             {
                 dubboServiceEndPointInfo.Pid = tempIntValue;
             }
+            //兼容pid=29001®ister=true格式数据
+            else if(!string.IsNullOrEmpty(queryParameters["pid"]))
+            {
+                if(queryParameters["pid"].Contains("@"))
+                {
+                    if(int.TryParse(queryParameters["pid"].Split('@')[0], out tempIntValue))
+                    {
+                        dubboServiceEndPointInfo.Pid = tempIntValue;
+                    }
+                }
+                if(dubboServiceEndPointInfo.Pid == null && queryParameters["pid"].Contains("®"))
+                {
+                    if(int.TryParse(queryParameters["pid"].Split('®')[0], out tempIntValue))
+                    {
+                        dubboServiceEndPointInfo.Pid = tempIntValue;
+                    }
+                }
+            }
             dubboServiceEndPointInfo.Methods = queryParameters["methods"];
             if (bool.TryParse(queryParameters["register"], out tempBoolValue))
             {
@@ -84,6 +111,19 @@ namespace DubboNet.Clients.DataModle
             if (int.TryParse(queryParameters["timeout"], out tempIntValue))
             {
                 dubboServiceEndPointInfo.Timeout = tempIntValue;
+            }
+            //兼容timeout=6000×tamp=1710423915011格式数据
+            else if(!string.IsNullOrEmpty(queryParameters["timeout"])&&queryParameters["timeout"].Contains("×tamp="))
+            {
+                string[] tempArray = queryParameters["timeout"].Split("×tamp=");
+                if (int.TryParse(tempArray[0], out tempIntValue))
+                {
+                    dubboServiceEndPointInfo.Timeout = tempIntValue;
+                }
+                if (int.TryParse(tempArray[1], out tempIntValue))
+                {
+                    dubboServiceEndPointInfo.Timestamp = tempIntValue;
+                }
             }
             if (long.TryParse(queryParameters["timestamp"], out tempLongValue))
             {
