@@ -154,9 +154,10 @@ namespace DubboNet.Clients
         /// </summary>
         /// <param name="serviceName"></param>
         /// <param name="loadBalanceMode"></param>
+        /// <param name="qurey">请求内容，仅用于ConsistentHash模式下计算过一致性hash</param>
         /// <returns></returns>
         /// <exception cref="ArgumentNullException"></exception>
-        public AvailableDubboActuatorInfo GetDubboActuatorSuite(string serviceName , LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random)
+        public AvailableDubboActuatorInfo GetDubboActuatorSuite(string serviceName , LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random ,string qurey = null) 
         {
             AvailableDubboActuatorInfo availableDubboActuatorInfo = new AvailableDubboActuatorInfo();
             if (string.IsNullOrEmpty(serviceName))
@@ -169,7 +170,7 @@ namespace DubboNet.Clients
             }
             if(_dubboServiceDriverCollection.ContainsKey(serviceName))
             {
-                availableDubboActuatorInfo.AvailableDubboActuatorSuite = _dubboServiceDriverCollection[serviceName].GetDubboActuatorSuite(loadBalanceMode);
+                availableDubboActuatorInfo.AvailableDubboActuatorSuite = _dubboServiceDriverCollection[serviceName].GetDubboActuatorSuite(loadBalanceMode, qurey);
                 if (availableDubboActuatorInfo.AvailableDubboActuatorSuite == null)
                 {
                     availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator;

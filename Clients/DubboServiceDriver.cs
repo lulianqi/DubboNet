@@ -132,7 +132,7 @@ namespace DubboNet.Clients
                 if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
                     _sourceDubboActuatorSuiteCollection[ep.EndPoint].ReferenceCount++;
-                    UpdateTotalWeight();
+                    //UpdateTotalWeight();
                     return true;
                 }
             }
@@ -153,7 +153,7 @@ namespace DubboNet.Clients
                 {
                     dubboActuatorSuiteEndPintInfo.ReferenceCount++;
                     _sourceDubboActuatorSuiteCollection.Add(ep.EndPoint, dubboActuatorSuiteEndPintInfo);
-                    UpdateTotalWeight();
+                    //UpdateTotalWeight();
                     return true;
                 }
             }
@@ -217,9 +217,10 @@ namespace DubboNet.Clients
         /// 以指定负载策略返回可用DubboActuatorSuite
         /// </summary>
         /// <param name="loadBalanceMode">负载策略</param>
+        /// <param name="qurey">请求内容，仅用于ConsistentHash模式下计算过一致性hash</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode)
+        public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode ,string qurey = null)
         {
             LastActivateTime = DateTime.Now;
             if (InnerActuatorSuites.Count==0)
@@ -256,6 +257,12 @@ namespace DubboNet.Clients
                     selectedDubboServiceEndPointInfo = maxDispatchWeightItem.Value;
                     break;
                 case LoadBalanceMode.ConsistentHash:
+                    if(qurey==null)
+                    {
+                        return GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    }
+                    IPEndPoint nowEp = _dubboSuiteConsistentHash.GetNode(qurey);
+                    selectedDubboServiceEndPointInfo = InnerActuatorSuites[nowEp];
                     break;
                 default: 
                     break;
@@ -290,6 +297,7 @@ namespace DubboNet.Clients
             InnerActuatorSuites = null;
             //_sourceDubboActuatorSuiteCollection是外部传入的公用对象，不要在这里做Clear操作
             _sourceDubboActuatorSuiteCollection = null;
+            _dubboSuiteConsistentHash = null;
         }
     }
 

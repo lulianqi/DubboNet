@@ -236,7 +236,7 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentException("can not find the ServiceName or FuncName");
             }
-            AvailableDubboActuatorInfo availableDubboActuatorInfo = _dubboDriverCollection.GetDubboActuatorSuite(nowServiceName, NowLoadBalanceMode);
+            AvailableDubboActuatorInfo availableDubboActuatorInfo = _dubboDriverCollection.GetDubboActuatorSuite(nowServiceName, NowLoadBalanceMode, req);
             //获取到可用的DubboActuatorSuite
             if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
             {
