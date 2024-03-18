@@ -49,4 +49,8 @@
     </None>
   </ItemGroup>
 
+  <!-- add by manual -->
+  <ItemGroup>
+      <InternalsVisibleTo Include="UnitTestForDubboNet" />
+  </ItemGroup>
 </Project>

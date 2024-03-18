@@ -129,6 +129,11 @@ namespace DubboNet.Clients.Helper
             return end;
         }
 
+        /// <summary>
+        /// 获取目标节点
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
         public T GetNode(String key)
         {
             //return GetNode_slow(key);
