@@ -49,7 +49,7 @@
     </None>
   </ItemGroup>
 
-  <!-- add by manual -->
+  <!-- add by manual 这里因为有	<GenerateAssemblyInfo>false</GenerateAssemblyInfo>这个配置，所以下面的配置是不会生效的需要使用[assembly: InternalsVisibleTo("UnitTestForDubboNet")]在代码中配置-->
   <ItemGroup>
       <InternalsVisibleTo Include="UnitTestForDubboNet" />
   </ItemGroup>
