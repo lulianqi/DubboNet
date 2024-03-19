@@ -69,7 +69,7 @@ namespace DubboNet.DubboService
         {
             public DubboStatusInfo StatusInfo { get; internal set; }
             public DubboLsInfo LsInfo { get; internal set; }
-            public long LastQueryElapsed { get; internal set; }
+            public int LastQueryElapsed { get; internal set; }
         }
 
         //内部DubboSuiteCell（只要DubboActuatorSuite初始化_actuatorSuiteCellList就不会为null）
@@ -429,7 +429,7 @@ namespace DubboNet.DubboService
                     {
                         throw new Exception(availableDubboActuator.NowErrorMes);
                     }
-                    ActuatorSuiteStatusInfo.LastQueryElapsed = telnetRequestResult.ElapsedMilliseconds;
+                    ActuatorSuiteStatusInfo.LastQueryElapsed = (int)telnetRequestResult.ElapsedMilliseconds;
                     return telnetRequestResult;
                 }
                 catch (Exception ex)

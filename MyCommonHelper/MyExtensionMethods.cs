@@ -488,4 +488,22 @@ namespace MyCommonHelper
         }
 
     }
+
+    public static class EnumerableExtensions
+    {
+        public static IEnumerable<T> MinByAll<T, TKey>(this IEnumerable<T> source, Func<T, TKey> keySelector) where TKey : IComparable<TKey>
+        {
+            if (source == null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+            if (keySelector == null)
+            {
+                throw new ArgumentNullException(nameof(keySelector));
+            }
+
+            var minKeyValue = source.Min(keySelector);
+            return source.Where(element => keySelector(element).CompareTo(minKeyValue) == 0);
+        }
+    }
 }

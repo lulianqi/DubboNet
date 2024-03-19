@@ -265,6 +265,12 @@ namespace DubboNet.Clients
                     IPEndPoint nowEp = _dubboSuiteConsistentHash.GetNode(qurey);
                     selectedDubboServiceEndPointInfo = InnerActuatorSuites[nowEp];
                     break;
+                case LoadBalanceMode.ShortestResponse:
+                    var minQueryElapsedItem = InnerActuatorSuites.MinBy<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(it => (DateTime.Now - it.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds<60? it.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed:0);
+                    selectedDubboServiceEndPointInfo = minQueryElapsedItem.Value;
+                    break;
+                case LoadBalanceMode.LeastActive:
+                    break;
                 default: 
                     break;
             }
