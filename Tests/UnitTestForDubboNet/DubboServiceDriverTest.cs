@@ -38,7 +38,10 @@ namespace UnitTestForDubboNet
             {
                 DubboActuatorSuite dubboActuatorSuite = dubboServiceDriver.GetDubboActuatorSuite(loadBalanceMode);
                 Output.WriteLine(dubboActuatorSuite.ToString());
+                Assert.NotNull(dubboActuatorSuite);
             }
+            //Output only shows if the test fails. (in vs code)
+            Assert.False(true);
         }
     }
 }
