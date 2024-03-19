@@ -1,16 +1,44 @@
 ﻿using DubboNet.DubboService;
 using DubboNet.Clients;
+using DubboNet.Clients.DataModle;
+using static DubboNet.Clients.DubboClient;
+using static DubboNet.DubboService.DubboActuatorSuite;
+using Xunit.Abstractions;
 
 namespace UnitTestForDubboNet
 {
     public class DubboServiceDriverTest
     {
-        [Theory]
-        [InlineData(@"com.xxxxx.pay.api.PayRemoteService")]
-        [InlineData("PROVIDER:\r\ncom.xxxxx.pay.api.PayRemoteService\r\ncom.xxxxx.service.api.WorkOrderProductRemoteService\r\ncom.xxxxx.service.api.UserAccountRemoteService\r\ncom.xxxxx.service.api.PhoneHomeLocationRemoteService\r\nCONSUMER:\r\ncom.xxx.decision.api.record.MiniAppRecordReadRemoteServicecom.xxx.decision.api.dialoguebot.globalstrategy.TBotGlobalStrategyKnowledgeReadRemote")]
-        public void DubboLsInfoTest(string source)
+        protected readonly ITestOutputHelper Output;
+
+        public DubboServiceDriverTest(ITestOutputHelper outPut)
         {
-            DubboServiceDriver dubboServiceDriver = new("",null,null);
+            Output = outPut;
+        }
+
+        [Theory]
+        [InlineData(LoadBalanceMode.Random)]
+        public void DubboLsInfoTest(LoadBalanceMode loadBalanceMode)
+        {
+            List<DubboServiceEndPointInfo> dubboServiceEndPointInfos = new List<DubboServiceEndPointInfo>();
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.1"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.1"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false} )});
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.2"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.2"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.3"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.3"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.4"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.4"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.5"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.5"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.6"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.6"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.7"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.7"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.8"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.8"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.9"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.9"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.10"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.10"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+            dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.11"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.11"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
+
+            DubboServiceDriver dubboServiceDriver = new("UnitTester",dubboServiceEndPointInfos,new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
+            for(int i = 0;i<100;i++)
+            {
+                DubboActuatorSuite dubboActuatorSuite = dubboServiceDriver.GetDubboActuatorSuite(loadBalanceMode);
+                Output.WriteLine(dubboActuatorSuite.ToString());
+            }
         }
     }
 }

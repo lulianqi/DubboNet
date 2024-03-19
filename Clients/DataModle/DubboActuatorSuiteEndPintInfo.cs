@@ -10,8 +10,8 @@ namespace DubboNet.Clients.DataModle
 {
     internal class DubboActuatorSuiteEndPintInfo
     {
-        public IPEndPoint EndPoint { get; set; }
-        public DubboActuatorSuite ActuatorSuite { get; set; }
+        public IPEndPoint EndPoint { get;internal set; }
+        public DubboActuatorSuite ActuatorSuite { get;internal set; }
         public int ReferenceCount { get; internal set; } = 0;
     }
 }

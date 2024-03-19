@@ -22,10 +22,10 @@ namespace DubboNet.Clients.DataModle
             NetworkError
         }
 
-        public GetDubboActuatorSuiteResultType ResultType { get; set; } = GetDubboActuatorSuiteResultType.Unkonw;
-        public string ErrorMes { get; set; } = null;
-        public DubboServiceDriver NowDubboServiceDriver { get; set; }
-        public DubboActuatorSuite AvailableDubboActuatorSuite { get; set; }
+        public GetDubboActuatorSuiteResultType ResultType { get;internal set; } = GetDubboActuatorSuiteResultType.Unkonw;
+        public string ErrorMes { get;internal set; } = null;
+        public DubboServiceDriver NowDubboServiceDriver { get;internal set; }
+        public DubboActuatorSuite AvailableDubboActuatorSuite { get;internal set; }
     }
 
 }

@@ -14,9 +14,9 @@ namespace DubboNet.Clients.DataModle
     /// </summary>
     public class DubboServiceEndPointInfo
     {
-        public IPEndPoint EndPoint { get; set; } = null;
-        public DubboActuatorSuite InnerDubboActuatorSuite { get; set; }
-        public int NowDispatchWeight { get; set; } = 0;
+        public IPEndPoint EndPoint { get;internal set; } = null;
+        public DubboActuatorSuite InnerDubboActuatorSuite { get;internal set; }
+        public int NowDispatchWeight { get;internal set; } = 0;
 
 
 

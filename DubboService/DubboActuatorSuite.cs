@@ -62,7 +62,7 @@ namespace DubboNet.DubboService
             public int MasterConnectionAliveTime { get; set; } = 60 * 20;
             public int DubboRequestTimeout { get; set; } = 10 * 1000;
             public string DefaultServiceName { get; set; } = null;
-
+            public bool IsAutoUpdateStatusInfo{ get; set; } = true;
         }
 
         public class DubboActuatorSuiteStatus
@@ -125,6 +125,11 @@ namespace DubboNet.DubboService
         /// 获取默认服务名称
         /// </summary>
         public new string DefaultServiceName { get; private set; }
+
+        /// <summary>
+        /// 是否自动更新StatusInfo (自动更新会触发自动连接)
+        /// </summary>
+        public bool IsAutoUpdateStatusInfo{ get; private set; } = true;
 
         /// <summary>
         /// 获取当前DubboActuatorSuite内所有DubboSuiteCell执行单元
@@ -266,6 +271,10 @@ namespace DubboNet.DubboService
                             }
                         }
                     }
+                    if(!IsAutoUpdateStatusInfo)
+                    {
+                        return;
+                    }
                     //是否需要静默,静默不再更新StatusInfo
                     bool isShouldSilent = MasterConnectionAliveTime!=0 && (e.SignalTime - this.LastActivateTime).TotalSeconds > MasterConnectionAliveTime;
                     if(isShouldSilent)
@@ -280,19 +289,7 @@ namespace DubboNet.DubboService
                     ((DateTime.Now - LastActivateTime).TotalMilliseconds <=  StatusInfoDormantIntervalTime && (DateTime.Now-ActuatorSuiteStatusInfo.StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoIntervalTime )||
                     ((DateTime.Now - LastActivateTime).TotalMilliseconds >  StatusInfoDormantIntervalTime && (DateTime.Now-ActuatorSuiteStatusInfo.StatusInfo.InfoCreatTime).TotalMilliseconds > StatusInfoDormantIntervalTime ) )
                     {
-
-                        //获取最新节点信息（GetDubboStatusInfoAsync调用的是基类的SendCommandAsync，所以一定是由主节点执行，同时不会更新重写的LastActivateTime属性）
-                        //StatusInfo = base.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
-                        ActuatorSuiteStatusInfo.StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
-                        if(ActuatorSuiteStatusInfo.StatusInfo ==null)
-                        {
-                            throw new Exception(this.NowErrorMes);
-                        }
-                        ActuatorSuiteStatusInfo.LsInfo = this.GetDubboLsInfoAsync().GetAwaiter().GetResult();
-                        if (ActuatorSuiteStatusInfo.LsInfo == null)
-                        {
-                            throw new Exception(this.NowErrorMes);
-                        }
+                        UpdateStatusInfoAsync().Wait();
                     }
                 }
             } 
@@ -303,6 +300,29 @@ namespace DubboNet.DubboService
             finally
             {
                 _innerFlagForInCruiseTask = false;
+            }
+        }
+
+        /// <summary>
+        /// 更新StatusInfo
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        private async Task UpdateStatusInfoAsync()
+        {
+            //获取最新节点信息（GetDubboStatusInfoAsync调用的是基类的SendCommandAsync，所以一定是由主节点执行，同时不会更新重写的LastActivateTime属性）
+            //StatusInfo = base.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+            //ActuatorSuiteStatusInfo.StatusInfo = this.GetDubboStatusInfoAsync().GetAwaiter().GetResult();
+            ActuatorSuiteStatusInfo.StatusInfo = await this.GetDubboStatusInfoAsync();
+            if(ActuatorSuiteStatusInfo.StatusInfo ==null)
+            {
+                throw new Exception(this.NowErrorMes);
+            }
+            //ActuatorSuiteStatusInfo.LsInfo = this.GetDubboLsInfoAsync().GetAwaiter().GetResult();
+            ActuatorSuiteStatusInfo.LsInfo = await this.GetDubboLsInfoAsync();
+            if (ActuatorSuiteStatusInfo.LsInfo == null)
+            {
+                throw new Exception(this.NowErrorMes);
             }
         }
 
