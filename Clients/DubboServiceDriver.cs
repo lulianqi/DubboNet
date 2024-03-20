@@ -266,8 +266,24 @@ namespace DubboNet.Clients
                     selectedDubboServiceEndPointInfo = InnerActuatorSuites[nowEp];
                     break;
                 case LoadBalanceMode.ShortestResponse:
-                    var minQueryElapsedItem = InnerActuatorSuites.MinBy<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(it => (DateTime.Now - it.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds<60? it.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed:0);
-                    selectedDubboServiceEndPointInfo = minQueryElapsedItem.Value;
+                    DateTime nowTime = DateTime.Now;
+                    int minQueryElapsedItemValue = InnerActuatorSuites.Min<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(it => (nowTime - it.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60 ? it.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed : 0);
+                    var minQueryElapsedItems = InnerActuatorSuites.Where(element => minQueryElapsedItemValue == ((nowTime - element.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60 ? element.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed : 0));
+                    if (minQueryElapsedItems.Count()==0)
+                    {
+                        var minQueryElapsedItem = InnerActuatorSuites.MinBy<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(it => (DateTime.Now - it.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60 ? it.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed : 0);
+                        selectedDubboServiceEndPointInfo = minQueryElapsedItem.Value;
+                    }
+                    else if(minQueryElapsedItems.Count() == 1)
+                    {
+                        selectedDubboServiceEndPointInfo = minQueryElapsedItems.First().Value;
+                    }
+                    else
+                    {
+                        random = new Random();
+                        randomNumber = random.Next(0, minQueryElapsedItems.Count());
+                        selectedDubboServiceEndPointInfo = minQueryElapsedItems.Skip(randomNumber).First().Value;
+                    }
                     break;
                 case LoadBalanceMode.LeastActive:
                     break;

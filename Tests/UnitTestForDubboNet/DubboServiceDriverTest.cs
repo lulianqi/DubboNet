@@ -4,6 +4,7 @@ using DubboNet.Clients.DataModle;
 using static DubboNet.Clients.DubboClient;
 using static DubboNet.DubboService.DubboActuatorSuite;
 using Xunit.Abstractions;
+using System.Reflection;
 
 namespace UnitTestForDubboNet
 {
@@ -20,7 +21,8 @@ namespace UnitTestForDubboNet
         [InlineData(LoadBalanceMode.Random)]
         [InlineData(LoadBalanceMode.RoundRobin)]
         [InlineData(LoadBalanceMode.ConsistentHash)]
-        public void DubboLsInfoTest(LoadBalanceMode loadBalanceMode)
+        [InlineData(LoadBalanceMode.ShortestResponse)]
+        public void GetDubboActuatorSuiteTest(LoadBalanceMode loadBalanceMode)
         {
             List<DubboServiceEndPointInfo> dubboServiceEndPointInfos = new List<DubboServiceEndPointInfo>();
             dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.1"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.1"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) , Weight = 50});
@@ -35,6 +37,14 @@ namespace UnitTestForDubboNet
             dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.10"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.10"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
             dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.11"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.11"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
 
+            if(loadBalanceMode == LoadBalanceMode.ShortestResponse)
+            {
+                for(int i =0;i< dubboServiceEndPointInfos.Count - 2 ;i++)
+                {
+                    SetDubboActuatorSuiteStatusByReflection(dubboServiceEndPointInfos[i].InnerDubboActuatorSuite,i);
+                }
+            }
+
             DubboServiceDriver dubboServiceDriver = new("UnitTester",dubboServiceEndPointInfos,new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
             for(int i = 0;i<100;i++)
             {
@@ -44,6 +54,23 @@ namespace UnitTestForDubboNet
             }
             //Output only shows if the test fails. (in vs code)
             //Assert.False(true);
+        }
+
+
+        private void SetDubboActuatorSuiteStatusByReflection(DubboActuatorSuite dubboActuatorSuite ,int lastQueryElapsed)
+        {
+            // 获取类型信息
+            Type type = dubboActuatorSuite.GetType();
+
+            // 获取私有字段信息
+            PropertyInfo propertyInfo = type.GetProperty("ActuatorSuiteStatusInfo", BindingFlags.NonPublic | BindingFlags.Instance);
+
+            if (propertyInfo != null && propertyInfo.CanWrite)
+            {
+                // 设置新的值
+                DubboActuatorSuiteStatus newValue = new DubboActuatorSuiteStatus() { LastQueryElapsed = lastQueryElapsed}; // 假设这是你要设置的新值
+                propertyInfo.SetValue(dubboActuatorSuite, newValue);
+            }
         }
     }
 }
