@@ -37,16 +37,19 @@ namespace UnitTestForDubboNet
             dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.10"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.10"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
             dubboServiceEndPointInfos.Add(new DubboServiceEndPointInfo(){EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.11"),1234), InnerDubboActuatorSuite = new DubboActuatorSuite(new System.Net.IPEndPoint(System.Net.IPAddress.Parse("127.0.0.11"),1234) , new DubboActuatorSuiteConf(){ IsAutoUpdateStatusInfo = false}) });
 
-            if(loadBalanceMode == LoadBalanceMode.ShortestResponse)
+
+            DubboServiceDriver dubboServiceDriver = new("UnitTester",dubboServiceEndPointInfos,new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
+
+            if (loadBalanceMode == LoadBalanceMode.ShortestResponse)
             {
-                for(int i =0;i< dubboServiceEndPointInfos.Count - 2 ;i++)
+                for (int i = 0; i < dubboServiceEndPointInfos.Count - 2; i++)
                 {
-                    SetDubboActuatorSuiteStatusByReflection(dubboServiceEndPointInfos[i].InnerDubboActuatorSuite,i);
+                    //SetDubboActuatorSuiteStatusByReflection(dubboServiceEndPointInfos[i].InnerDubboActuatorSuite, i);
+                    SetDubboActuatorSuiteStatusByReflection(dubboServiceDriver.InnerActuatorSuites[dubboServiceEndPointInfos[i].EndPoint].InnerDubboActuatorSuite, i);
                 }
             }
 
-            DubboServiceDriver dubboServiceDriver = new("UnitTester",dubboServiceEndPointInfos,new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
-            for(int i = 0;i<100;i++)
+            for (int i = 0;i<100;i++)
             {
                 DubboActuatorSuite dubboActuatorSuite = dubboServiceDriver.GetDubboActuatorSuite(loadBalanceMode , i.ToString());
                 Output.WriteLine(dubboActuatorSuite.ToString());
@@ -63,7 +66,7 @@ namespace UnitTestForDubboNet
             Type type = dubboActuatorSuite.GetType();
 
             // 获取私有字段信息
-            PropertyInfo propertyInfo = type.GetProperty("ActuatorSuiteStatusInfo", BindingFlags.NonPublic | BindingFlags.Instance);
+            PropertyInfo propertyInfo = type.GetProperty("ActuatorSuiteStatusInfo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
             if (propertyInfo != null && propertyInfo.CanWrite)
             {
