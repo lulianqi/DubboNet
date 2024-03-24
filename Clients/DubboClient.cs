@@ -47,7 +47,11 @@ namespace DubboNet.Clients
             /// <summary>
             /// 一致性 Hash，相同参数的请求总是发到同一提供者。
             /// </summary>
-            ConsistentHash
+            ConsistentHash,
+            /// <summary>
+            /// 从可用的provider列表中做两次随机选择，选出两个节点providerA和providerB,比较providerA和providerB两个节点，选择其“当前正在处理的连接数”较小的那个节点。
+            /// </summary>
+            P2CLoadBalance
         }
 
         /// <summary>

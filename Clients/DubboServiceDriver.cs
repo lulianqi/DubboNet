@@ -287,8 +287,20 @@ namespace DubboNet.Clients
                     break;
                 case LoadBalanceMode.LeastActive:
                     break;
-                default: 
-                    break;
+                case LoadBalanceMode.P2CLoadBalance:
+                    DubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    DubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    if(providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load!=null && providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load != null)
+                    {
+                        MyLogger.LogWarning("[GetDubboActuatorSuite] ActuatorSuiteStatusInfo.StatusInfo?.Load is null");
+                        return providerA;
+                    }
+                    else
+                    {
+                        return providerA.ActuatorSuiteStatusInfo.StatusInfo.Load.Load > providerB.ActuatorSuiteStatusInfo.StatusInfo.Load.Load ? providerB : providerA;
+                    }
+                default:
+                    throw new Exception($"[GetDubboActuatorSuite] nonsupported LoadBalanceMode {loadBalanceMode}");
             }
             if (selectedDubboServiceEndPointInfo == null)
             {
