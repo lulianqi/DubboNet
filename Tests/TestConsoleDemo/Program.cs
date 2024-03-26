@@ -44,7 +44,7 @@ static async Task StressTestForDubboClient()
     stopwatch.Start();
     for(int i =0;i<10; i++)
     {
-        Task<DubboRequestResult> task = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939");
+        Task<DubboRequestResult> task = dubboClient.QueryAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939");
         tasks.Add(task);
     }
     await Task.WhenAll(tasks);
@@ -63,10 +63,10 @@ static async Task StressTestForDubboClient()
 static async Task TestForDubboClient()
 {
     var dubboClient  =new DubboClient("10.100.64.198:2181") ;
-    var result = await dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime","123392,1939");
+    var result = await dubboClient.QueryAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime","123392,1939");
     for(int i =0;i<10; i++)
     {
-        _ = dubboClient.SendRequestAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939").ContinueWith(rs => Console.WriteLine(rs.Result.Result));
+        _ = dubboClient.QueryAsync("com.byai.saas.callcenter.api.CsStaffRemoteService.getCsStaffServiceTime", "123392,1939").ContinueWith(rs => Console.WriteLine(rs.Result.Result));
     }
     dubboClient = null;
     Console.WriteLine(result.Result);

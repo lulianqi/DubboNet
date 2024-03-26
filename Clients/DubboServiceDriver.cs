@@ -286,7 +286,8 @@ namespace DubboNet.Clients
                     }
                     break;
                 case LoadBalanceMode.LeastActive:
-                    break;
+                    //未实现
+                    return GetDubboActuatorSuite(LoadBalanceMode.Random);
                 case LoadBalanceMode.P2CLoadBalance:
                     DubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
                     DubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
@@ -307,8 +308,6 @@ namespace DubboNet.Clients
                 throw new Exception("[GetDubboActuatorSuite] fialed get DubboActuatorSuite ,that selectedDubboServiceEndPointInfo is null");
             }
             return selectedDubboServiceEndPointInfo.InnerDubboActuatorSuite;
-            //未实现
-            return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
         }
 
         public void Dispose()

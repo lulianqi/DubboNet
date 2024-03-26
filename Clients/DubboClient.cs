@@ -1,20 +1,15 @@
 ﻿using DubboNet.Clients.DataModle;
 using DubboNet.Clients.RegistryClient;
-using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
 using MyCommonHelper;
 using org.apache.zookeeper;
 using org.apache.zookeeper.data;
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
-using System.ComponentModel.DataAnnotations;
-using System.IO;
-using System.Linq;
 using System.Net;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 
@@ -41,6 +36,7 @@ namespace DubboNet.Clients
             /// </summary>
             RoundRobin,
             /// <summary>
+            /// 未实现
             /// 加权最少活跃调用优先，活跃数越低，越优先调用，相同活跃数的进行加权随机。活跃数指调用前后计数差（针对特定提供者：请求发送数 - 响应返回数），表示特定提供者的任务堆积量，活跃数越低，代表该提供者处理能力越强。
             /// </summary>
             LeastActive,
@@ -66,17 +62,40 @@ namespace DubboNet.Clients
             TryConnect, //开始进入主动重新连接
             LostConnect //主动重连超时了
         }
-        
-        
 
+
+        /// <summary>
+        /// DubboClient配置
+        /// </summary>
         public class DubboClientConf
         {
+            /// <summary>
+            /// Zookeeper上默认的Dubbo跟路径，默认/dubbo/
+            /// </summary>
             public string DubboRootPath { get; set; } = "/dubbo/";
+            /// <summary>
+            /// 单个Dubbo服务节点最多能开启的连接数量（默认情况会保持1个连接，当对单个节点出现并行请求时会自动开启更多连接）
+            /// </summary>
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
+            /// <summary>
+            /// 服务节点辅助连接不再活跃超过此时间时释放辅助连接（单位秒,默认300s，0表示不进行主动释放）
+            /// </summary>
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
+            /// <summary>
+            /// 服务节点主连接不再活跃超过此时间时释放辅助连接（单位秒,默认1200s，0表示不进行主动释放）
+            /// </summary>
             public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
+            /// <summary>
+            /// Dubbo请求的最大超时时间
+            /// </summary>
             public int DubboRequestTimeout { get; set; } = 60 * 1000;
+            /// <summary>
+            /// DubboClient可最大缓存的复用服务数量,0表示无限制（如果当前DubboClient实例会大量请求不同服务，可以扩大该数值）
+            /// </summary>
             public int MaintainServiceNum { get; set; } = 20;
+            /// <summary>
+            /// 当前负载模式
+            /// </summary>
             public LoadBalanceMode NowLoadBalanceMode { get; set; } = LoadBalanceMode.Random;
             public string DefaultFuncName { get; set; } = null;
             public string DefaultServiceName { get; set; } = null;
@@ -164,6 +183,12 @@ namespace DubboNet.Clients
         {
         }
 
+        /// <summary>
+        /// 初始化DubboClient
+        /// </summary>
+        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
+        /// <param name="dubboClientConf">DubboClientConf 配置信息</param>
+        /// <exception cref="ArgumentException"></exception>
         public DubboClient(string zookeeperCoonectString , DubboClientConf dubboClientConf)
         {
             if (string.IsNullOrEmpty(zookeeperCoonectString))
@@ -227,9 +252,10 @@ namespace DubboNet.Clients
         }
 
 
-        public async Task<DubboRequestResult> SendRequestAsync(string funcEndPoint, string req)
+        #region QueryAsync
+        public async Task<DubboRequestResult> QueryAsync(string funcEndPoint, string req)
         {
-            if(IsDisposed)
+            if (IsDisposed)
             {
                 throw new Exception("DubboClient is disposed");
             }
@@ -263,7 +289,7 @@ namespace DubboNet.Clients
                 else
                 {
                     _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
-                    return await SendRequestAsync(funcEndPoint, req);
+                    return await QueryAsync(funcEndPoint, req);
                 }
             }
             //没有获取到可用的DubboActuatorSuite，因为服务里的节点信息为空
@@ -279,7 +305,7 @@ namespace DubboNet.Clients
                 else if (serviceEndPointsInfo.EndPoints.Count > 0)
                 {
                     _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
-                    return await SendRequestAsync(funcEndPoint, req);
+                    return await QueryAsync(funcEndPoint, req);
                 }
                 else
                 {
@@ -310,6 +336,63 @@ namespace DubboNet.Clients
                 };
             }
         }
+
+        public async Task<DubboRequestResult> QueryAsync(string funcEndPoint)
+        {
+            return await QueryAsync(funcEndPoint, "");
+        }
+
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(string funcEndPoint, string req)
+        {
+            DubboRequestResult sourceDubboResult = await QueryAsync(funcEndPoint, req);
+            DubboRequestResult<T_Rsp> dubboRequestResult = new DubboRequestResult<T_Rsp>(sourceDubboResult);
+            return dubboRequestResult;
+        }
+
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(string funcEndPoint)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, "");
+        }
+
+
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req>(string funcEndPoint, T_Req req)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, JsonSerializer.Serialize<T_Req>(req));
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2>(string funcEndPoint, T_Req1 req1, T_Req2 req2)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)}");
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)}");
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)}");
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)}");
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)}");
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6, T_Req7>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6, T_Req7 req7)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)},{JsonSerializer.Serialize<T_Req7>(req7)}");
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6, T_Req7, T_Req8>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6, T_Req7 req7, T_Req8 req8)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)},{JsonSerializer.Serialize<T_Req7>(req7)},{JsonSerializer.Serialize<T_Req8>(req8)}");
+        }
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6, T_Req7, T_Req8, T_Req9>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6, T_Req7 req7, T_Req8 req8, T_Req9 req9)
+        {
+            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)},{JsonSerializer.Serialize<T_Req7>(req7)},{JsonSerializer.Serialize<T_Req8>(req8)},{JsonSerializer.Serialize<T_Req9>(req9)}");
+        }
+
+        #endregion
 
 
         /// <summary>

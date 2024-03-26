@@ -284,6 +284,12 @@ namespace DubboNet.DubboService
             return dubboRequestResult;
         }
 
+        /// <summary>
+        /// 发送Query请求，并将返回指定类型的结构化数据[返回DubboRequestResult<T_Rsp>结果](请求为无请求参数的版本)
+        /// </summary>
+        /// <typeparam name="T_Rsp"></typeparam>
+        /// <param name="endPoint">服务人口</param>
+        /// <returns></returns>
         public async Task<DubboRequestResult<T_Rsp>> SendQuery<T_Rsp>(string endPoint)
         {
             return await SendQuery<T_Rsp>(endPoint, "");
