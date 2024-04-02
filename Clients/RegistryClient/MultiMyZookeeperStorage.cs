@@ -25,22 +25,47 @@ namespace DubboNet.Clients.RegistryClient
             _innerMultiMyZookeeperCollection = new Dictionary<string, MyZookeeperStorageInfo>();
         }
 
-        public MyZookeeper GetMyZookeeper(string ConnectionString)
+        public MyZookeeper GetMyZookeeper(string connectionString)
         {
-            if(_innerMultiMyZookeeperCollection.ContainsKey(ConnectionString))
+            if(_innerMultiMyZookeeperCollection.ContainsKey(connectionString))
             {
-                _innerMultiMyZookeeperCollection[ConnectionString].ReferenceCount++;
-                return _innerMultiMyZookeeperCollection[ConnectionString].NowMyZookeeper;
+                _innerMultiMyZookeeperCollection[connectionString].ReferenceCount++;
+                return _innerMultiMyZookeeperCollection[connectionString].NowMyZookeeper;
             }
             else
-            {
+            {   
+                MyZookeeper.MyAuthInfo authInfo = null;
+                if(connectionString.EndsWith("]"))
+                {
+                    int tempStart = connectionString.IndexOf('[');
+                    if(tempStart<0 || connectionString.Length-tempStart-2 <= 0)
+                    {
+                        throw new ArgumentException($"“{nameof(connectionString)}” is not valid (lost '[')", nameof(connectionString));
+                    }
+                    string authString = connectionString.Substring(tempStart+1, connectionString.Length-tempStart-2).Trim();
+                    if(!authString.Contains(" "))
+                    {
+                       throw new ArgumentException($"“{nameof(connectionString)}” is not valid (lost ' ')", nameof(connectionString));
+                    }
+                    string[] strings = authString.Split(' ',2);
+                    authInfo = new MyZookeeper.MyAuthInfo()
+                    {
+                        Scheme = strings[0],
+                        Auth = Encoding.UTF8.GetBytes(strings[1])
+                    };
+                    connectionString = connectionString.Remove(tempStart).Trim();
+                }
                 MyZookeeperStorageInfo myZookeeperStorageInfo = new MyZookeeperStorageInfo()
                 {
-                    ConnectionString = ConnectionString,
-                    NowMyZookeeper = new MyZookeeper(ConnectionString),
+                    ConnectionString = connectionString,
+                    NowMyZookeeper = new MyZookeeper(connectionString),
                     ReferenceCount = 1
                 };
-                _innerMultiMyZookeeperCollection.TryAdd(ConnectionString, myZookeeperStorageInfo);
+                if(authInfo!=null)
+                {
+                    myZookeeperStorageInfo.NowMyZookeeper.AuthInfo = authInfo;
+                }
+                _innerMultiMyZookeeperCollection.TryAdd(connectionString, myZookeeperStorageInfo);
                 return myZookeeperStorageInfo.NowMyZookeeper;
             }
         }

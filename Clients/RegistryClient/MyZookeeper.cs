@@ -25,6 +25,12 @@ namespace DubboNet.Clients.RegistryClient
             }
         }
 
+        public class MyAuthInfo
+        {
+            public string Scheme{get; set;}
+            public byte[] Auth{get; set;}
+        }
+
         /// <summary>
         /// 获取zookeeper路径树的最大进入深度
         /// </summary>
@@ -63,7 +69,12 @@ namespace DubboNet.Clients.RegistryClient
         /// </summary>
         public Encoding NowEncoding { get; set; } = Encoding.UTF8;
 
-        public MyZookeeper(string connectionString, int sessionTimeOut = 10000, Encoding encoding = null)
+        /// <summary>
+        /// 认证信息
+        /// </summary>
+        public MyAuthInfo AuthInfo { get; set; } = null;
+
+        public MyZookeeper(string connectionString, int sessionTimeOut = 10000, Encoding encoding = null ,MyAuthInfo authInfo = null)
         {
             if (encoding != null)
             {
@@ -71,6 +82,7 @@ namespace DubboNet.Clients.RegistryClient
             }
             ConnectionString = connectionString;
             SessionTimeOut = sessionTimeOut;
+            AuthInfo = authInfo;
             defaultWatch = new MyWatcher("DefaultWatch");
         }
 
@@ -184,6 +196,10 @@ namespace DubboNet.Clients.RegistryClient
                 defaultWatch = new MyWatcher("DefaultWatch");
             }
             zooKeeper = new ZooKeeper(ConnectionString, SessionTimeOut, defaultWatch);
+            if(AuthInfo!=null && AuthInfo.Scheme!=null && AuthInfo.Auth!=null)
+            {
+                zooKeeper.addAuthInfo(AuthInfo.Scheme, AuthInfo.Auth);
+            }
             await Task.Delay(20);
             int skipTag = 0;
             while (zooKeeper.getState() == ZooKeeper.States.CONNECTING)

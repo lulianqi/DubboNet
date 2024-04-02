@@ -177,7 +177,7 @@ namespace DubboNet.Clients
         /// <summary>
         /// 初始化DubboClient
         /// </summary>
-        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
+        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开,如果带用户认证后面加[Scheme Auth] eg:"100.100.100.100:2181 [digest user:password]"）</param>
         /// <exception cref="ArgumentException"></exception>
         public DubboClient(string zookeeperCoonectString) : this(zookeeperCoonectString,new DubboClientConf())
         {
@@ -186,11 +186,12 @@ namespace DubboNet.Clients
         /// <summary>
         /// 初始化DubboClient
         /// </summary>
-        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开）</param>
+        /// <param name="zookeeperCoonectString">zk连接字符串（多个地址,隔开,如果带用户认证后面加[Scheme Auth] eg:"100.100.100.100:2181 [digest user:password]"）</param>
         /// <param name="dubboClientConf">DubboClientConf 配置信息</param>
         /// <exception cref="ArgumentException"></exception>
         public DubboClient(string zookeeperCoonectString , DubboClientConf dubboClientConf)
         {
+            zookeeperCoonectString = zookeeperCoonectString?.Trim();
             if (string.IsNullOrEmpty(zookeeperCoonectString))
             {
                 throw new ArgumentException($"“{nameof(zookeeperCoonectString)}” can not be null or empty", nameof(zookeeperCoonectString));
@@ -209,7 +210,7 @@ namespace DubboNet.Clients
             DubboActuatorSuiteMasterConnectionAliveTime = dubboClientConf.DubboActuatorSuiteMasterConnectionAliveTime;
             DubboRequestTimeout = dubboClientConf.DubboRequestTimeout;
             MaintainServiceNum = dubboClientConf.MaintainServiceNum;
-
+            
             _innerMyZookeeper = DubboClientMultiMyZookeeperStorage.GetMyZookeeper(zookeeperCoonectString);
             _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
             _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection, new DubboDriverCollection.DubboDriverCollectionConf()
