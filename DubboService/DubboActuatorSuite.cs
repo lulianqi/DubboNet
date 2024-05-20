@@ -15,7 +15,7 @@ using static NetService.Telnet.ExTelnet;
 
 namespace DubboNet.DubboService
 {
-    public class DubboActuatorSuite : DubboActuator , IDisposable
+    public class DubboActuatorSuite : DubboActuator , IDisposable, IDubboActuatorSuite
     {
         internal class DubboSuiteCell
         {
@@ -139,6 +139,8 @@ namespace DubboNet.DubboService
         /// 获取当前节点Status信息
         /// </summary>
         public DubboActuatorSuiteStatus ActuatorSuiteStatusInfo { get;private set; } = new DubboActuatorSuiteStatus();
+
+        public DubboActuatorProtocolType ProtocolType => DubboActuatorProtocolType.Telnet;
 
         #region 静态成员
         //DubboSuiteTimer执行的job间隔时间（单位毫秒）
