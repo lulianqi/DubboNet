@@ -15,7 +15,7 @@ namespace DubboNet.DubboService
         Http,
         Grpc
     }
-    public interface IDubboActuatorSuite
+    public interface IDubboActuatorSuite : IDisposable
     {
         /// <summary>
         /// 当前执行器选用的协议类型

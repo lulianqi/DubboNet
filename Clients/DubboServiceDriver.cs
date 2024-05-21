@@ -10,7 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using static DubboNet.Clients.DubboClient;
-using static DubboNet.DubboService.DubboActuatorSuite;
+using static DubboNet.DubboService.TelnetDubboActuatorSuite;
 
 namespace DubboNet.Clients
 {
@@ -142,7 +142,7 @@ namespace DubboNet.Clients
                 DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo = new DubboActuatorSuiteEndPintInfo()
                 {
                     EndPoint = ep.EndPoint,
-                    ActuatorSuite = new DubboActuatorSuite(ep.EndPoint,new DubboActuatorSuiteConf() { 
+                    ActuatorSuite = new TelnetDubboActuatorSuite(ep.EndPoint,new DubboActuatorSuiteConf() { 
                         AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime, 
                         MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
                         DubboRequestTimeout=_innerDubboServiceDriverConf.DubboRequestTimeout, 
@@ -221,7 +221,7 @@ namespace DubboNet.Clients
         /// <param name="qurey">请求内容，仅用于ConsistentHash模式下计算过一致性hash</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public DubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode ,string qurey = null)
+        public TelnetDubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode ,string qurey = null)
         {
             LastActivateTime = DateTime.Now;
             if (InnerActuatorSuites.Count==0)
@@ -289,8 +289,8 @@ namespace DubboNet.Clients
                     //未实现
                     return GetDubboActuatorSuite(LoadBalanceMode.Random);
                 case LoadBalanceMode.P2CLoadBalance:
-                    DubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
-                    DubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    TelnetDubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    TelnetDubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
                     if(providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load!=null && providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load != null)
                     {
                         MyLogger.LogWarning("[GetDubboActuatorSuite] ActuatorSuiteStatusInfo.StatusInfo?.Load is null");

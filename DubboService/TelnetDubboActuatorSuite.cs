@@ -15,7 +15,7 @@ using static NetService.Telnet.ExTelnet;
 
 namespace DubboNet.DubboService
 {
-    public class DubboActuatorSuite : DubboActuator , IDisposable, IDubboActuatorSuite
+    public class TelnetDubboActuatorSuite : DubboActuator , IDubboActuatorSuite
     {
         internal class DubboSuiteCell
         {
@@ -157,7 +157,7 @@ namespace DubboNet.DubboService
         /// <summary>
         /// 静态构造函数
         /// </summary>
-        static DubboActuatorSuite()
+        static TelnetDubboActuatorSuite()
         {
             DubboSuiteTimer = new System.Timers.Timer(InnetTimerInterval);
             DubboSuiteTimer.Elapsed += OnDubboSuiteTimedEvent;
@@ -193,7 +193,7 @@ namespace DubboNet.DubboService
         /// <param name="Port">端口</param>
         /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
         /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
-        public DubboActuatorSuite(string Address, int Port, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) : base(Address, Port, dubboActuatorSuiteConf?.DubboRequestTimeout?? 10 * 1000, dubboActuatorSuiteConf?.DefaultServiceName)
+        public TelnetDubboActuatorSuite(string Address, int Port, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) : base(Address, Port, dubboActuatorSuiteConf?.DubboRequestTimeout?? 10 * 1000, dubboActuatorSuiteConf?.DefaultServiceName)
         {
             if(dubboActuatorSuiteConf!=null)
             {
@@ -219,7 +219,7 @@ namespace DubboNet.DubboService
         /// <param name="iPEndPoint"></param>
         /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
         /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
-        public DubboActuatorSuite(IPEndPoint iPEndPoint, DubboActuatorSuiteConf dubboActuatorSuiteConf = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port,dubboActuatorSuiteConf)
+        public TelnetDubboActuatorSuite(IPEndPoint iPEndPoint, DubboActuatorSuiteConf dubboActuatorSuiteConf = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port,dubboActuatorSuiteConf)
         {
         }
 

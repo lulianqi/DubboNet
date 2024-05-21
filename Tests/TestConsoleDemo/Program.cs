@@ -90,7 +90,7 @@ static async Task TestForOverZookeeper()
 static async Task TestForOverWriter()
 {
     //https://www.cnblogs.com/shanfeng1000/p/12700296.html
-    DubboActuatorSuite dubboActuatorSuite = new DubboActuatorSuite("0.0.0.1", 0);
+    TelnetDubboActuatorSuite dubboActuatorSuite = new TelnetDubboActuatorSuite("0.0.0.1", 0);
     await dubboActuatorSuite.SendQuery("1","1");
 }
 
@@ -117,15 +117,15 @@ static async Task TestForReset()
 
 static void TestForTimer()
 {
-    DubboActuatorSuite dubboActuatorSuite1 = new DubboActuatorSuite("0.0.0.1", 0);
-    DubboActuatorSuite dubboActuatorSuite2 = new DubboActuatorSuite("0.0.0.2", 0);
-    DubboActuatorSuite dubboActuatorSuite3 = new DubboActuatorSuite("0.0.0.3", 0);
+    TelnetDubboActuatorSuite dubboActuatorSuite1 = new TelnetDubboActuatorSuite("0.0.0.1", 0);
+    TelnetDubboActuatorSuite dubboActuatorSuite2 = new TelnetDubboActuatorSuite("0.0.0.2", 0);
+    TelnetDubboActuatorSuite dubboActuatorSuite3 = new TelnetDubboActuatorSuite("0.0.0.3", 0);
     Console.WriteLine("enter to stop timer");
     Console.ReadLine();
 }
 static void TestForDispose()
 {
-    DubboActuatorSuite dubboActuatorSuite = new DubboActuatorSuite("0.0.0.0", 0);
+    TelnetDubboActuatorSuite dubboActuatorSuite = new TelnetDubboActuatorSuite("0.0.0.0", 0);
     dubboActuatorSuite.Dispose();
 }
 

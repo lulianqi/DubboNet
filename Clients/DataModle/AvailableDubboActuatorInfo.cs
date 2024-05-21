@@ -25,7 +25,7 @@ namespace DubboNet.Clients.DataModle
         public GetDubboActuatorSuiteResultType ResultType { get;internal set; } = GetDubboActuatorSuiteResultType.Unkonw;
         public string ErrorMes { get;internal set; } = null;
         public DubboServiceDriver NowDubboServiceDriver { get;internal set; }
-        public DubboActuatorSuite AvailableDubboActuatorSuite { get;internal set; }
+        public TelnetDubboActuatorSuite AvailableDubboActuatorSuite { get;internal set; }
     }
 
 }
