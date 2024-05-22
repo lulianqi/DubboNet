@@ -22,6 +22,14 @@ namespace DubboNet.DubboService
         /// </summary>
         public DubboActuatorProtocolType ProtocolType { get; }
         /// <summary>
+        /// 获取当前节点Status信息
+        /// </summary>
+        public DubboActuatorSuiteStatus ActuatorSuiteStatusInfo { get;  } 
+        /// <summary>
+        /// 最后激活即发送请求的时间
+        /// </summary>
+        public DateTime LastActivateTime { get; }
+        /// <summary>
         ///  发送Query请求[返回DubboRequestResult结果](返回不会为null，dubboRequestResult.ServiceElapsed 为 -1 时即代表错误，通过dubboRequestResult.ErrorMeaasge获取错误详情)
         /// </summary>
         /// <param name="endPoint">服务人口</param>

@@ -13,6 +13,10 @@ namespace DubboNet.DubboService
 
         public DubboActuatorProtocolType ProtocolType => throw new NotImplementedException();
 
+        DubboActuatorSuiteStatus IDubboActuatorSuite.ActuatorSuiteStatusInfo => throw new NotImplementedException();
+
+        DateTime IDubboActuatorSuite.LastActivateTime => throw new NotImplementedException();
+
         public Task<DubboRequestResult> SendQuery(string endPoint)
         {
             throw new NotImplementedException();

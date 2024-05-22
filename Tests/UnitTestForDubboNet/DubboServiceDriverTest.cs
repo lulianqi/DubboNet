@@ -5,6 +5,7 @@ using static DubboNet.Clients.DubboClient;
 using static DubboNet.DubboService.TelnetDubboActuatorSuite;
 using Xunit.Abstractions;
 using System.Reflection;
+using DubboNet.DubboService.DataModle;
 
 namespace UnitTestForDubboNet
 {
@@ -51,7 +52,7 @@ namespace UnitTestForDubboNet
 
             for (int i = 0;i<100;i++)
             {
-                TelnetDubboActuatorSuite dubboActuatorSuite = dubboServiceDriver.GetDubboActuatorSuite(loadBalanceMode , i.ToString());
+                IDubboActuatorSuite dubboActuatorSuite = dubboServiceDriver.GetDubboActuatorSuite(loadBalanceMode , i.ToString());
                 Output.WriteLine(dubboActuatorSuite.ToString());
                 Assert.NotNull(dubboActuatorSuite);
             }
@@ -60,7 +61,7 @@ namespace UnitTestForDubboNet
         }
 
 
-        private void SetDubboActuatorSuiteStatusByReflection(TelnetDubboActuatorSuite dubboActuatorSuite ,int lastQueryElapsed)
+        private void SetDubboActuatorSuiteStatusByReflection(IDubboActuatorSuite dubboActuatorSuite ,int lastQueryElapsed)
         {
             // 获取类型信息
             Type type = dubboActuatorSuite.GetType();

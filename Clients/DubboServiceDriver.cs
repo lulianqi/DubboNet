@@ -1,6 +1,7 @@
 ﻿using DubboNet.Clients.DataModle;
 using DubboNet.Clients.Helper;
 using DubboNet.DubboService;
+using DubboNet.DubboService.DataModle;
 using MyCommonHelper;
 using System;
 using System.Collections.Generic;
@@ -139,6 +140,11 @@ namespace DubboNet.Clients
             }
             else
             {
+                //选择IDubboActuatorSuite的协议类型
+                if(string.IsNullOrEmpty(ep.Release))
+                {
+
+                }
                 DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo = new DubboActuatorSuiteEndPintInfo()
                 {
                     EndPoint = ep.EndPoint,
@@ -221,7 +227,7 @@ namespace DubboNet.Clients
         /// <param name="qurey">请求内容，仅用于ConsistentHash模式下计算过一致性hash</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public TelnetDubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode ,string qurey = null)
+        public IDubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode ,string qurey = null)
         {
             LastActivateTime = DateTime.Now;
             if (InnerActuatorSuites.Count==0)
@@ -289,8 +295,8 @@ namespace DubboNet.Clients
                     //未实现
                     return GetDubboActuatorSuite(LoadBalanceMode.Random);
                 case LoadBalanceMode.P2CLoadBalance:
-                    TelnetDubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
-                    TelnetDubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    IDubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    IDubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
                     if(providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load!=null && providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load != null)
                     {
                         MyLogger.LogWarning("[GetDubboActuatorSuite] ActuatorSuiteStatusInfo.StatusInfo?.Load is null");

@@ -15,7 +15,7 @@ namespace DubboNet.Clients.DataModle
     public class DubboServiceEndPointInfo
     {
         public IPEndPoint EndPoint { get;internal set; } = null;
-        public TelnetDubboActuatorSuite InnerDubboActuatorSuite { get;internal set; }
+        public IDubboActuatorSuite InnerDubboActuatorSuite { get;internal set; }
         public int NowDispatchWeight { get;internal set; } = 0;
 
 
@@ -36,6 +36,8 @@ namespace DubboNet.Clients.DataModle
         public string Revision { get; set; } = null;
         public string Side { get; set; } = null;
         public string Threads { get; set; } = null;
+        public string Release { get; set; } = null;
+        public string Serialization { get; set; } = null;
         public int? Timeout { get; set; } = null;
         public long? Timestamp { get; set; } = null;
         public int Weight { get; set; } = 100;
@@ -108,6 +110,8 @@ namespace DubboNet.Clients.DataModle
             dubboServiceEndPointInfo.Revision = queryParameters["revision"];
             dubboServiceEndPointInfo.Side = queryParameters["side"];
             dubboServiceEndPointInfo.Threads = queryParameters["threads"];
+            dubboServiceEndPointInfo.Release = queryParameters["release"];
+            dubboServiceEndPointInfo.Serialization = queryParameters["prefer.serialization"];
             if (int.TryParse(queryParameters["timeout"], out tempIntValue))
             {
                 dubboServiceEndPointInfo.Timeout = tempIntValue;
