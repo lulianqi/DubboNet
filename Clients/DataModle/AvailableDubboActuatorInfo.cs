@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 namespace DubboNet.Clients.DataModle
 {
     /// <summary>
-    /// 可用的DubboActuatorSuite信息·
+    /// 可用的DubboActuatorSuite信息·(主要用于返回负载结果)
     /// </summary>
     internal class AvailableDubboActuatorInfo
     {

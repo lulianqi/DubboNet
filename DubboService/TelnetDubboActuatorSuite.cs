@@ -1,4 +1,5 @@
-﻿using DubboNet.DubboService.DataModle.DubboInfo;
+﻿using DubboNet.DubboService.DataModle;
+using DubboNet.DubboService.DataModle.DubboInfo;
 using MyCommonHelper;
 using NetService.Telnet;
 using System;
@@ -53,23 +54,6 @@ namespace DubboNet.DubboService
             /// </summary>
             /// <param name="dubboActuator">DubboActuator执行器</param>
             public DubboSuiteCell(DubboActuator dubboActuator) => InnerDubboActuator = dubboActuator;
-        }
-
-        public class DubboActuatorSuiteConf
-        {
-            public int MaxConnections { get; set; } = 20;
-            public int AssistConnectionAliveTime { get; set; } = 60 * 5;
-            public int MasterConnectionAliveTime { get; set; } = 60 * 20;
-            public int DubboRequestTimeout { get; set; } = 10 * 1000;
-            public string DefaultServiceName { get; set; } = null;
-            public bool IsAutoUpdateStatusInfo{ get; set; } = true;
-        }
-
-        public class DubboActuatorSuiteStatus
-        {
-            public DubboStatusInfo StatusInfo { get; internal set; }
-            public DubboLsInfo LsInfo { get; internal set; }
-            public int LastQueryElapsed { get; internal set; }
         }
 
         //内部DubboSuiteCell（只要DubboActuatorSuite初始化_actuatorSuiteCellList就不会为null）
@@ -134,7 +118,7 @@ namespace DubboNet.DubboService
         /// <summary>
         /// 获取当前DubboActuatorSuite内所有DubboSuiteCell执行单元
         /// </summary>
-        internal ReadOnlyCollection<DubboSuiteCell> ReadOnlyList => _actuatorSuiteCellList.AsReadOnly();
+        internal ReadOnlyCollection<DubboSuiteCell> SuiteCellList => _actuatorSuiteCellList.AsReadOnly();
         /// <summary>
         /// 获取当前节点Status信息
         /// </summary>
