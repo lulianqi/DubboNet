@@ -2,8 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using static DubboNet.DubboService.TelnetDubboActuatorSuite;
 
 namespace DubboNet.DubboService
 {
@@ -11,11 +14,41 @@ namespace DubboNet.DubboService
     {
         private bool disposedValue;
 
-        public DubboActuatorProtocolType ProtocolType => throw new NotImplementedException();
+        private HttpClient _innerHttpClient = new HttpClient(new SocketsHttpHandler
+        {
+            MaxConnectionsPerServer = 10000
+        });
 
-        DubboActuatorSuiteStatus IDubboActuatorSuite.ActuatorSuiteStatusInfo => throw new NotImplementedException();
+        public DubboActuatorProtocolType ProtocolType => DubboActuatorProtocolType.Http;
 
-        DateTime IDubboActuatorSuite.LastActivateTime => throw new NotImplementedException();
+        public DubboActuatorSuiteStatus ActuatorSuiteStatusInfo { get; private set; } = new DubboActuatorSuiteStatus();
+
+        public DateTime LastActivateTime { get; private set; } = DateTime.Now;
+
+        /// <summary>
+        /// 获取默认服务名称
+        /// </summary>
+        public new string DefaultServiceName { get; private set; }
+
+        /// <summary>
+        /// 初始化DubboActuatorSuite
+        /// </summary>
+        /// <param name="Address">地址（ip）</param>
+        /// <param name="Port">端口</param>
+        /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
+        /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
+        public HttpDubboActuatorSuite(string Address, int Port, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) 
+        {
+            _innerHttpClient.BaseAddress = new Uri($"http://{Address}:{Port}");
+            if (dubboActuatorSuiteConf != null)
+            {
+                DefaultServiceName = dubboActuatorSuiteConf.DefaultServiceName;
+                if (dubboActuatorSuiteConf.DubboRequestTimeout > 0)
+                {
+                    _innerHttpClient.Timeout =  TimeSpan.FromMilliseconds(dubboActuatorSuiteConf.DubboRequestTimeout);
+                }
+            }
+        }
 
         public Task<DubboRequestResult> SendQuery(string endPoint)
         {
