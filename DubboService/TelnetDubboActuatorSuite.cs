@@ -126,6 +126,8 @@ namespace DubboNet.DubboService
 
         public DubboActuatorProtocolType ProtocolType => DubboActuatorProtocolType.Telnet;
 
+        public string ServiceFuncSpit => ".";
+
         #region 静态成员
         //DubboSuiteTimer执行的job间隔时间（单位毫秒）
         private const int InnetTimerInterval = 1000 * 10;

@@ -22,6 +22,10 @@ namespace DubboNet.DubboService
         /// </summary>
         public DubboActuatorProtocolType ProtocolType { get; }
         /// <summary>
+        /// 发送请求时服务与方法的连接字符
+        /// </summary>
+        public string ServiceFuncSpit { get; }
+        /// <summary>
         /// 获取当前节点Status信息
         /// </summary>
         public DubboActuatorSuiteStatus ActuatorSuiteStatusInfo { get;  } 

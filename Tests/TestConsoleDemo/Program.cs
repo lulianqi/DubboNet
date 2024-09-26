@@ -12,10 +12,10 @@ using TestConsoleDemo.DataModle;
 
 
 Console.WriteLine("TestDemoConsole");
-await StressTestForDubboClient();
+await TestForHttpDubboActuatorSuite();
 Console.WriteLine("Enter to Exit");
 Console.ReadLine();
-for (int i = 0; i < 10; i++)
+for (int i = 0; i < 1; i++)
 {
     //GC.Collect();
     GC.Collect(2, GCCollectionMode.Forced);
@@ -58,6 +58,15 @@ static async Task StressTestForDubboClient()
         Console.WriteLine(task.Result.ToString());
     }
     dubboClient.Dispose();
+}
+
+static async Task TestForHttpDubboActuatorSuite()
+{
+    var dubboClient = new DubboClient("110.40.136.183:2181");
+    var result = await dubboClient.QueryAsync("org.apache.dubbo.springboot.demo.DemoService/hi", "123392,1939");
+    var result2 = await dubboClient.QueryAsync<string>("org.apache.dubbo.springboot.demo.DemoService/hi", "123392,1939");
+
+    Console.WriteLine(result2.Result);
 }
 
 static async Task TestForDubboClient()

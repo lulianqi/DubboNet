@@ -24,6 +24,10 @@ namespace DubboNet.DubboService.DataModle
         /// </summary>
         public DateTime CreatTime { get;private set; } = DateTime.Now;
         /// <summary>
+        /// 请求是否成功（非业务含义，仅在协议上表示请求成功）
+        /// </summary>
+        public bool QuerySuccess { get; internal set; } = true;
+        /// <summary>
         /// 请求结果
         /// </summary>
         public string Result { get; set; }
@@ -35,7 +39,6 @@ namespace DubboNet.DubboService.DataModle
         /// 请求时间，包含网络时间（毫秒）
         /// </summary>
         public int RequestElapsed { get; set; }
-
         /// <summary>
         /// 请求的异常错误信息（请求已经有了返回数据，返回数据非法或反序列化异常时等异常情况，此处记录错误详情）
         /// DubboRequestResult是否正常应以ServiceElapsed是否为-1为准，因为可能存在请求正常返回，但是反序列化失败的场景
@@ -43,11 +46,36 @@ namespace DubboNet.DubboService.DataModle
         public string ErrorMeaasge { get; set; } = null;
 
         /// <summary>
-        /// 通过dubbo telnet原始返回 获取DubboRequestResult
+        /// 更新QuerySuccess为失败 (成功不用设置，默认成功)
+        /// </summary>
+        internal void UpdateQueryFailed()
+        {
+            ServiceElapsed = -1;
+            QuerySuccess = false;
+        }
+
+        /// <summary>
+        /// 使用当前事件更新ServiceElapsed
+        /// </summary>
+        internal void UpdateServiceElapsed()
+        {
+            ServiceElapsed = (int)(DateTime.Now - CreatTime).TotalMilliseconds;
+        }
+
+        /// <summary>
+        /// 使用当前事件更新ServiceElapsed
+        /// </summary>
+        internal void UpdateRequestElapsed()
+        {
+            RequestElapsed = (int)(DateTime.Now - CreatTime).TotalMilliseconds;
+        }
+
+        /// <summary>
+        /// 通过dubbo telnet原始返回 获取DubboRequestResult (仅适用于TelnetDubboActuatorSuite的原始RAW数据处理)
         /// </summary>
         /// <param name="queryResultStr"></param>
         /// <returns></returns>
-        public static DubboRequestResult GetRequestResultFormStr(string queryResultStr)
+        internal static DubboRequestResult GetRequestResultFormStr(string queryResultStr)
         {
             DubboRequestResult dubboRequestResult = new DubboRequestResult();
             int nowStartFlag = 0;
@@ -75,6 +103,7 @@ namespace DubboNet.DubboService.DataModle
                         {
                             //TryParse 失败 out 值会赋写为0
                             tempElapsed = -1;
+                            dubboRequestResult.UpdateQueryFailed();
                             dubboRequestResult.ErrorMeaasge = $"can not find [_dubboResultSpit_ms]:{_dubboResultSpit_ms} in queryResultStr";
                         }
                     }
@@ -83,7 +112,7 @@ namespace DubboNet.DubboService.DataModle
                 else
                 {
                     dubboRequestResult.Result = queryResultStr.Substring(nowStartFlag);
-                    dubboRequestResult.ServiceElapsed = -1;
+                    dubboRequestResult.UpdateQueryFailed();
                     dubboRequestResult.ErrorMeaasge = $"can not find [_dubboResultSpit_elapsed]:{_dubboResultSpit_elapsed} in queryResultStr";
                 }
 
@@ -91,7 +120,7 @@ namespace DubboNet.DubboService.DataModle
             else
             {
                 dubboRequestResult.Result = queryResultStr;
-                dubboRequestResult.ServiceElapsed = -1;
+                dubboRequestResult.UpdateQueryFailed();
                 dubboRequestResult.ErrorMeaasge = $"can not find [_dubboResultSpit_elapsed]:{_dubboResultSpit_result} in queryResultStr";
             }
             return dubboRequestResult;

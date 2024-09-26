@@ -11,7 +11,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using static DubboNet.Clients.DubboClient;
-using static DubboNet.DubboService.TelnetDubboActuatorSuite;
+
 
 namespace DubboNet.Clients
 {
@@ -140,19 +140,38 @@ namespace DubboNet.Clients
             }
             else
             {
+                IDubboActuatorSuite newDubboActuatorSuite = null;
                 //选择IDubboActuatorSuite的协议类型
-                if(string.IsNullOrEmpty(ep.Release))
+                if (!String.IsNullOrEmpty(ep.Release))
                 {
-
+                    if (Version.TryParse(ep.Release, out Version nowVersion))
+                    {
+                        if (nowVersion >= new Version("3.3.0"))
+                        {
+                            newDubboActuatorSuite = new HttpDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
+                            {
+                                AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
+                                MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
+                                DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
+                                MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
+                            });
+                        }
+                    }
+                }
+                if(newDubboActuatorSuite == null)
+                {
+                    newDubboActuatorSuite = new TelnetDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
+                    {
+                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
+                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
+                        DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
+                        MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
+                    });
                 }
                 DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo = new DubboActuatorSuiteEndPintInfo()
                 {
                     EndPoint = ep.EndPoint,
-                    ActuatorSuite = new TelnetDubboActuatorSuite(ep.EndPoint,new DubboActuatorSuiteConf() { 
-                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime, 
-                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
-                        DubboRequestTimeout=_innerDubboServiceDriverConf.DubboRequestTimeout, 
-                        MaxConnections=_innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections }),
+                    ActuatorSuite = newDubboActuatorSuite,
                     ReferenceCount = 0
                 };
                 ep.InnerDubboActuatorSuite = dubboActuatorSuiteEndPintInfo.ActuatorSuite;

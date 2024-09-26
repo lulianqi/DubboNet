@@ -271,7 +271,7 @@ namespace DubboNet.Clients
             //获取到可用的DubboActuatorSuite
             if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
             {
-                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}.{nowFuncName}", req);
+                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}{availableDubboActuatorInfo.AvailableDubboActuatorSuite.ServiceFuncSpit}{nowFuncName}", req);
             }
             //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
@@ -283,6 +283,7 @@ namespace DubboNet.Clients
                     MyLogger.LogWarning(tempErrorMes);
                     return new DubboRequestResult()
                     {
+                        QuerySuccess = false,
                         ServiceElapsed = -1,
                         ErrorMeaasge = tempErrorMes
                     };
@@ -315,6 +316,7 @@ namespace DubboNet.Clients
                 MyLogger.LogWarning(tempErrorMes);
                 return new DubboRequestResult()
                 {
+                    QuerySuccess = false,
                     ServiceElapsed = -1,
                     ErrorMeaasge = tempErrorMes
                 };
@@ -324,6 +326,7 @@ namespace DubboNet.Clients
             {
                 return new DubboRequestResult()
                 {
+                    QuerySuccess = false,
                     ServiceElapsed = -1,
                     ErrorMeaasge = $"[SendRequestAsync] fail NoAvailableActuator in {nowServiceName}"
                 };
@@ -332,6 +335,7 @@ namespace DubboNet.Clients
             {
                 return new DubboRequestResult()
                 {
+                    QuerySuccess = false,
                     ServiceElapsed = -1,
                     ErrorMeaasge = "Unkonw error"
                 };
@@ -609,7 +613,7 @@ namespace DubboNet.Clients
                 {
                     foreach(var child in childrenResult.Children)
                     {
-                        if (child.StartsWith("dubbo%3A%2F%2F"))
+                        if (child.StartsWith("dubbo%3A%2F%2F") || child.StartsWith("tri%3A%2F%2F"))
                         {
                             string nowDubboPath = System.Web.HttpUtility.UrlDecode(child, System.Text.Encoding.UTF8);
                             Uri nowDubboUri;
@@ -645,6 +649,7 @@ namespace DubboNet.Clients
 
         /// <summary>
         /// 根据funcEndPoint获取服务名称与方法名称（用于参数解析，如果需要使用默认名称返回）
+        /// 支持的格式有 seviceName#FuncName seviceName/FuncName seviceName.FuncName 
         /// </summary>
         /// <param name="funcEndPoint"></param>
         /// <returns></returns>
@@ -659,6 +664,12 @@ namespace DubboNet.Clients
             else if (funcEndPoint.Contains('#'))
             {
                 int tempSpitIndex = funcEndPoint.LastIndexOf('#');
+                funcName = funcEndPoint.Substring(tempSpitIndex + 1);
+                serviceName = funcEndPoint.Remove(tempSpitIndex);
+            }
+            else if (funcEndPoint.Contains('/'))
+            {
+                int tempSpitIndex = funcEndPoint.LastIndexOf('/');
                 funcName = funcEndPoint.Substring(tempSpitIndex + 1);
                 serviceName = funcEndPoint.Remove(tempSpitIndex);
             }
