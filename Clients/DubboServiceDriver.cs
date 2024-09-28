@@ -16,7 +16,7 @@ using static DubboNet.Clients.DubboClient;
 namespace DubboNet.Clients
 {
     /// <summary>
-    /// 管理当个服务的所有连接器（单个服务可以有N个服务节点，每个服务节点可以有N个连接）
+    /// 管理单个服务的所有连接器（单个服务可以有N个服务节点，每个服务节点可以有N个连接）
     /// </summary>
     internal class DubboServiceDriver:IDisposable
     {

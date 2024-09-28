@@ -17,8 +17,7 @@ namespace DubboNet.Clients.DataModle
         public IPEndPoint EndPoint { get;internal set; } = null;
         public IDubboActuatorSuite InnerDubboActuatorSuite { get;internal set; }
         public int NowDispatchWeight { get;internal set; } = 0;
-
-
+        public string Scheme { get; set; } = null;
 
         public bool? Anyhost { get; set; } = null;
         public string Application { get; set; } = null;
@@ -51,6 +50,7 @@ namespace DubboNet.Clients.DataModle
             }
             DubboServiceEndPointInfo dubboServiceEndPointInfo = new DubboServiceEndPointInfo();
             dubboServiceEndPointInfo.EndPoint = new IPEndPoint(IPAddress.Parse(dubboUri.Host), dubboUri.Port);
+            dubboServiceEndPointInfo.Scheme = dubboUri.Scheme;
             NameValueCollection queryParameters = System.Web.HttpUtility.ParseQueryString(dubboUri.Query);
             int tempIntValue = 0;
             bool tempBoolValue = false;
