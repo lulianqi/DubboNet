@@ -22,7 +22,7 @@ namespace DubboNet.DubboService.DataModle
         /// <summary>
         /// DubboRequestResult对象创建时间
         /// </summary>
-        public DateTime CreatTime { get;private set; } = DateTime.Now;
+        public DateTime CreatTime { get;protected set; } = DateTime.Now;
         /// <summary>
         /// 请求是否成功（非业务含义，仅在协议上表示请求成功）
         /// </summary>
@@ -128,7 +128,7 @@ namespace DubboNet.DubboService.DataModle
 
         public override string ToString()
         {
-            return $"CreatTime:{CreatTime.ToString("yyyy-MM-dd HH:mm:ss.fff")}{System.Environment.NewLine}Result:{Result}{System.Environment.NewLine}ServiceElapsed:{ServiceElapsed}{System.Environment.NewLine}RequestElapsed:{RequestElapsed}{System.Environment.NewLine}ErrorMeaasge:{ErrorMeaasge??""}";
+            return $"QuerySuccess:{QuerySuccess}{System.Environment.NewLine}CreatTime:{CreatTime.ToString("yyyy-MM-dd HH:mm:ss.fff")}{System.Environment.NewLine}Result:{Result}{System.Environment.NewLine}ServiceElapsed:{ServiceElapsed}{System.Environment.NewLine}RequestElapsed:{RequestElapsed}{System.Environment.NewLine}ErrorMeaasge:{ErrorMeaasge??""}";
         }
     }
 
@@ -172,11 +172,14 @@ namespace DubboNet.DubboService.DataModle
 
         public DubboRequestResult(DubboRequestResult sourceDubboRequestResult)
         {
+            CreatTime = sourceDubboRequestResult.CreatTime;
+            QuerySuccess = sourceDubboRequestResult.QuerySuccess;
             Result = sourceDubboRequestResult.Result;
             ServiceElapsed = sourceDubboRequestResult.ServiceElapsed;
             RequestElapsed = sourceDubboRequestResult.RequestElapsed;
+            ErrorMeaasge = sourceDubboRequestResult?.ErrorMeaasge; 
             //如果原始数据有问题，即放弃反序列化
-            if (ServiceElapsed >= 0)
+            if (QuerySuccess)
             {
                 _ = ResultModle;
             }

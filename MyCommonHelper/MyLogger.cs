@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -17,7 +18,14 @@ namespace MyCommonHelper
 
         public static void Print(string info , LogType logType = LogType.Info)
         {
-            Console.WriteLine(info);
+            if (logType == LogType.Debug)
+            {
+                Debug.WriteLine(info);
+            }
+            else
+            {
+                Console.WriteLine(info);
+            }
         }
 
         public static void LogInfo(string mes)

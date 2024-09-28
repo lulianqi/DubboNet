@@ -64,9 +64,11 @@ static async Task TestForHttpDubboActuatorSuite()
 {
     var dubboClient = new DubboClient("110.40.136.183:2181");
     var result = await dubboClient.QueryAsync("org.apache.dubbo.springboot.demo.DemoService/hi", "123392,1939");
-    var result2 = await dubboClient.QueryAsync<string>("org.apache.dubbo.springboot.demo.DemoService/hi", "123392,1939");
-
-    Console.WriteLine(result2.Result);
+    for (int i = 0; i < 100; i++)
+    {
+        var result2 = await dubboClient.QueryAsync<string>("org.apache.dubbo.springboot.demo.DemoService/hi", "123392,1939");
+        Console.WriteLine(result2);
+    }
 }
 
 static async Task TestForDubboClient()
