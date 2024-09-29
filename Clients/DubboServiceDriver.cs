@@ -129,7 +129,7 @@ namespace DubboNet.Clients
             }
             if (_sourceDubboActuatorSuiteCollection.ContainsKey(ep.EndPoint))
             {
-                //InnerActuatorSuites.Add(ep, _sourceDubboActuatorSuiteCollection[ep].ActuatorSuite);
+                //多个DubboServiceEndPointInfo（不同的服务）会复用同一个ActuatorSuite（因为这些服务都使用同一个网络EndPoint节点），他们的DubboServiceEndPointInfo的信息是不同的（只是其引用的InnerDubboActuatorSuite是同一个）
                 ep.InnerDubboActuatorSuite=_sourceDubboActuatorSuiteCollection[ep.EndPoint].ActuatorSuite;
                 if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
