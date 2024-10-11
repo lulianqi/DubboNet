@@ -22,6 +22,10 @@ namespace MyCommonHelper
             {
                 Debug.WriteLine(info);
             }
+            else if(logType == LogType.Warn)
+            {
+                Debug.WriteLine(info);
+            }
             else
             {
                 Console.WriteLine(info);
