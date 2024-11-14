@@ -23,7 +23,7 @@ using System.Security.Cryptography.X509Certificates;
 
 
 //from  https://github.com/lulianqi/AutoTest/blob/master/AutoTest/MyCommonHelper/NetHelper/MyWebTool.cs
-namespace baiyinTest0801.WebService
+namespace NetService.WebService
 {
     public class MyWebTool
     {

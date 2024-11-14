@@ -13,22 +13,27 @@ namespace MyCommonHelper
     {
         public enum LogType
         {
-            Info, Warn, Error,Debug
+            Collapse = 0,
+            Error = 1, 
+            Warn = 2,
+            Info = 3,
+            Debug = 4
         }
+
+        /// <summary>
+        /// 获取或设置日志打印级别（全局）
+        /// </summary>
+        public static LogType LogPrintLevel { get; set; } = LogType.Error;
 
         public static void Print(string info , LogType logType = LogType.Info)
         {
-            if (logType == LogType.Debug)
+            if(logType <= LogPrintLevel)
             {
-                Debug.WriteLine(info);
-            }
-            else if(logType == LogType.Warn)
-            {
-                Debug.WriteLine(info);
+                Console.WriteLine(info);
             }
             else
             {
-                Console.WriteLine(info);
+                Debug.WriteLine(info);
             }
         }
 
@@ -57,7 +62,6 @@ namespace MyCommonHelper
 
         public static void LogDebug(string mes, Exception ex = null)
         {
-            #if DEBUG
             if (ex == null)
             {
                 Print($"[{DateTime.Now}] {mes}" , LogType.Debug);
@@ -66,7 +70,6 @@ namespace MyCommonHelper
             {
                 Print($"[{DateTime.Now}] {mes} {ex.Message}" , LogType.Debug);
             }
-            #endif
         }
 
 

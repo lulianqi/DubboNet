@@ -51,7 +51,7 @@ namespace DubboNet.Clients
                     MyLogger.LogInfo($"[DubboClientZookeeperWatcher] service has removed {@event.getPath()}");
                 }
             }
-            //注册中心连接超过（或断开后马上连接成功，连接没有重置）
+            //注册中心连接超时（或断开后马上连接成功，连接没有重置）
             if (@event.getState() == Event.KeeperState.SyncConnected && @event.get_Type() == Event.EventType.None)
             {
                 MyLogger.LogInfo($"[DubboClientZookeeperWatcher] SyncConnected");

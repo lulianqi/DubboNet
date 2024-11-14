@@ -14,6 +14,7 @@
     <PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
 	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+	  <Version>1.2.2</Version>
   </PropertyGroup>
 
   <ItemGroup>
