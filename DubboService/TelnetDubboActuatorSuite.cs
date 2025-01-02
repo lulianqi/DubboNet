@@ -353,9 +353,11 @@ namespace DubboNet.DubboService
             {
                 return null;
             }
+            string devGuid = Guid.NewGuid().ToString();
+            MyLogger.LogDebug($"[GetAvailableDubboActuator]S[{this.DubboActuatorGUID}][{devGuid}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
             if (!this.IsInUsedQueue && !this.IsQuerySending)
             {
-                MyLogger.LogDebug($"[GetAvailableDubboActuator]B[{this.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
+                MyLogger.LogDebug($"[GetAvailableDubboActuator]B[{this.DubboActuatorGUID}][{devGuid}][{this.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 //注意this的运行时类型是DubboActuatorSuite
                 this.IsInUsedQueue=true;
                 return this;
@@ -374,7 +376,7 @@ namespace DubboNet.DubboService
                     nowDubboSuiteCell.Version++;
                     nowDubboSuiteCell.InnerDubboActuator.IsInUsedQueue=true;
                 }
-                MyLogger.LogDebug($"[GetAvailableDubboActuator]A[{nowDubboSuiteCell?.InnerDubboActuator?.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
+                MyLogger.LogDebug($"[GetAvailableDubboActuator]A[{this.DubboActuatorGUID}][{devGuid}][{nowDubboSuiteCell?.InnerDubboActuator?.DubboActuatorGUID}]{DateTime.Now.Millisecond}-{DateTime.Now.Ticks}");
                 return nowDubboSuiteCell?.InnerDubboActuator;
             }
         }

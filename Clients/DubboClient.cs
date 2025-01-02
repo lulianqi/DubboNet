@@ -416,8 +416,8 @@ namespace DubboNet.Clients
         /// CONNECTED：如果在会话超时时间内重新连接上了ZooKeeper集群中任意一台机器，那么被视为重连成功，EXPIRED：如果是在会话超时时间以外重新连接上，那么服务端其实已经对该会话进行了会话清理操作，因此再次连接上的会话将被视为非法会话。
         /// 大部分情况都将是EXPIRED（同一个watch即使注册了很多path，也指挥收到一次）这个时候ZooKeeper是要重新构建才能正常使用的
         /// </summary>
-        /// <param name="delayTime"></param>
-        /// <param name="timeOut"></param>
+        /// <param name="delayTime">连接失败后重试间隔</param>
+        /// <param name="timeOut">尝试连接多久</param>
         /// <returns></returns>
         internal async Task<bool> TryDoConnectRegistryTaskAsync(int delayTime = 1000, int timeOut = 1000*60*30)
         {

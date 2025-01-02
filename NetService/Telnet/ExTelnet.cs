@@ -227,12 +227,12 @@ namespace NetService.Telnet
                     //s.Available returns number of bytes available for reading
                     //if both are true:
                     //there is no data available to read so connection is not active
-                    if (mySocket.Poll(1000, SelectMode.SelectRead) && (mySocket.Available == 0))
-                    {
-                        DisConnect();
-                        return false;
-                    }
-                    else
+                    //if (mySocket.Poll(1000, SelectMode.SelectRead) && (mySocket.Available == 0))
+                    //{
+                    //    DisConnect();
+                    //    return false;
+                    //}
+                    //else
                     {
                         return true;
                     }
@@ -395,7 +395,7 @@ namespace NetService.Telnet
                     if(!connectTask.IsCompleted)
                     {
                         tokenSource.Cancel();
-                        throw new Exception($"Connect timed out for specify  time : {connectTimeOut}ms");
+                        throw new Exception($"Connect timed out for specify time : {connectTimeOut}ms");
                     }
                 }
                 else
