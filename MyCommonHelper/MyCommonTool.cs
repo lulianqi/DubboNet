@@ -12,40 +12,7 @@ namespace MyCommonHelper
         /// seed for GenerateRandomStr
         /// </summary>
         private static int externRandomSeed = 0;
-        private const string infoLogPrefixStr = "-----------------------";
-        private const string errorLogPrefixStr = "💔💔💔💔💔💔💔💔💔💔";
-
-        /// <summary>
-        /// 打印调试数据，发布时请关闭INTEST，以禁止打印
-        /// </summary>
-        /// <param name="debugLog"></param>
-        public static void ShowDebugLog(string debugLog, string title = null, bool isErrorLog = false)
-        {
-#if INTEST && DEBUG
-            string prefixStr = isErrorLog ? errorLogPrefixStr : infoLogPrefixStr;
-            System.Diagnostics.Debug.WriteLine($"{prefixStr}{title ?? ""}[{DateTime.Now.ToString("HH:mm:ss fff")}]{prefixStr}");
-            System.Diagnostics.Debug.WriteLine(debugLog);
-#endif
-        }
-
-        /// <summary>
-        /// 打印调试数据，发布时请关闭INTEST，以禁止打印
-        /// </summary>
-        /// <param name="debugLog"></param>
-        /// <param name="hexaDecimal"></param>
-        public static void ShowDebugLog(byte[] debugLog, string title = null, HexaDecimal hexaDecimal = HexaDecimal.hex16, bool isErrorLog = false)
-        {
-#if INTEST && DEBUG
-            string prefixStr = isErrorLog ? errorLogPrefixStr : infoLogPrefixStr;
-            System.Diagnostics.Debug.WriteLine($"{prefixStr}{title ?? ""}[{DateTime.Now.ToString("HH:mm:ss fff")}]{prefixStr}");
-            System.Diagnostics.Debug.WriteLine($"byte[] leng is : {debugLog.Length}");
-            System.Diagnostics.Debug.WriteLine(MyBytes.ByteToHexString(debugLog, hexaDecimal, ShowHexMode.space));
-            //System.Diagnostics.Debug.WriteLine(Encoding.ASCII.GetString(debugLog));
-            System.Diagnostics.Debug.WriteLine(Encoding.UTF8.GetString(debugLog));
-#endif
-        }
-
-
+       
 
         /// <summary>
         /// 生成随机字符串

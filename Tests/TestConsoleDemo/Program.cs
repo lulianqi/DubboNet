@@ -134,12 +134,11 @@ static void TestForTimer()
     Console.WriteLine("enter to stop timer");
     Console.ReadLine();
 }
-static void TestForDispose()
-{
-    TelnetDubboActuatorSuite dubboActuatorSuite = new TelnetDubboActuatorSuite("0.0.0.0", 0);
-    dubboActuatorSuite.Dispose();
-}
 
+static async Task TestForStressdQuery()
+{
+    //
+}
 
 static async Task TestForSendQuery()
 {
@@ -157,4 +156,10 @@ static async Task TestForSendQuery()
     DrModle_PlainResult = await dubboActuator.SendQuery<PlainResult, string>("com.byai.line.api.voip.VoipCallerAccountRemoteService.getVoipAccountGw", "测试");
     Console.WriteLine(JsonSerializer.Serialize(DrModle_PlainResult.ResultModle, option));
 
+}
+
+static void TestForDispose()
+{
+    TelnetDubboActuatorSuite dubboActuatorSuite = new TelnetDubboActuatorSuite("0.0.0.0", 0);
+    dubboActuatorSuite.Dispose();
 }

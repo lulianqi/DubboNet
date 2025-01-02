@@ -1,4 +1,4 @@
-﻿#define LogDiagnostics
+﻿#define _LogDiagnostics
 
 using System;
 using System.Collections.Generic;
@@ -13,11 +13,12 @@ namespace MyCommonHelper
     {
         public enum LogType
         {
-            Collapse = 0,
-            Error = 1, 
-            Warn = 2,
-            Info = 3,
-            Debug = 4
+            NoLog = 0,
+            Collapse = 1,
+            Error = 2, 
+            Warn = 3,
+            Info = 4,
+            Debug = 5
         }
 
         /// <summary>
@@ -27,6 +28,10 @@ namespace MyCommonHelper
 
         public static void Print(string info , LogType logType = LogType.Info)
         {
+            if(LogPrintLevel== LogType.NoLog)
+            {
+                return;
+            }
             if(logType <= LogPrintLevel)
             {
                 Console.WriteLine(info);
