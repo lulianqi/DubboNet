@@ -23,6 +23,7 @@ namespace UnitTestForDubboNet
         [InlineData(LoadBalanceMode.RoundRobin)]
         [InlineData(LoadBalanceMode.ConsistentHash)]
         [InlineData(LoadBalanceMode.ShortestResponse)]
+        [InlineData(LoadBalanceMode.P2CLoadBalance)]
         public void GetDubboActuatorSuiteTest(LoadBalanceMode loadBalanceMode)
         {
             List<DubboServiceEndPointInfo> dubboServiceEndPointInfos = new List<DubboServiceEndPointInfo>();
@@ -58,6 +59,28 @@ namespace UnitTestForDubboNet
             }
             //Output only shows if the test fails. (in vs code)
             //Assert.False(true);
+        }
+
+        [Fact]
+        public void DubboProviderScheme_SelectsNativeDubboActuatorSuite()
+        {
+            DubboServiceEndPointInfo endpoint = new DubboServiceEndPointInfo
+            {
+                EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 20880),
+                Scheme = "dubbo",
+                Interface = "com.foo.DemoService",
+                Release = "2.7.3"
+            };
+
+            using DubboServiceDriver driver = new DubboServiceDriver(
+                endpoint.Interface,
+                new List<DubboServiceEndPointInfo> { endpoint },
+                new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
+
+            IDubboActuatorSuite suite = driver.GetDubboActuatorSuite(LoadBalanceMode.Random);
+
+            Assert.IsType<NativeDubboActuatorSuite>(suite);
+            Assert.Equal(DubboActuatorProtocolType.NativeDubbo, suite.ProtocolType);
         }
 
 

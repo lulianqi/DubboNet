@@ -322,7 +322,7 @@ namespace NetService.WebService
                         responseBody = string.Format("file save success in [ {0} ]  with {1}byte", saveFileName, offset);
                     }
                     #region WriteAllBytes
-                    /**
+                    /*
                     byte[] infbytes = new byte[10240];
                     int tempLen = 512;
                     int offset = 0;
@@ -382,7 +382,7 @@ namespace NetService.WebService
                     }
                     #region Read
                     //使用如下方法自己读取byte[] 是可行的，不过在Encoding 可变编码方式时，不能确保分段不被截断，直接使用内置StreamReader也是可以的
-                    /**  
+                    /*
                     Byte[] read = new Byte[512];
                     int bytes = receiveStream.Read(read, 0, 512);
                     if (showResponseHeads)
@@ -516,7 +516,7 @@ namespace NetService.WebService
             /// <summary>
             /// Send Http Request 
             /// </summary>
-            /// <param name="url">url (must start with protocol scheme like [http://,https:// ,ftp:// ,file:// ]) [ <scheme>://<user>:<password>@<host>:<port>/<path>;<params>?<query>#<frag> ]</param>
+            /// <param name="url">URL with a protocol scheme, for example <c>https://user:password@host:port/path?query#fragment</c>.</param>
             /// <param name="data"> queryStr will add to the url (like url+?+data )  if method is not POST or PUT queryStr will add in request entity as body</param>
             /// <param name="method">GET/POST/PUT/HEAD/TRACE/OPTIONS/DELETE</param>
             /// <returns>back data</returns>
@@ -528,7 +528,7 @@ namespace NetService.WebService
             /// <summary>
             /// Send Http Request 
             /// </summary>
-            /// <param name="url">url (must start with protocol scheme like [http://,https:// ,ftp:// ,file:// ]) [ <scheme>://<user>:<password>@<host>:<port>/<path>;<params>?<query>#<frag> ]</param>
+            /// <param name="url">URL with a protocol scheme, for example <c>https://user:password@host:port/path?query#fragment</c>.</param>
             /// <returns>back data</returns>
             public string SendData(string url)
             {
@@ -538,7 +538,7 @@ namespace NetService.WebService
             /// <summary>
             /// Send Http Request 
             /// </summary>
-            /// <param name="url">url (must start with protocol scheme like [http://,https:// ,ftp:// ,file:// ]) [ <scheme>://<user>:<password>@<host>:<port>/<path>;<params>?<query>#<frag> ]</param>
+            /// <param name="url">URL with a protocol scheme, for example <c>https://user:password@host:port/path?query#fragment</c>.</param>
             /// <param name="data"> queryStr will add to the url (like url+?+data )  if method is not POST or PUT queryStr will add in request entity as body</param>
             /// <param name="method">GET/POST/PUT/HEAD/TRACE/OPTIONS/DELETE</param>
             /// <param name="heads">http Head list （if not need set it null）(header 名是不区分大小写的)</param>
@@ -551,7 +551,7 @@ namespace NetService.WebService
             /// <summary>
             /// Send Http Request 
             /// </summary>
-            /// <param name="url">url (must start with protocol scheme like [http://,https:// ,ftp:// ,file:// ]) [ <scheme>://<user>:<password>@<host>:<port>/<path>;<params>?<query>#<frag> ]</param>
+            /// <param name="url">URL with a protocol scheme, for example <c>https://user:password@host:port/path?query#fragment</c>.</param>
             /// <param name="data"> queryStr will add to the url (like url+?+data )  if method is not POST or PUT queryStr will add in request entity as body</param>
             /// <param name="method">GET/POST/PUT/HEAD/TRACE/OPTIONS/DELETE</param>
             /// <param name="heads">http Head list （if not need set it null）(header 名是不区分大小写的)</param>
@@ -565,7 +565,7 @@ namespace NetService.WebService
             /// <summary>
             /// Send Http Request 
             /// </summary>
-            /// <param name="url">url (must start with protocol scheme like [http://,https:// ,ftp:// ,file:// ]) [ <scheme>://<user>:<password>@<host>:<port>/<path>;<params>?<query>#<frag> ]</param>
+            /// <param name="url">URL with a protocol scheme, for example <c>https://user:password@host:port/path?query#fragment</c>.</param>
             /// <param name="data"> queryStr will add to the url (like url+?+data )  if method is not POST or PUT queryStr will add in request entity as body</param>
             /// <param name="method">GET/POST/PUT/HEAD/TRACE/OPTIONS/DELETE</param>
             /// <param name="heads">http Head list （if not need set it null）(header 名是不区分大小写的)</param>
@@ -580,7 +580,7 @@ namespace NetService.WebService
             /// <summary>
             /// Send Http Request 
             /// </summary>
-            /// <param name="url">url (must start with protocol scheme like [http://,https:// ,ftp:// ,file:// ]) [ <scheme>://<user>:<password>@<host>:<port>/<path>;<params>?<query>#<frag> ]</param>
+            /// <param name="url">URL with a protocol scheme, for example <c>https://user:password@host:port/path?query#fragment</c>.</param>
             /// <param name="data"> queryStr will add to the url (like url+?+data )  if method is not POST or PUT queryStr will add in request entity as body</param>
             /// <param name="method">GET/POST/PUT/HEAD/TRACE/OPTIONS/DELETE</param>
             /// <param name="heads">http Head list （if not need set it null）(header 名是不区分大小写的)</param>
@@ -1047,7 +1047,7 @@ namespace NetService.WebService
             /// <param name="url">url (must start with protocol scheme like [http://,https:// ,ftp:// ,file:// ]) </param>
             /// <param name="heads">http Head list (if not need it ,just set it null)</param>
             /// <param name="bodyData">normal body (if not need it ,just set it null)</param>
-            /// <param name="HttpMultipartDate">MultipartDate list(if not need it ,just set it null)</param>
+            /// <param name="multipartDateList">MultipartDate list(if not need it ,just set it null)</param>
             /// <param name="bodyMultipartParameter">celerity MultipartParameter like "a=1&amp;b=2&amp;c=3" (if not need it ,just set it null)</param>
             /// <param name="yourBodyEncoding">the MultipartParameter Encoding (if set it null ,it will be utf 8)</param>
             /// <returns>back data</returns>

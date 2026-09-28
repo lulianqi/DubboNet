@@ -22,10 +22,15 @@ namespace DubboNet.DubboService.DataModle.DubboInfo
     +------------+--------+--------------------------------------------------------+
     */
 
+    /// <summary>
+    /// 表示 Dubbo Telnet <c>status</c> 返回的结构化运行状态。
+    /// EN: Represents structured runtime status returned by Dubbo Telnet <c>status</c>.
+    /// </summary>
     public class DubboStatusInfo : DubboInfoBase
     {
         /// <summary>
         /// DubboStatusInfo 原数据基类
+        /// EN: Base type for one resource row in a Dubbo status response.
         /// </summary>
         public abstract class ResourceStatus
         {
@@ -35,12 +40,14 @@ namespace DubboNet.DubboService.DataModle.DubboInfo
 
             /// <summary>
             /// 根据Message初始化结构化数据，不用单独调用该方法，改方法会在Message的set中自动触发（需要定制化实现）
+            /// EN: Initializes structured fields from Message; the Message setter invokes this method automatically.
             /// </summary>
             /// <returns></returns>
             protected abstract bool InitStatusResource();
 
             /// <summary>
-            /// 提供一个工具方法用于将message数据转换为Dictionary<string, string>（方便派生类实现InitStatusResource时初步处理数据）
+            /// 提供一个工具方法将 message 数据转换为字符串字典，方便派生类实现 InitStatusResource 时预处理数据。
+            /// EN: Converts a status message into a string dictionary for derived resource parsers.
             /// </summary>
             /// <param name="message"></param>
             /// <returns></returns>
@@ -259,6 +266,10 @@ namespace DubboNet.DubboService.DataModle.DubboInfo
         public ServerInfo Server { get; set; }
         public SummaryInfo Summary { get; set; }
 
+        /// <summary>
+        /// 解析 Dubbo Telnet <c>status</c> 表格响应。
+        /// EN: Parses a Dubbo Telnet <c>status</c> table response.
+        /// </summary>
         public static DubboStatusInfo GetDubboStatusInfo(string source)
         {
             const string DATA_SPLIT = "|";

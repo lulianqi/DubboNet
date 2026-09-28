@@ -52,7 +52,6 @@ namespace MyCommonHelper.EncryptionHelper
         /// </summary>
         /// <param name="PlainText">被加密内容</param>
         /// <param name="key">加密器</param>
-        /// <param name="errorMes">是否返回有错误，null为无错误</param>
         /// <returns>加密后的字节流</returns>
         public static byte[] SymmetricEncrypt(byte[] PlainText, SymmetricAlgorithm key)
         {

@@ -11,6 +11,10 @@ using System.Threading.Tasks;
 
 namespace NetService.Telnet
 {
+    /// <summary>
+    /// 提供 Telnet 选项协商、原始报文解析和调试输出辅助方法。
+    /// EN: Provides helpers for Telnet option negotiation, raw-packet parsing, and diagnostic output.
+    /// </summary>
     public static class TelnetOptionHelper
     {
         #region telnet的数据定义
@@ -93,6 +97,8 @@ namespace NetService.Telnet
         /// 打印调试数据，发布时请关闭LogDiagnostics(MyLogger中)，以禁止打印
         /// </summary>
         /// <param name="debugLog"></param>
+        /// <param name="title"></param>
+        /// <param name="isErrorLog"></param>
         public static void ShowDebugLog(string debugLog, string title = null, bool isErrorLog = false)
         {
 #if DEBUG
@@ -104,7 +110,9 @@ namespace NetService.Telnet
         /// 打印调试数据，发布时请关闭LogDiagnostics(MyLogger中)，以禁止打印
         /// </summary>
         /// <param name="debugLog"></param>
+        /// <param name="title"></param>
         /// <param name="hexaDecimal"></param>
+        /// <param name="isErrorLog"></param>
         public static void ShowDebugLog(byte[] debugLog, string title = null, HexaDecimal hexaDecimal = HexaDecimal.hex16, bool isErrorLog = false)
         {
 #if DEBUG
@@ -113,11 +121,12 @@ namespace NetService.Telnet
         }
 
         /// <summary>
-        /// 生成协商答复（仅生成，不发送）
+        /// 生成协商答复（仅生成，不发送）。
+        /// EN: Builds a Telnet negotiation response without sending it.
         /// </summary>
-        /// <param name="optionBytes">协商</param>
-        /// <param name="ReportMes">反馈解析中的错误或警告（默认值为null会自动生成错误处理Action）</param>
-        /// <returns>答复（无法答复或错误返回null）</returns>
+        /// <param name="optionBytes">协商命令字节。EN: The negotiation command bytes.</param>
+        /// <param name="ReportMes">反馈解析中的错误或警告；为 <see langword="null"/> 时使用默认处理器。EN: Receives parse errors or warnings; a default handler is used when null.</param>
+        /// <returns>协商答复；无法答复或发生错误时返回 <see langword="null"/>。EN: The negotiation response, or null when no valid response can be produced.</returns>
         public static byte[] GetResponseOption(byte[] optionBytes ,Action<object,TelnetMessageType> ReportMes=null)
         {
             if(ReportMes==null)
@@ -244,11 +253,12 @@ namespace NetService.Telnet
         }
 
         /// <summary>        
-        /// 处理原始报文，返回可显示数据，并提取控制命令（telnet协商数据）   
+        /// 处理原始报文，返回可显示数据，并提取控制命令（Telnet 协商数据）。
+        /// EN: Parses a raw packet, returning displayable data while extracting Telnet negotiation commands.
         ///</summary>       
-        ///<param name="yourRawBytes">原始数据</param> 
-        ///<param name="optionsList">解析得到的协商数据</param>
-        /// <returns>可显示数据</returns>     
+        ///<param name="yourRawBytes">原始数据。EN: The raw packet bytes.</param>
+        ///<param name="optionsList">解析得到的协商数据。EN: The extracted negotiation commands.</param>
+        /// <returns>可显示数据。EN: The displayable payload bytes.</returns>
         public static byte[] DealRawBytes(byte[] yourRawBytes ,out ArrayList optionsList)
         {
 

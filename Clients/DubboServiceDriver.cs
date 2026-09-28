@@ -17,34 +17,47 @@ namespace DubboNet.Clients
 {
     /// <summary>
     /// 管理单个服务的所有连接器（单个服务可以有N个服务节点，每个服务节点可以有N个连接）
+    /// EN: Manages all actuator suites for one service; a service may have multiple provider endpoints and each endpoint may own multiple connections.
     /// </summary>
     internal class DubboServiceDriver:IDisposable
     {
+        /// <summary>
+        /// 单个服务驱动的连接与超时配置。
+        /// EN: Connection and timeout options for one service driver.
+        /// </summary>
         internal class DubboServiceDriverConf
         {
+            /// <summary>单个 Provider 端点允许创建的最大连接数。EN: Maximum number of connections allowed for one provider endpoint.</summary>
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
+            /// <summary>辅助连接的空闲存活时间，单位秒。EN: Idle lifetime of auxiliary connections, in seconds.</summary>
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
+            /// <summary>主连接的空闲存活时间，单位秒。EN: Idle lifetime of the primary connection, in seconds.</summary>
             public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
+            /// <summary>Dubbo 请求超时时间，单位毫秒。EN: Dubbo request timeout, in milliseconds.</summary>
             public int DubboRequestTimeout { get; set; } = 60 * 1000;
         }
 
         /// <summary>
         /// 服务名称
+        /// EN: Fully qualified Dubbo service name managed by this driver.
         /// </summary>
         public string ServiceName { get; private set; }
 
         /// <summary>
         /// 最后激活时间
+        /// EN: Time at which this service driver was most recently selected.
         /// </summary>
         public DateTime LastActivateTime { get; private set; } = default(DateTime);
 
         /// <summary>
         /// 当前DubboServiceDriver可使用的各EndPoint的DubboActuatorSuite集合
+        /// EN: Provider endpoint metadata and actuator suites currently available to this service driver.
         /// </summary>
         public Dictionary<IPEndPoint, DubboServiceEndPointInfo> InnerActuatorSuites { get; private set; }
 
         /// <summary>
         /// DubboClient的源ActuatorSuiteCollection（不要直接使用，保留的这份引用是为了释放时同时清理）
+        /// EN: Shared actuator-suite collection owned by DubboClient; retained only for reference counting and cleanup.
         /// </summary>
         private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _sourceDubboActuatorSuiteCollection;
 
@@ -56,12 +69,14 @@ namespace DubboNet.Clients
 
         /// <summary>
         /// 初始化DubboServiceDriver
+        /// EN: Initializes a service driver and registers its initial provider endpoints.
         /// </summary>
-        /// <param name="serviceName">当前服务的serviceName</param>
-        /// <param name="dbEpList">当前服务节点列表</param>
-        /// <param name="dubboActuatorSuiteCollection">内部dubboActuatorSuiteCollection</param>
-        /// <exception cref="ArgumentException"></exception>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <param name="serviceName">当前服务名称。EN: Name of the service managed by this driver.</param>
+        /// <param name="dbEpList">当前服务的 Provider 节点列表。EN: Provider endpoints currently registered for the service.</param>
+        /// <param name="dubboActuatorSuiteCollection">用于跨服务复用连接的共享执行器集合。EN: Shared actuator-suite collection used to reuse connections across services.</param>
+        /// <param name="dubboServiceDriverConf">可选的连接与超时配置。EN: Optional connection and timeout configuration.</param>
+        /// <exception cref="ArgumentException"><paramref name="dbEpList"/> 为空或不包含节点。EN: <paramref name="dbEpList"/> is null or contains no endpoints.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="dubboActuatorSuiteCollection"/> 为空。EN: <paramref name="dubboActuatorSuiteCollection"/> is null.</exception>
         public DubboServiceDriver(string serviceName, List<DubboServiceEndPointInfo> dbEpList, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection , DubboServiceDriverConf dubboServiceDriverConf = null)
         {
             ServiceName = serviceName;
@@ -87,6 +102,7 @@ namespace DubboNet.Clients
 
         /// <summary>
         /// 更新TotalWeightForActuatorSuites
+        /// EN: Recalculates the total provider weight used by weighted load balancing.
         /// </summary>
         private void UpdateTotalWeight()
         {
@@ -102,6 +118,7 @@ namespace DubboNet.Clients
 
         /// <summary>
         /// 更新一致性Hash环
+        /// EN: Rebuilds the consistent-hash ring from the current provider endpoints.
         /// </summary>
         private void UpdateConsistentHash()
         {
@@ -117,9 +134,10 @@ namespace DubboNet.Clients
 
         /// <summary>
         /// 通过IPEndPoint添加ActuatorSuite (内部函数)
+        /// EN: Adds or reuses an actuator suite for one provider endpoint.
         /// </summary>
-        /// <param name="ep">IPEndPoint</param>
-        /// <returns>是否添加成功</returns>
+        /// <param name="ep">待添加的 Provider 端点信息。EN: Provider endpoint metadata to add.</param>
+        /// <returns>成功加入当前服务时为 <see langword="true"/>。EN: <see langword="true"/> when the endpoint was added to this service.</returns>
         private bool AddActuatorSuite(DubboServiceEndPointInfo ep)
         {
             //判断服务节点是否禁用
@@ -131,6 +149,11 @@ namespace DubboNet.Clients
             {
                 //多个DubboServiceEndPointInfo（不同的服务）会复用同一个ActuatorSuite（因为这些服务都使用同一个网络EndPoint节点），他们的DubboServiceEndPointInfo的信息是不同的（只是其引用的InnerDubboActuatorSuite是同一个）
                 ep.InnerDubboActuatorSuite=_sourceDubboActuatorSuiteCollection[ep.EndPoint].ActuatorSuite;
+                if (ep.InnerDubboActuatorSuite is NativeDubboActuatorSuite reusedNativeSuite)
+                {
+                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
+                    reusedNativeSuite.RegisterService(ep);
+                }
                 if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
                     _sourceDubboActuatorSuiteCollection[ep.EndPoint].ReferenceCount++;
@@ -142,21 +165,27 @@ namespace DubboNet.Clients
             {
                 IDubboActuatorSuite newDubboActuatorSuite = null;
                 //选择IDubboActuatorSuite的协议类型
-                if (!String.IsNullOrEmpty(ep.Release))
+                if (string.Equals(ep.Scheme, "dubbo", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (Version.TryParse(ep.Release, out Version nowVersion))
+                    newDubboActuatorSuite = new NativeDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
                     {
-                        if (nowVersion >= new Version("3.3.0"))
-                        {
-                            newDubboActuatorSuite = new HttpDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
-                            {
-                                AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
-                                MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
-                                DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
-                                MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
-                            });
-                        }
-                    }
+                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
+                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
+                        DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
+                        MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
+                    });
+                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
+                    ((NativeDubboActuatorSuite)newDubboActuatorSuite).RegisterService(ep);
+                }
+                else if (string.Equals(ep.Scheme, "tri", StringComparison.OrdinalIgnoreCase))
+                {
+                    newDubboActuatorSuite = new HttpDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
+                    {
+                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
+                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
+                        DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
+                        MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
+                    });
                 }
                 if(newDubboActuatorSuite == null)
                 {
@@ -188,10 +217,11 @@ namespace DubboNet.Clients
 
         /// <summary>
         /// 更新DubboServiceDriver服务节点
+        /// EN: Reconciles the service driver's provider endpoints with the latest registry snapshot.
         /// </summary>
-        /// <param name="dbEpList"></param>
-        /// <returns>返回更新的节点数</returns>    
-        /// <exception cref="ArgumentException"></exception>
+        /// <param name="dbEpList">最新的 Provider 节点列表。EN: Latest provider endpoint list.</param>
+        /// <returns>新增和移除的节点总数。EN: Total number of endpoints added or removed.</returns>
+        /// <exception cref="ArgumentException"><paramref name="dbEpList"/> 为空或不包含节点。EN: <paramref name="dbEpList"/> is null or contains no endpoints.</exception>
         public int UpdateActuatorSuiteEndPoints(List<DubboServiceEndPointInfo> dbEpList)
         {
             if (!(dbEpList?.Count > 0))
@@ -241,11 +271,12 @@ namespace DubboNet.Clients
 
         /// <summary>
         /// 以指定负载策略返回可用DubboActuatorSuite
+        /// EN: Selects an available actuator suite using the specified load-balancing strategy.
         /// </summary>
-        /// <param name="loadBalanceMode">负载策略</param>
-        /// <param name="qurey">请求内容，仅用于ConsistentHash模式下计算过一致性hash</param>
-        /// <returns></returns>
-        /// <exception cref="Exception"></exception>
+        /// <param name="loadBalanceMode">负载均衡策略。EN: Load-balancing strategy.</param>
+        /// <param name="qurey">请求内容，仅用于一致性 Hash 计算。EN: Request content used only as the consistent-hash key.</param>
+        /// <returns>选中的执行器套件；当前服务没有节点时为 <see langword="null"/>。EN: Selected actuator suite, or <see langword="null"/> when the service has no endpoints.</returns>
+        /// <exception cref="Exception">负载策略不受支持，或无法选出端点。EN: The load-balancing mode is unsupported or no endpoint can be selected.</exception>
         public IDubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode ,string qurey = null)
         {
             LastActivateTime = DateTime.Now;
@@ -316,9 +347,12 @@ namespace DubboNet.Clients
                 case LoadBalanceMode.P2CLoadBalance:
                     IDubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
                     IDubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
-                    if(providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load!=null && providerA.ActuatorSuiteStatusInfo.StatusInfo?.Load != null)
+                    if (providerA?.ActuatorSuiteStatusInfo?.StatusInfo?.Load == null
+                        || providerB?.ActuatorSuiteStatusInfo?.StatusInfo?.Load == null)
                     {
-                        MyLogger.LogWarning("[GetDubboActuatorSuite] ActuatorSuiteStatusInfo.StatusInfo?.Load is null");
+                        MyLogger.LogWarning(
+                            "[GetDubboActuatorSuite] provider load is unavailable; " +
+                            "falling back to the first random provider");
                         return providerA;
                     }
                     else
@@ -335,6 +369,10 @@ namespace DubboNet.Clients
             return selectedDubboServiceEndPointInfo.InnerDubboActuatorSuite;
         }
 
+        /// <summary>
+        /// 释放当前服务持有的端点引用，并在引用计数归零时释放共享执行器。
+        /// EN: Releases endpoint references held by this service and disposes shared actuator suites whose reference count reaches zero.
+        /// </summary>
         public void Dispose()
         {
             if (InnerActuatorSuites != null)

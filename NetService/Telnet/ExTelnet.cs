@@ -25,6 +25,10 @@ using System.Threading.Tasks;
 
 namespace NetService.Telnet
 {
+    /// <summary>
+    /// 提供基于套接字的异步 Telnet 客户端、命令等待和业务心跳能力。
+    /// EN: Provides an asynchronous socket-based Telnet client with command waiting and application heartbeat support.
+    /// </summary>
     public class ExTelnet:IDisposable
     {
         private class StateObject
@@ -34,57 +38,60 @@ namespace NetService.Telnet
         }
 
         /// <summary>
-        /// 用于请求命令返回的数据结构 内部类
+        /// 表示 Telnet 命令请求的返回结果。
+        /// EN: Represents the result of a Telnet command request.
         /// </summary>
         public class TelnetRequestResult
         {
+            /// <summary>
+            /// 获取是否发现目标结束标识。
+            /// EN: Gets whether the expected completion marker was found.
+            /// </summary>
             public bool IsGetTargetIdentification { get; internal set; }
+
+            /// <summary>
+            /// 获取请求耗时（毫秒）。
+            /// EN: Gets the request elapsed time in milliseconds.
+            /// </summary>
             public long ElapsedMilliseconds { get; internal set; }
+
+            /// <summary>
+            /// 获取命令返回文本。
+            /// EN: Gets the command response text.
+            /// </summary>
             public string Result { get; internal set; }
 
         }
 
         /// <summary>
         /// 确认Telnet业务层包活命令发送时机的内部类
+        /// EN: Tracks when the next application-level Telnet keepalive should be sent.
         /// </summary>
         private class LatestCommand
         {
-            public bool IsSendCommand { get; set; }
-            public DateTime LatestTime { get; set; }
-            public byte[] Command { get; set; }
+            private long latestCommandTick;
 
             public int BeatPeriod { get;private set; }
 
             public LatestCommand(int beatPeriod)
             {
-                if(beatPeriod<0)
+                if(beatPeriod<=0)
                 {
                     throw new Exception("beatPeriod illegal");
                 }
                 BeatPeriod = beatPeriod;
+                latestCommandTick = Environment.TickCount64;
             }
 
-            public void Resaet()
+            public void MarkSent()
             {
-                IsSendCommand = false;
-            }
-
-            public void SetNewCommand(byte[] cmd)
-            {
-                IsSendCommand = true;
-                LatestTime = DateTime.Now;
-                Command = cmd;
+                Interlocked.Exchange(ref latestCommandTick, Environment.TickCount64);
             }
 
             public int GetNextPeriod()
             {
-                if(IsSendCommand)
-                {
-                    TimeSpan timeSpan = DateTime.Now - LatestTime; //public static DateTime operator - (DateTime d, TimeSpan t)
-                    int milliseconds = (int)timeSpan.TotalMilliseconds;
-                    return BeatPeriod - milliseconds;
-                }
-                return -1;
+                long elapsedMilliseconds = Environment.TickCount64 - Interlocked.Read(ref latestCommandTick);
+                return elapsedMilliseconds >= BeatPeriod ? 0 : BeatPeriod - (int)elapsedMilliseconds;
             }
         }
 
@@ -108,6 +115,7 @@ namespace NetService.Telnet
         private Timer _telnetKeepliveTimer;
         private byte[] _telnetBeatData;
         private LatestCommand _latestCommandForBeat;
+        private readonly object telnetHeartbeatLock = new object();
 
         //private StringBuilder nowShowData = new StringBuilder();
         //private StringBuilder allShowData = new StringBuilder();
@@ -117,17 +125,20 @@ namespace NetService.Telnet
 
         public delegate void delegateDataOut(string mesStr, TelnetMessageType mesType);
         /// <summary>
-        /// telnet接收到新消息后返回（请区分TelnetMessageType）
+        /// Telnet 接收到新消息后触发（请区分 <see cref="TelnetMessageType"/>）。
+        /// EN: Raised when Telnet receives a new message; inspect <see cref="TelnetMessageType"/> for its category.
         /// </summary>
         public event delegateDataOut OnMesageReport;
 
         /// <summary>
         /// 是否已经被释放
+        /// EN: Whether this Telnet client has been disposed.
         /// </summary>
         internal bool IsDisposed { get; private set; } = false;
 
         /// <summary>
         /// 获取当前Telnet的IPEndPoint
+        /// EN: Gets the remote Telnet endpoint.
         /// </summary>
         public IPEndPoint TelnetEndPoint
         {
@@ -136,6 +147,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取最近的错误信息
+        /// EN: Gets the most recent error message.
         /// </summary>
         public string NowErrorMes
         {
@@ -144,6 +156,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取或设置当前保持返回数据的最大长度（超过该值后开始清除历史数据，但是并不保证终端缓存数据一定小于该值）
+        /// EN: Gets or sets the approximate maximum retained terminal-data length.
         /// </summary>
         public int MaxMaintainDataLength {
             get { return maxMaintainDataLength; }
@@ -157,6 +170,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取获设置telnet接收缓存大小（默认1024 * 128 ，未连接状态可以设置）
+        /// EN: Gets or sets the Telnet receive-buffer size while disconnected.
         /// </summary>
         public int ReceiveBuffLength
         {
@@ -173,11 +187,13 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取或设置查找打印时的最大超时WaitExpectPattern WaitStr 时使用（单位为毫秒）
+        /// EN: Gets or sets the default pattern-wait timeout in milliseconds.
         /// </summary>
         public int DefaWaitTimeout { get; set; } = 2000;
 
         /// <summary>
         /// 获取或设置当前终端使用的编码（默认为UTF8）
+        /// EN: Gets or sets the terminal text encoding; UTF-8 is the default.
         /// </summary>
         public Encoding Encoding
         {
@@ -187,17 +203,20 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取或设置ExpectPattern（用于时标shell命令结算）
+        /// EN: Gets or sets the prompt pattern that marks command completion.
         /// </summary>
         public string DefautExpectPattern { get; set; } = null;
       
 
         /// <summary>
         /// 是否保存所有终端数据（MaxMaintainDataLength为最大值，如果不需要以终端形式使用请设置为false 以提高效能）
+        /// EN: Gets or sets whether terminal history is retained up to MaxMaintainDataLength.
         /// </summary>
         public bool IsSaveTerminalData { get; set; } = false;
 
         /// <summary>
         /// 是否正在等待前一个命令,置true时如果已经为true，将抛出异常 （Request被限制在半双工模式下，直接使用WriteLine可以让Telnet运行在全双工模式）
+        /// EN: Indicates whether a request is active and enforces half-duplex command execution.
         /// </summary>
         public bool IsInRequest
         {
@@ -214,6 +233,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取当前telnet的连接状态
+        /// EN: Gets the current Telnet connection state.
         /// </summary>
         public bool IsConnected
         {
@@ -247,43 +267,50 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 通知Telnet消息，如果使用者有订阅OnMesageReport事件，会收到通知消息
+        /// EN: Publishes a Telnet status message to subscribed handlers.
         /// </summary>
         /// <param name="mesInfo"></param>
         /// <param name="mesType"></param>
         private void ReportMes(object mesInfo, TelnetMessageType mesType)
         {
             TelnetOptionHelper.ShowDebugLog($"{mesType} {mesInfo}" , "ReportMes");
-            if (OnMesageReport != null)
+            delegateDataOut handlers = OnMesageReport;
+            if (handlers == null)
             {
-                if (mesInfo is string)
+                return;
+            }
+
+            string message;
+            if (mesInfo is byte[] bytes)
+            {
+                message = encoding.GetString(bytes);
+            }
+            else
+            {
+                message = mesInfo?.ToString() ?? string.Empty;
+            }
+
+            foreach (delegateDataOut handler in handlers.GetInvocationList())
+            {
+                try
                 {
-                    OnMesageReport((string)mesInfo, mesType);
+                    handler(message, mesType);
                 }
-                else if (mesInfo is Exception)
+                catch (Exception ex)
                 {
-                    OnMesageReport(mesType.ToString(), mesType);
-                }
-                else if (mesInfo is StringBuilder)
-                {
-                    OnMesageReport(((StringBuilder)mesInfo).ToString(), mesType);
-                }
-                else if(mesInfo is byte[])
-                {
-                    OnMesageReport(encoding.GetString((byte[])mesInfo), mesType);
-                }
-                else
-                {
-                    throw new Exception("mesInfo type error");
+                    //事件订阅者的异常不应中断 Socket 接收、连接或心跳流程。
+                    TelnetOptionHelper.ShowDebugLog(ex.ToString(), "OnMesageReport handler", true);
                 }
             }
         }
 
         /// <summary>
-        /// 可能会引发异常
+        /// 使用主机地址和端口初始化 Telnet 客户端；地址无效时可能引发异常。
+        /// EN: Initializes the Telnet client from a host address and port; an invalid address may throw.
         /// </summary>
-        /// <param name="Address">主机ip地址 (可以使用Dns.GetHostEntry(host)获取使用主机名的ip)</param>
-        /// <param name="Port">端口</param>
-        /// <param name="CommandTimeout">查询字符串超时时间，单位毫秒（默认2000 ；0表示不超时）</param>
+        /// <param name="Address">主机 IP 地址（可通过 <see cref="Dns.GetHostEntry(string)"/> 解析主机名）。EN: The host IP address.</param>
+        /// <param name="Port">端口。EN: The TCP port.</param>
+        /// <param name="CommandTimeout">查询字符串超时时间（毫秒）；默认 2000，0 表示不超时。EN: The command timeout in milliseconds; 0 disables the timeout.</param>
         public ExTelnet(string Address, int Port, int CommandTimeout =2000)
         {
             iep = new IPEndPoint(IPAddress.Parse(Address), Port);
@@ -291,6 +318,12 @@ namespace NetService.Telnet
             //recieveData = new AsyncCallback(OnRecievedData); //简写 recieveData = OnRecievedData;
         }
 
+        /// <summary>
+        /// 使用远程终结点初始化 Telnet 客户端。
+        /// EN: Initializes the Telnet client with a remote endpoint.
+        /// </summary>
+        /// <param name="yourEp">远程终结点。EN: The remote endpoint.</param>
+        /// <param name="CommandTimeout">查询字符串超时时间（毫秒）；默认 2000，0 表示不超时。EN: The command timeout in milliseconds; 0 disables the timeout.</param>
         public ExTelnet(IPEndPoint yourEp, int CommandTimeout =2000)
         {
             iep = yourEp;
@@ -301,67 +334,156 @@ namespace NetService.Telnet
         //public ExTelnet(IPEndPoint yourEp) : this(yourEp, 50000) { }
 
         /// <summary>
-        /// 设置业务心跳（如果在构造函数中已经设置该选项，调用此方法可以即时修改）
+        /// 设置或更新业务心跳。
+        /// EN: Configures or updates the application-level heartbeat.
         /// </summary>
-        /// <param name="period">心跳间隔（离上次发送业务数据的时机间隔，请不要设置过小的值）(小等于于0，表示销毁当前包活)</param>
-        /// <param name="beatData">心跳内容，默认为null 即会使用\r\n</param>
+        /// <param name="period">距上次业务发送的心跳间隔（毫秒）；小于等于 0 时停止心跳。EN: The heartbeat interval in milliseconds since the last send; a non-positive value disables it.</param>
+        /// <param name="beatData">心跳内容；为 <see langword="null"/> 时使用 CRLF。EN: The heartbeat payload; null uses CRLF.</param>
         public void SetTelnetHeartbeat(int period = 30000,byte[] beatData = null)
         {
             if(period<=0)
             {
-                _telnetKeepliveTimer?.Dispose();
-            }
-            if(beatData==null|| beatData.Length==0)
-            {
-                //\r\n is 0x0d 0x0a 
-                //_telnetBeatData = TelnetOptionHelper.NopOPerationBytes;
-                _telnetBeatData = new byte[] { 0x0d, 0x0a };
+                StopTelnetHeartbeat();
+                return;
             }
 
-            _latestCommandForBeat = new LatestCommand(period) { IsSendCommand = false };
+            byte[] heartbeatData = beatData == null || beatData.Length == 0
+                ? new byte[] { 0x0d, 0x0a }
+                : (byte[])beatData.Clone();
+            Timer oldTimer;
+            lock (telnetHeartbeatLock)
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
 
-            if(_telnetKeepliveTimer==null)
-            {
-                _telnetKeepliveTimer = new Timer(TelnetHeartbeatProc, _latestCommandForBeat, 1000, period);
+                oldTimer = _telnetKeepliveTimer;
+                LatestCommand latestCommand = new LatestCommand(period);
+                _telnetBeatData = heartbeatData;
+                _latestCommandForBeat = latestCommand;
+                //使用单次计时器，每次回调结束后再安排下一次，避免回调重叠。
+                _telnetKeepliveTimer = new Timer(TelnetHeartbeatProc, latestCommand, period, Timeout.Infinite);
             }
-            else
-            {
-                _telnetKeepliveTimer.Change(1000, period);
-            }
+            oldTimer?.Dispose();
         }
 
         /// <summary>
         /// 业务心跳执行任务
+        /// EN: Executes the application-level heartbeat loop.
         /// </summary>
         /// <param name="state"></param>
         private void TelnetHeartbeatProc(object state)
         {
-            LatestCommand latestCommand = (LatestCommand)state;
-            int tnterval = latestCommand.GetNextPeriod();
-            if (tnterval > 0)
+            _ = TelnetHeartbeatProcAsync(state as LatestCommand);
+        }
+
+        private async Task TelnetHeartbeatProcAsync(LatestCommand latestCommand)
+        {
+            if (latestCommand == null)
             {
-                _telnetKeepliveTimer.Change(tnterval, latestCommand.BeatPeriod);
+                return;
             }
-            else
+
+            try
             {
-                if (!IsInRequest)
+                int nextPeriod;
+                byte[] heartbeatData = null;
+                lock (telnetHeartbeatLock)
                 {
-                    if(!WriteRawDataAsync(_telnetBeatData).GetAwaiter().GetResult())
+                    if (IsDisposed || !ReferenceEquals(latestCommand, _latestCommandForBeat) || _telnetKeepliveTimer == null)
                     {
-                        DisConnect();
+                        return;
+                    }
+
+                    nextPeriod = latestCommand.GetNextPeriod();
+                    if (nextPeriod <= 0 && !IsInRequest)
+                    {
+                        heartbeatData = _telnetBeatData;
                     }
                 }
-                else
+
+                if (nextPeriod <= 0 && heartbeatData != null)
+                {
+                    if (!await WriteRawDataAsync(heartbeatData))
+                    {
+                        DisconnectAfterHeartbeatFailure();
+                        return;
+                    }
+                }
+                else if (nextPeriod <= 0)
                 {
                     TelnetOptionHelper.ShowDebugLog("TelnetHeartbeatProc when IsInRequest", "TelnetHeartbeatProc");
                 }
+
+                ScheduleNextTelnetHeartbeat(latestCommand);
             }
-            _latestCommandForBeat.Resaet();
+            catch (Exception ex)
+            {
+                nowErrorMes = ex.Message;
+                TelnetOptionHelper.ShowDebugLog(ex.ToString(), "TelnetHeartbeatProc", true);
+                ReportMes(ex, TelnetMessageType.Error);
+                DisconnectAfterHeartbeatFailure();
+            }
         }
 
-        /// <summary>        
-        /// 连接telnet (如果IsConnected，仅执行SetSocketKeepAlive，SetTelnetAlive直接返回true)    
-        /// </summary> 
+        private void DisconnectAfterHeartbeatFailure()
+        {
+            try
+            {
+                DisConnect();
+            }
+            catch (Exception ex)
+            {
+                nowErrorMes = ex.Message;
+                TelnetOptionHelper.ShowDebugLog(ex.ToString(), "DisconnectAfterHeartbeatFailure", true);
+            }
+        }
+
+        private void ScheduleNextTelnetHeartbeat(LatestCommand latestCommand)
+        {
+            lock (telnetHeartbeatLock)
+            {
+                if (IsDisposed || !ReferenceEquals(latestCommand, _latestCommandForBeat) || _telnetKeepliveTimer == null)
+                {
+                    return;
+                }
+
+                int nextPeriod = latestCommand.GetNextPeriod();
+                if (nextPeriod <= 0)
+                {
+                    //请求持续时间超过心跳周期时，不进行忙轮询。
+                    nextPeriod = latestCommand.BeatPeriod;
+                }
+
+                try
+                {
+                    _telnetKeepliveTimer.Change(nextPeriod, Timeout.Infinite);
+                }
+                catch (ObjectDisposedException)
+                {
+                    //与禁用心跳或 Dispose 并发时，计时器可能已经释放。
+                }
+            }
+        }
+
+        private void StopTelnetHeartbeat()
+        {
+            Timer timer;
+            lock (telnetHeartbeatLock)
+            {
+                timer = _telnetKeepliveTimer;
+                _telnetKeepliveTimer = null;
+                _latestCommandForBeat = null;
+                _telnetBeatData = null;
+            }
+            timer?.Dispose();
+        }
+
+        /// <summary>
+        /// 连接telnet (如果IsConnected，仅执行SetSocketKeepAlive，SetTelnetAlive直接返回true)
+        /// EN: Connects to Telnet, or refreshes keepalive settings when already connected.
+        /// </summary>
         /// <param name="keepAliveTime">TCP 保活计时器，默认-1 小于100表示不设置，使用TCP默认值2h</param>
         /// <param name="telnetAlivePeriod">telnet 业务保护间隔，默认-1 小于100表示不设置 （也可独立调用SetTelnetHeartbeat设置该项，并可以设置保活数据）</param>
         /// <param name="connectTimeOut">应用侧连接超时时间，默认为0表示默认值不设置默认超时将会是2MSL （MSL根据操作系统不同实现会有差距普遍会超过30s，使用不设置该项超时等待时间会超过1min），设置该值会减少无效连接等待时间，如果对连接情况不能完全控制，不建议设置该项</param>
@@ -371,7 +493,7 @@ namespace NetService.Telnet
             if(IsConnected)
             {
                 SetSocketKeepAlive(keepAliveTime);
-                SetTelnetAlive(keepAliveTime);
+                SetTelnetAlive(telnetAlivePeriod);
                 return true;
             }
             //启动socket 进行telnet操作   
@@ -425,6 +547,7 @@ namespace NetService.Telnet
         #region MyFunction
         /// <summary>
         /// 设置Socket 传输层保活
+        /// EN: Configures transport-level socket keepalive.
         /// </summary>
         /// <param name="KeepAliveTime">保护间隔 大于100ms</param>
         /// <returns></returns>
@@ -434,7 +557,9 @@ namespace NetService.Telnet
             {
                 try
                 {
-                    mySocket.SetSocketKeepAliveOption();
+                    //ExTelnet 对外参数使用毫秒，Socket 选项使用秒。
+                    int keepAliveSeconds = Math.Max(1, (int)Math.Ceiling(KeepAliveTime / 1000d));
+                    mySocket.SetSocketKeepAliveOption(keepAliveSeconds);
                     return true;
                 }
                 catch (Exception ex)
@@ -449,6 +574,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 设置Telnet 应用层业务保活 （用户在Telnet连接成功后，也可以通过SetTelnetHeartbeat修改）
+        /// EN: Configures application-level Telnet heartbeat scheduling.
         /// </summary>
         /// <param name="period">保护间隔 大于100ms</param>
         /// <returns></returns>
@@ -465,6 +591,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 原始socket消息异步接收处理器
+        /// EN: Handles asynchronous raw socket receive completion.
         /// </summary>
         /// <param name="ar"></param>
         private void OnRecievedData(IAsyncResult ar)
@@ -591,9 +718,10 @@ namespace NetService.Telnet
         }
 
 
-        /// <summary>        
-        ///  处理收到的telnet协商数据，并回复这些协商数据      
-        /// </summary>        
+        /// <summary>
+        ///  处理收到的telnet协商数据，并回复这些协商数据
+        /// EN: Processes received Telnet negotiation commands and sends the required replies.
+        /// </summary>
         private async Task DealOptions(ArrayList optionsList)
         {
             if (optionsList?.Count > 0)
@@ -626,6 +754,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 清除当前显示缓存
+        /// EN: Clears the current command-output buffer.
         /// </summary>
         private void ClearShowData()
         {
@@ -637,6 +766,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取当前显示数据（获取之后即从该缓存中移除）
+        /// EN: Reads and removes the current command-output buffer.
         /// </summary>
         /// <param name="removeEnd">需要被移除的结束标示（默认null 使用DefautExpectPattern ，强制使用“”空 表示不移除）</param>
         /// <returns></returns>
@@ -671,6 +801,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 指定时间内等待指定的字符串 （若期望获取较高性能应尽量避免使用WaitStr, 请使用WaitExpectPattern，该方法会有较高性能）
+        /// EN: Waits for an arbitrary string; prompt-pattern waiting is preferred for performance.
         /// </summary>
         /// <param name="waitStr">等待字符串</param>
         /// <param name="waitTime">等待时间，默认或小于0表示使用默认CommandTimeout，0表示不等待(单位为毫秒)</param>
@@ -700,13 +831,14 @@ namespace NetService.Telnet
             }
             else
             {
-                return requestStream.FindPosition(encoding.GetBytes(waitStr))>0;
+                return requestStream.FindPosition(encoding.GetBytes(waitStr))>=0;
             }
         }
 
 
         /// <summary>
         /// 等待结束标示（经历使用该方法进行数据等待）
+        /// EN: Waits for the configured command-completion prompt.
         /// </summary>
         /// <param name="expectPattern">expectPattern只能出现在接收数据的尾部</param>
         /// <param name="waitTime">等待时间，默认或小于0表示使用默认CommandTimeout（注意这个时间是会在有新数据收到后，再等待指定时间，所以最大可能会等待2*waitTime），0表示不等待(单位为毫秒)</param>
@@ -763,6 +895,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取当前显示数据（递增）
+        /// EN: Gets the output accumulated for the current request.
         /// </summary>
         public async Task<string> GetNowRequestDataAsync()
         {
@@ -773,6 +906,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 获取整个输出（但超过最大长度后，会清除前面的内容）
+        /// EN: Gets retained terminal output, subject to the configured maximum length.
         /// </summary>
         public async Task<string> GetTerminalDataAsync()
         {
@@ -788,23 +922,52 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 发送原始数据 (发送数据的统一插口，请仅使用该方法发送Socket实际数据)
+        /// EN: Sends raw socket bytes through the single transport write entry point.
         /// </summary>
         /// <param name="yourData"></param>
         /// <returns></returns>
         private async Task<bool> WriteRawDataAsync(byte[] yourData)
         {
-            if (!mySocket.Connected)
+            if (yourData == null)
+            {
+                throw new ArgumentNullException(nameof(yourData));
+            }
+
+            Socket socket = mySocket;
+            AutoResetEvent sendSignal = sendDone;
+            if (IsDisposed || socket?.Connected != true || sendSignal == null)
             {
                 return false;
             }
-            sendDone?.WaitOne();
-            if (IsDisposed) return false;
+
             try
             {
-                //SocketFlags可以设置Flag位
-                //mySocket.Send(yourData, SocketFlags.None);
-                await mySocket.SendAsync(yourData, SocketFlags.None);
-                _latestCommandForBeat?.SetNewCommand(null);
+                sendSignal.WaitOne();
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (IsDisposed || !ReferenceEquals(socket, mySocket) || socket.Connected != true)
+                {
+                    return false;
+                }
+
+                int sentLength = 0;
+                while (sentLength < yourData.Length)
+                {
+                    int currentSentLength = await socket.SendAsync(yourData.AsMemory(sentLength), SocketFlags.None);
+                    if (currentSentLength <= 0)
+                    {
+                        nowErrorMes = "Socket closed before all data was sent";
+                        return false;
+                    }
+                    sentLength += currentSentLength;
+                }
+                _latestCommandForBeat?.MarkSent();
             }
             catch (Exception ex)
             {
@@ -814,7 +977,14 @@ namespace NetService.Telnet
             }
             finally
             {
-                sendDone.Set();
+                try
+                {
+                    sendSignal.Set();
+                }
+                catch (ObjectDisposedException)
+                {
+                    //与 Dispose 并发时发送信号器可能已经释放。
+                }
             }
             //BeginSend 可被 SendAsync 代替
             //mySocket.BeginSend(yourData, 0, yourData.Length, SocketFlags.None, new AsyncCallback((IAsyncResult ar) =>
@@ -842,6 +1012,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 写入文本消息（使用设置的默认编码）（如非必要，外部谨慎调用）
+        /// EN: Writes text using the configured encoding.
         /// </summary>
         /// <param name="message">文本消息</param>
         /// <returns>是否发送/写入成功</returns>
@@ -852,6 +1023,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 写入字节数组（如非必要，外部谨慎调用）
+        /// EN: Writes a byte array to the Telnet connection.
         /// </summary>
         /// <param name="bytes">字节数组</param>
         /// <returns>是否发送/写入成功</returns>
@@ -862,6 +1034,7 @@ namespace NetService.Telnet
 
         /// <summary>
         /// 写入文本消息,并自动加入换行 TelnetOptionHelper.ENDOFLINE（使用设置的默认编码）
+        /// EN: Writes a text line using the configured encoding and Telnet line ending.
         /// </summary>
         /// <param name="message">文本消息</param>
         /// <returns>是否发送/写入成功</returns>
@@ -875,6 +1048,7 @@ namespace NetService.Telnet
         /// <summary>
         /// 发起一个命令并以阻塞的形式获取返回（获取指定查找字符串时返回,请避免使用该方法，请使用DoRequestAsync）
         /// 因为该方法使用场景特殊不具有普遍性，没有优化，性能比较低
+        /// EN: Sends a command and waits for an arbitrary string; prefer DoRequestAsync for prompt-based completion.
         /// </summary>
         /// <param name="cmd">命令</param>
         /// <param name="waitStr">指定查找字符串</param>
@@ -887,17 +1061,27 @@ namespace NetService.Telnet
             }
             TelnetRequestResult result = new TelnetRequestResult() { IsGetTargetIdentification = false };
             IsInRequest = true;
-            ClearShowData();
-            await WriteLineAsync(cmd);
-            result.IsGetTargetIdentification = await WaitStrAsync(waitStr);
-            IsInRequest = false;
-            result.Result = await GetAndClearShowDataAsync();
-            return result;
+            try
+            {
+                ClearShowData();
+                if (!await WriteLineAsync(cmd))
+                {
+                    throw new IOException($"Send telnet command failed: {nowErrorMes ?? "socket is not connected"}");
+                }
+                result.IsGetTargetIdentification = await WaitStrAsync(waitStr);
+                result.Result = await GetAndClearShowDataAsync();
+                return result;
+            }
+            finally
+            {
+                IsInRequest = false;
+            }
         }
 
 
         /// <summary>
         /// 发起一个命令并以阻塞的形式获取返回（获取expectPattern时返回）
+        /// EN: Sends a command and asynchronously waits for the expected prompt pattern.
         /// </summary>
         /// <param name="cmd">命令</param>
         /// <param name="expectPattern">expectPattern（如#$等）(不填或为null将使用DefaultExpectPattern；填""空字符串将不查找结束标识，直接等待waitTime后返回)</param>
@@ -911,33 +1095,43 @@ namespace NetService.Telnet
             }
             TelnetRequestResult result = new TelnetRequestResult() { IsGetTargetIdentification = false };
             IsInRequest = true;
-            ClearShowData();
-            long startTicks = DateTime.UtcNow.Ticks; //一个计时周期表示一百纳秒，即一千万分之一秒。
-            await WriteLineAsync(cmd);
-            //确认expectPattern
-            if (expectPattern==null)
+            try
             {
-                expectPattern = DefautExpectPattern ?? "";
+                ClearShowData();
+                long startTicks = DateTime.UtcNow.Ticks; //一个计时周期表示一百纳秒，即一千万分之一秒。
+                if (!await WriteLineAsync(cmd))
+                {
+                    throw new IOException($"Send telnet command failed: {nowErrorMes ?? "socket is not connected"}");
+                }
+                //确认expectPattern
+                if (expectPattern==null)
+                {
+                    expectPattern = DefautExpectPattern ?? "";
+                }
+                //等待命令完成
+                if(expectPattern=="")
+                {
+                    if (waitTime < 0) waitTime = DefaWaitTimeout;
+                    //Thread.Sleep(waitTime);
+                    await Task.Delay(waitTime);
+                }
+                else
+                {
+                    result.IsGetTargetIdentification = await WaitExpectPatternAsync(expectPattern, waitTime);
+                }
+                result.Result = await GetAndClearShowDataAsync();
+                result.ElapsedMilliseconds = (DateTime.UtcNow.Ticks - startTicks) / 10000;
+                return result;
             }
-            //等待命令完成
-            if(expectPattern=="")
+            finally
             {
-                if (waitTime < 0) waitTime = DefaWaitTimeout;
-                //Thread.Sleep(waitTime);
-                await Task.Delay(waitTime);
+                IsInRequest = false;
             }
-            else
-            {
-                result.IsGetTargetIdentification = await WaitExpectPatternAsync(expectPattern, waitTime);
-            }
-            IsInRequest = false;
-            result.Result = await GetAndClearShowDataAsync();
-            result.ElapsedMilliseconds = (DateTime.UtcNow.Ticks - startTicks) / 10000;
-            return result;
         }
 
         public void DisConnect()
         {
+            StopTelnetHeartbeat();
             if (mySocket == null)
             {
                 return;
@@ -968,11 +1162,6 @@ namespace NetService.Telnet
                     ReportMes("DisConnect", TelnetMessageType.StateChange);
                 }
             }
-            if (_telnetKeepliveTimer != null)
-            {
-                _telnetKeepliveTimer.Dispose();
-                _telnetKeepliveTimer = null;
-            }
         }
 
         protected virtual void Dispose(bool disposing)
@@ -987,7 +1176,7 @@ namespace NetService.Telnet
                 // TODO: 释放未托管的资源(未托管的对象)并重写终结器
                 // TODO: 将大型字段设置为 null
                 IsDisposed = true;
-                _telnetKeepliveTimer?.Dispose();
+                StopTelnetHeartbeat();
                 DisConnect();
                 mySocket?.Dispose();
                 mySocket = null;

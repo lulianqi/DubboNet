@@ -16,41 +16,53 @@ using static NetService.Telnet.ExTelnet;
 
 namespace DubboNet.DubboService
 {
+    /// <summary>
+    /// 通过 Dubbo QoS/Telnet 命令调用服务，并使用连接池提高并发能力。
+    /// <para>EN: Invokes services through Dubbo QoS/Telnet commands and uses a connection pool for concurrency.</para>
+    /// </summary>
     public class TelnetDubboActuatorSuite : DubboActuator , IDubboActuatorSuite
     {
         internal class DubboSuiteCell
         {
             /// <summary>
             /// DubboActuator执行器
+            /// <para>EN: Underlying Dubbo actuator.</para>
             /// </summary>
             public DubboActuator InnerDubboActuator {get;private set;}
             /// <summary>
             /// 标记当前DubboSuiteCell被使用过的次数
+            /// <para>EN: Tracks how many times this pool cell has been selected.</para>
             /// </summary>
             internal int Version { get; set; } = 0;
             /// <summary>
             /// DubboSuiteCell创建时间
+            /// <para>EN: Time when the pool cell was created.</para>
             /// </summary>
             public DateTime CreatTime {get;}=DateTime.Now;
             /// <summary>
             /// 最后激活即发送请求的时间
+            /// <para>EN: Time of the last request activity.</para>
             /// </summary>
             public DateTime LastActivateTime => InnerDubboActuator?.LastActivateTime ?? default;
             /// <summary>
             /// 内部DubboActuator执行器是否处于连接状态
+            /// <para>EN: Whether the underlying actuator is connected.</para>
             /// </summary>
             public bool IsAlive => InnerDubboActuator?.IsConnected ?? false;
             /// <summary>
             /// 获取InnerDubboActuator是否处于请求发送中状态
+            /// <para>EN: Whether the underlying actuator is available for a request.</para>
             /// </summary>
             public bool IsFreeForQuery => IsAlive && (!InnerDubboActuator?.IsQuerySending ?? false);
             /// <summary>
             /// 获取InnerDubboActuator是否处于使用队列中
+            /// <para>EN: Whether the underlying actuator is reserved by a caller.</para>
             /// </summary>
             public bool IsInUsedQueue => InnerDubboActuator?.IsInUsedQueue ?? false;
 
             /// <summary>
             /// 初始化DubboSuiteCell
+            /// <para>EN: Creates a pool cell around an actuator.</para>
             /// </summary>
             /// <param name="dubboActuator">DubboActuator执行器</param>
             public DubboSuiteCell(DubboActuator dubboActuator) => InnerDubboActuator = dubboActuator;
@@ -65,67 +77,81 @@ namespace DubboNet.DubboService
 
         /// <summary>
         /// 是否已经被释放
+        /// <para>EN: Whether this actuator suite has been disposed.</para>
         /// </summary>
         internal bool IsDisposed { get; private set; } = false;
 
         /// <summary>
         /// 获取当前节点服务及Func信息
+        /// <para>EN: Gets services and functions reported by the current provider.</para>
         /// </summary>
         public Dictionary<string, Dictionary<string, DubboFuncInfo>> DubboServiceFuncCollection { get; private set; }
 
         /// <summary>
         /// 获取默认服务的Func信息
+        /// <para>EN: Gets function information for the default service.</para>
         /// </summary>
         public Dictionary<string, DubboFuncInfo> DefaulDubboServiceFuncs { get; private set; }
 
         /// <summary>
         /// 获取当前DubboActuatorSuite最大连接数（最小为1，默认为20，更大的连接数可以让当前客户端拥有更高的并发能力，注意这里只是最大默认没有使用的执行单元不会连接，长时间未激活的连接也会主动关闭）
+        /// <para>EN: Gets the maximum pooled connection count. Connections are opened lazily and idle connections may be closed.</para>
         /// </summary>
         public int MaxConnections { get;private set; } = 20;
 
         /// <summary>
         /// 辅助执行单元连接的最大保活时间（单位秒，默认300s，0表示永久保活）
+        /// <para>EN: Gets the auxiliary connection idle lifetime in seconds; zero keeps connections alive indefinitely.</para>
         /// </summary>
         public int AssistConnectionAliveTime { get;private set; } = 60 * 5;
 
         /// <summary>
         /// 主执行单元连接的最大保活时间（单位秒，默认1200s ，0表示永久保活）
+        /// <para>EN: Gets the primary connection idle lifetime in seconds; zero keeps it alive indefinitely.</para>
         /// </summary>
         public int MasterConnectionAliveTime { get;private set; } = 60 * 20;
 
 
         /// <summary>
-        /// 当前DubboActuatorSuite是否可用（节点地址错误，都会导致连接失败，且这种错误不能通过自动重试恢复，
+        /// 当前 DubboActuatorSuite 是否可用；节点地址错误会导致不可恢复的连接失败。
+        /// <para>EN: Gets whether this actuator suite remains usable; an invalid endpoint can cause a non-recoverable connection failure.</para>
         /// </summary>
         public bool IsRead { get; private set; } = true;
 
         /// <summary>
         /// 最后激活时间，覆盖基类DubboActuator中的LastActivateTime属性，不是里面每个套接字的最后激活时间
         /// 这里的LastActivateTime是整个DubboActuatorSuite的最后激活时间（只关心调用DubboActuatorSuite发送请求，不关心内部诊断请求，而DubboActuator中的LastActivateTime是成功调用发送命令的时间，包括诊断请求）
+        /// <para>EN: Gets the last user-request activity time for the suite, excluding its internal diagnostic commands.</para>
         /// </summary>
         public new DateTime LastActivateTime { get; private set; }=DateTime.Now;
 
         /// <summary>
         /// 获取默认服务名称
+        /// <para>EN: Gets the default service name.</para>
         /// </summary>
         public new string DefaultServiceName { get; private set; }
 
         /// <summary>
         /// 是否自动更新StatusInfo (自动更新会触发自动连接)
+        /// <para>EN: Gets whether status information is refreshed automatically; refreshing may open a connection.</para>
         /// </summary>
         public bool IsAutoUpdateStatusInfo{ get; private set; } = true;
 
         /// <summary>
         /// 获取当前DubboActuatorSuite内所有DubboSuiteCell执行单元
+        /// <para>EN: Gets all actuator cells in this pool.</para>
         /// </summary>
         internal ReadOnlyCollection<DubboSuiteCell> SuiteCellList => _actuatorSuiteCellList.AsReadOnly();
         /// <summary>
         /// 获取当前节点Status信息
+        /// <para>EN: Gets status information for the current provider.</para>
         /// </summary>
         public DubboActuatorSuiteStatus ActuatorSuiteStatusInfo { get;private set; } = new DubboActuatorSuiteStatus();
 
+        /// <inheritdoc/>
         public DubboActuatorProtocolType ProtocolType => DubboActuatorProtocolType.Telnet;
 
+        /// <inheritdoc/>
         public string ServiceFuncSpit => ".";
 
         #region 静态成员
@@ -142,6 +168,7 @@ namespace DubboNet.DubboService
 
         /// <summary>
         /// 静态构造函数
+        /// <para>EN: Initializes the shared maintenance timer.</para>
         /// </summary>
         static TelnetDubboActuatorSuite()
         {
@@ -154,6 +181,7 @@ namespace DubboNet.DubboService
 
         /// <summary>
         /// DubboSuiteTimer 事件
+        /// <para>EN: Dispatches one shared maintenance-timer tick.</para>
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
@@ -173,12 +201,12 @@ namespace DubboNet.DubboService
         #endregion
 
         /// <summary>
-        /// 初始化DubboActuatorSuite
+        /// 使用地址和端口创建 Telnet 执行器连接池。
+        /// <para>EN: Creates a Telnet actuator pool from an address and port.</para>
         /// </summary>
-        /// <param name="Address">地址（ip）</param>
-        /// <param name="Port">端口</param>
-        /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
-        /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
+        /// <param name="Address">服务地址。<para>EN: Service address.</para></param>
+        /// <param name="Port">服务端口。<para>EN: Service port.</para></param>
+        /// <param name="dubboActuatorSuiteConf">执行器配置。<para>EN: Actuator configuration.</para></param>
         public TelnetDubboActuatorSuite(string Address, int Port, DubboActuatorSuiteConf dubboActuatorSuiteConf = null) : base(Address, Port, dubboActuatorSuiteConf?.DubboRequestTimeout?? 10 * 1000, dubboActuatorSuiteConf?.DefaultServiceName)
         {
             if(dubboActuatorSuiteConf!=null)
@@ -200,17 +228,18 @@ namespace DubboNet.DubboService
         }
 
         /// <summary>
-        /// 初始化DubboActuatorSuite
+        /// 使用网络端点创建 Telnet 执行器连接池。
+        /// <para>EN: Creates a Telnet actuator pool from a network endpoint.</para>
         /// </summary>
-        /// <param name="iPEndPoint"></param>
-        /// <param name="CommandTimeout">客户端请求命令的超时时间（毫秒为单位，默认10秒）</param>
-        /// <param name="dubboActuatorSuiteConf">DubboActuatorSuiteConf配置</param>
+        /// <param name="iPEndPoint">服务端点。<para>EN: Service endpoint.</para></param>
+        /// <param name="dubboActuatorSuiteConf">执行器配置。<para>EN: Actuator configuration.</para></param>
         public TelnetDubboActuatorSuite(IPEndPoint iPEndPoint, DubboActuatorSuiteConf dubboActuatorSuiteConf = null):this(iPEndPoint.Address.ToString(), iPEndPoint.Port,dubboActuatorSuiteConf)
         {
         }
 
         /// <summary>
         /// Cruises事件
+        /// <para>EN: Performs periodic connection cleanup and optional status refresh.</para>
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
@@ -293,6 +322,7 @@ namespace DubboNet.DubboService
 
         /// <summary>
         /// 更新StatusInfo
+        /// <para>EN: Refreshes status and service-list diagnostics.</para>
         /// </summary>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
@@ -316,6 +346,7 @@ namespace DubboNet.DubboService
 
         /// <summary>
         ///  异步获取一个可用的DubboActuator（因为有极限压测的场景，所有DubboSuiteCell可能都会被耗尽所以需要一个低消耗的异步等待）
+        /// <para>EN: Asynchronously waits for an available pooled actuator with low contention.</para>
         /// </summary>
         /// <param name="millisecondTimeout">超时时间，如果超过指定时间还没有可用DubboActuator，则直接返回null</param>
         /// <returns></returns>
@@ -344,6 +375,7 @@ namespace DubboNet.DubboService
 
         /// <summary>
         /// 获取一个可用的DubboActuator（如果没有则返回null,返回的DubboActuator的IsInUsedQueue属性会被设置为true）
+        /// <para>EN: Reserves and returns an available actuator, or returns <see langword="null"/> when the pool is exhausted.</para>
         /// </summary>
         /// <returns></returns>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
@@ -383,6 +415,7 @@ namespace DubboNet.DubboService
 
         /// <summary>
         /// 重写SendCommandAsync可用改变所有基类SendQuery行为，因为所有SendQuery最终出口都是SendCommandAsync
+        /// <para>EN: Routes every Telnet command through the pooled-actuator reservation path.</para>
         /// </summary>
         /// <param name="command"></param>
         /// <param name="isDiagnosisCommand">是否为诊断命令，默认false（内部包装好的的非invoke控制命令）</param>
@@ -436,6 +469,10 @@ namespace DubboNet.DubboService
         }
 
 
+        /// <summary>
+        /// 关闭池内连接并注销周期巡检任务。
+        /// <para>EN: Closes pooled connections and unregisters the periodic maintenance task.</para>
+        /// </summary>
         public new void Dispose()
         {
             if (!IsDisposed)

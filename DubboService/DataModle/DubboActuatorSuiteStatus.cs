@@ -7,6 +7,10 @@ using System.Threading.Tasks;
 
 namespace DubboNet.DubboService.DataModle
 {
+    /// <summary>
+    /// 汇总执行器的节点诊断数据和近期请求耗时。
+    /// <para>EN: Aggregates provider diagnostics and recent request latency for an actuator.</para>
+    /// </summary>
     public class DubboActuatorSuiteStatus
     {
         private const int AVERAGE_QUERY_NUM = 20;
@@ -15,15 +19,18 @@ namespace DubboNet.DubboService.DataModle
         private int _averageQueryElapsed;
 
         /// <summary>
-        /// 当前Dubbo服务节点的状态信息（在HttpDubboActuatorSuite实现版本里可能为空）
+        /// 获取当前 Dubbo 节点的状态信息；非 Telnet 执行器可能不提供。
+        /// <para>EN: Gets the current provider status; non-Telnet actuators may not expose it.</para>
         /// </summary>
         public DubboStatusInfo StatusInfo { get; internal set; }
         /// <summary>
-        /// 当前服务节点提供的服务列表信息（在HttpDubboActuatorSuite实现版本里可能为空）
+        /// 获取当前节点发布的服务列表；非 Telnet 执行器可能不提供。
+        /// <para>EN: Gets the services published by the provider; non-Telnet actuators may not expose this information.</para>
         /// </summary>
         public DubboLsInfo LsInfo { get; internal set; }
         /// <summary>
-        /// 获取当前服务最后一次的请求的耗时
+        /// 获取最后一次成功传输请求的耗时（毫秒）。
+        /// <para>EN: Gets the latency of the last successfully transported request in milliseconds.</para>
         /// </summary>
         public int LastQueryElapsed {
             get
@@ -45,7 +52,8 @@ namespace DubboNet.DubboService.DataModle
             } 
         }
         /// <summary>
-        /// 获取当前服务最后AVERAGE_QUERY_NUM次的请求平均耗时（5分钟内的）
+        /// 获取最近请求的平滑平均耗时（毫秒）；超过 5 分钟无更新时返回 0。
+        /// <para>EN: Gets the smoothed recent request latency in milliseconds; returns zero after five minutes without an update.</para>
         /// </summary>
         public int AverageQueryElapsed {
             get 

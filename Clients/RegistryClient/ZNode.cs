@@ -6,16 +6,36 @@ using System.Text;
 
 namespace DubboNet.Clients.RegistryClient
 {
+    /// <summary>
+    /// 表示一个可组成树结构的 ZooKeeper 节点快照。
+    /// EN: Represents a ZooKeeper node snapshot that can be organized as a tree.
+    /// </summary>
     [DataContract]
     public class ZNode : IEnumerable, ICloneable, IDisposable
     {
+        /// <summary>
+        /// 指定节点的逻辑类型。
+        /// EN: Specifies the logical type of a node.
+        /// </summary>
         [DataContract]
         public enum ZNodeType
         {
+            /// <summary>
+            /// 普通节点。
+            /// EN: A regular node.
+            /// </summary>
             [DataMember]
             Node,
+            /// <summary>
+            /// 表示错误信息的节点。
+            /// EN: A node that represents error information.
+            /// </summary>
             [DataMember]
             Error,
+            /// <summary>
+            /// 类型未知的节点。
+            /// EN: A node whose type is unknown.
+            /// </summary>
             [DataMember]
             Unknow
         }
@@ -45,61 +65,74 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 获取父节点
+        /// 获取父节点。
+        /// EN: Gets the parent node.
         /// </summary>
         [DataMember]
         public ZNode ParentZNode { get; private set; }
         /// <summary>
-        /// 获取节点路径（外部不可修改）
+        /// 获取节点路径；调用方不能直接修改该值。
+        /// EN: Gets the node path; callers cannot modify this value directly.
         /// </summary>
         [DataMember]
         public string Path { get; private set; }
         /// <summary>
-        /// 获取或设置节点备注
+        /// 获取或设置节点备注。
+        /// EN: Gets or sets the node remark.
         /// </summary>
         [DataMember]
         public string ReMark { get; set; }
         /// <summary>
-        /// 获取或设置节点值
+        /// 获取或设置节点值。
+        /// EN: Gets or sets the node value.
         /// </summary>
         [DataMember]
         public string Value { get; set; }
         /// <summary>
-        /// 获取或设置节点Tag
+        /// 获取或设置与节点关联的自定义对象。
+        /// EN: Gets or sets the custom object associated with the node.
         /// </summary>
         public object Tag { get; set; }
         /// <summary>
-        /// 获取或设置节点类型
+        /// 获取或设置节点类型。
+        /// EN: Gets or sets the node type.
         /// </summary>
         [DataMember]
         public ZNodeType Type { get; set; }
         /// <summary>
-        /// 获取或设置节点数据类型 （数据类型由ZNode存储或标识决定，由应用方设置及使用）
+        /// 获取或设置节点数据类型；该标识由应用方定义和使用。
+        /// EN: Gets or sets the application-defined data type identifier for the node.
         /// </summary>
         [DataMember]
         public string NodeDataType { get; set; }
         /// <summary>
-        /// 当前节点是否为叶子节点
+        /// 获取当前节点是否为叶子节点。
+        /// EN: Gets whether the current node is a leaf node.
         /// </summary>
         public bool IsLeafNode { get; private set; }
         /// <summary>
-        /// 获取当前Znode的版本，对其子节点/孙节点的新增/删除操作后该值+1 （注意修改节点的值不会影响当前Version）
+        /// 获取当前节点的结构版本；当前节点或任意后代发生增删时递增，修改节点值不会改变该版本。
+        /// EN: Gets the structural version, which increments when this node or any descendant is added or removed; changing a node value does not affect it.
         /// </summary>
         public int Version => _version;
         /// <summary>
-        /// 是否含义子节点
+        /// 获取当前节点是否包含子节点。
+        /// EN: Gets whether the current node contains child nodes.
         /// </summary>
         public bool HasChildren => _zNodeChildren?.Count > 0;
         /// <summary>
-        /// 当前节点是否为根节点
+        /// 获取当前节点是否为根节点。
+        /// EN: Gets whether the current node is the root node.
         /// </summary>
         public bool IsRootNode => ParentZNode == null;
         /// <summary>
-        /// 获取子节点列表（只读，请不要直接修改改列表）
+        /// 获取子节点的只读列表。
+        /// EN: Gets the read-only list of child nodes.
         /// </summary>
         public IReadOnlyList<ZNode> Children => _zNodeChildren;
         /// <summary>
-        /// 获取当前节点的完整路径（所有父节点路径拼接）
+        /// 获取由当前节点及其所有父节点路径拼接而成的完整路径。
+        /// EN: Gets the full path composed from this node and all of its parent paths.
         /// </summary>
         public string FullPath
         {
@@ -129,7 +162,8 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 获取根节点
+        /// 获取当前树的根节点。
+        /// EN: Gets the root node of the current tree.
         /// </summary>
         public ZNode RootZNode
         {
@@ -144,7 +178,14 @@ namespace DubboNet.Clients.RegistryClient
             }
         }
 
-
+        /// <summary>
+        /// 使用子节点、路径、值和类型初始化节点。
+        /// EN: Initializes a node with child nodes, a path, a value, and a node type.
+        /// </summary>
+        /// <param name="zNodeChildren">初始子节点。EN: The initial child nodes.</param>
+        /// <param name="path">节点路径。EN: The node path.</param>
+        /// <param name="value">节点值。EN: The node value.</param>
+        /// <param name="type">节点类型。EN: The node type.</param>
         public ZNode(List<ZNode> zNodeChildren = null, string path = null, string value = null, ZNodeType type = ZNodeType.Unknow)
         {
             ZNodeChildren = zNodeChildren;
@@ -153,7 +194,10 @@ namespace DubboNet.Clients.RegistryClient
             Type = type;
             IsLeafNode = !(zNodeChildren?.Count > 0);
         }
-
+        /// <summary>
+        /// 初始化一个空节点。
+        /// EN: Initializes an empty node.
+        /// </summary>
         public ZNode() : this(null, null, null, ZNodeType.Unknow)
         {
 
@@ -161,6 +205,7 @@ namespace DubboNet.Clients.RegistryClient
 
         /// <summary>
         /// 更新节点最新修改的版本值
+        /// EN: Propagates a structural version increment from this node to its ancestors.
         /// </summary>
         private void UpdataVersion()
         {
@@ -175,7 +220,8 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 清空当前节点的子节点
+        /// 清空当前节点的全部子节点，并将当前节点标记为叶子节点。
+        /// EN: Removes all child nodes and marks the current node as a leaf.
         /// </summary>
         public void ClearChildren()
         {
@@ -184,6 +230,13 @@ namespace DubboNet.Clients.RegistryClient
             IsLeafNode = true;
         }
 
+        /// <summary>
+        /// 从当前节点开始按完整路径查找节点。
+        /// EN: Finds a node by full path, starting at the current node.
+        /// </summary>
+        /// <param name="path">要查找的节点路径。EN: The node path to find.</param>
+        /// <returns>匹配的节点；未找到时返回 <see langword="null"/>。EN: The matching node, or <see langword="null"/> when no node is found.</returns>
+        /// <exception cref="ArgumentException">路径为 <see langword="null"/>。EN: The path is <see langword="null"/>.</exception>
         public ZNode GetZNodeByPath(string path)
         {
             if (path == null)
@@ -212,9 +265,11 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 为当前node添加子节点
+        /// 为当前节点添加一个子节点。
+        /// EN: Adds a child to the current node.
         /// </summary>
-        /// <param name="znode"></param>
+        /// <param name="znode">要添加的子节点。EN: The child node to add.</param>
+        /// <exception cref="ArgumentException">子节点为 <see langword="null"/>。EN: The child node is <see langword="null"/>.</exception>
         public void AddChildren(ZNode znode)
         {
             if (znode == null)
@@ -232,10 +287,12 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 删除当前Node中的指定节点
+        /// 从当前节点的直接子节点中删除指定节点。
+        /// EN: Removes the specified node from the current node's direct children.
         /// </summary>
-        /// <param name="znode"></param>
-        /// <returns></returns>
+        /// <param name="znode">要删除的子节点。EN: The child node to remove.</param>
+        /// <returns>删除成功时为 <see langword="true"/>；否则为 <see langword="false"/>。EN: <see langword="true"/> when the node was removed; otherwise, <see langword="false"/>.</returns>
+        /// <exception cref="ArgumentException">子节点为 <see langword="null"/>。EN: The child node is <see langword="null"/>.</exception>
         public bool RemoveChildren([System.Diagnostics.CodeAnalysis.NotNull] ZNode znode)
         {
             if (znode == null)
@@ -259,13 +316,14 @@ namespace DubboNet.Clients.RegistryClient
 
 
         /// <summary>
-        /// 删除Tree中任意node （根节点无法删除）
+        /// 删除树中的指定节点；根节点不能删除。
+        /// EN: Removes the specified node from the tree; the root node cannot be removed.
         /// </summary>
-        /// <param name="isCheckTreeList">是否需要遍历确认node是否在Tree里，如果需要频繁调用请设置为false</param>
-        /// <param name="znode"></param>
-        /// <param name="isCheckTreeList">是否检查znode是否属于当前znode，如果有可能不属于请保持默认值</param>
-        /// <param name="isPromoteChildren">删除节点后是否将被删除的节点的子节点保留并上移</param>
-        /// <returns>是否完成移除</returns>
+        /// <param name="znode">要删除的节点。EN: The node to remove.</param>
+        /// <param name="isCheckTreeList">是否先确认节点属于当前树；频繁调用且归属已知时可设为 <see langword="false"/>。EN: Whether to verify that the node belongs to this tree; set to <see langword="false"/> for repeated calls when ownership is already known.</param>
+        /// <param name="isPromoteChildren">删除后是否将该节点的子节点提升到其父节点。EN: Whether to promote the removed node's children to its parent.</param>
+        /// <returns>完成删除时为 <see langword="true"/>；否则为 <see langword="false"/>。EN: <see langword="true"/> when removal succeeds; otherwise, <see langword="false"/>.</returns>
+        /// <exception cref="ArgumentException">节点为 <see langword="null"/>。EN: The node is <see langword="null"/>.</exception>
         public bool RemoveAny([System.Diagnostics.CodeAnalysis.NotNull] ZNode znode, bool isCheckTreeList = true, bool isPromoteChildren = false)
         {
             if (znode == null)
@@ -297,11 +355,12 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 删除符合条件的所有节点
+        /// 删除树中所有符合条件的节点。
+        /// EN: Removes every node in the tree that matches the predicate.
         /// </summary>
-        /// <param name="removeNodeFilterFunc">筛选函数满足条件的将被移除</param>
-        /// <param name="isPromoteChildren">删除节点后是否将被删除的节点的子节点保留并上移</param>
-        /// <returns></returns>
+        /// <param name="removeNodeFilterFunc">用于选择待删除节点的函数。EN: The predicate used to select nodes for removal.</param>
+        /// <param name="isPromoteChildren">删除后是否将被删除节点的子节点提升到其父节点。EN: Whether to promote each removed node's children to its parent.</param>
+        /// <returns>至少删除一个节点时为 <see langword="true"/>；否则为 <see langword="false"/>。EN: <see langword="true"/> when at least one node was removed; otherwise, <see langword="false"/>.</returns>
         public bool RemoveAny([System.Diagnostics.CodeAnalysis.NotNull] Func<ZNode, bool> removeNodeFilterFunc, bool isPromoteChildren = false)
         {
             List<ZNode> willRemoveNodeList = new List<ZNode>();
@@ -321,9 +380,10 @@ namespace DubboNet.Clients.RegistryClient
 
 
         /// <summary>
-        /// 将Tree转换为List
+        /// 按树的迭代顺序将当前树转换为列表。
+        /// EN: Converts the current tree to a list in tree enumeration order.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>包含当前节点及全部后代节点的列表。EN: A list containing the current node and all descendant nodes.</returns>
         public List<ZNode> ToList()
         {
             List<ZNode> zNodes = new List<ZNode>();
@@ -335,9 +395,10 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 获取Tree中叶子节点列表(注意如果只有一个根节点，该节点也会被当作叶子节点处理)
+        /// 获取树中的叶子节点；如果树中只有根节点，则根节点也视为叶子节点。
+        /// EN: Gets the leaf nodes; when the tree contains only its root, the root is treated as a leaf.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>叶子节点列表。EN: The list of leaf nodes.</returns>
         public List<ZNode> GetLeafNodeList()
         {
             List<ZNode> leafNodeList = new List<ZNode>();
@@ -352,11 +413,12 @@ namespace DubboNet.Clients.RegistryClient
         }
 
         /// <summary>
-        /// 使用指定筛选函数筛选Znode叶子节点，符合筛选条件的叶子节点及其父节点链将会保留，其他的删除(注意筛选对象仅包含叶子节点)(如果所有叶子节点都不匹配，会仅保留根节点)
+        /// 使用指定函数筛选叶子节点，仅保留匹配叶子及其父节点链；如果没有叶子匹配，则只保留根节点。
+        /// EN: Filters leaf nodes, retaining only matching leaves and their ancestor chains; when no leaf matches, only the root is retained.
         /// </summary>
-        /// <param name="leafNodeFilterFunc">筛选器表达式（注意：满足条件将保留,请处理您传入函数的异常）</param>
-        /// <param name="filterNodeDataType">设置匹配中节点数据类型（非必填，仅设置匹配节点，其上级节点虽然也会被保留但不会被设置该节点类型）</param>
-        /// <returns>返回结果树（将会是一个新的ZNode，筛选不会改变当前树的结构）</returns>
+        /// <param name="leafNodeFilterFunc">用于选择要保留叶子节点的函数；调用方负责处理函数中的异常。EN: The predicate used to select leaves to retain; the caller is responsible for exceptions raised by the predicate.</param>
+        /// <param name="filterNodeDataType">可选的匹配节点数据类型标识，仅设置到匹配叶子，不设置到其父节点。EN: An optional data type identifier applied only to matching leaves, not to retained ancestors.</param>
+        /// <returns>新的筛选结果树；当前树不会被修改。EN: A new filtered tree; the current tree is not modified.</returns>
         public ZNode FilterLeafNode([System.Diagnostics.CodeAnalysis.NotNull] Func<ZNode, bool> leafNodeFilterFunc, string filterNodeDataType = null)
         {
             ZNode filterResultNode = DeepClone();
@@ -419,15 +481,21 @@ namespace DubboNet.Clients.RegistryClient
             return filterResultNode;
         }
 
+        /// <summary>
+        /// 创建当前节点树的深度克隆。
+        /// EN: Creates a deep clone of the current node tree.
+        /// </summary>
+        /// <returns>克隆后的节点树。EN: The cloned node tree.</returns>
         public object Clone()
         {
             return DeepClone();
         }
 
         /// <summary>
-        /// 深度克隆(被深度克隆出来的对象因避免对源对象或源对象里成员的引用)
+        /// 深度克隆当前节点树，并尽量避免保留对源树成员的引用。
+        /// EN: Deep-clones the current node tree while avoiding references to members of the source tree where possible.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>克隆后的根节点，其结构版本重置为零。EN: The cloned root node with its structural version reset to zero.</returns>
         public ZNode DeepClone()
         {
             ZNode cloneNode = new ZNode(null, Path, Value, Type);
@@ -455,6 +523,11 @@ namespace DubboNet.Clients.RegistryClient
 
         #region 迭代器实现
 
+        /// <summary>
+        /// 返回按层级遍历当前节点树的枚举器。
+        /// EN: Returns an enumerator that traverses the current node tree level by level.
+        /// </summary>
+        /// <returns>树节点枚举器。EN: An enumerator over the tree nodes.</returns>
         public IEnumerator GetEnumerator()
         {
             return new ZnodeEnumerator(this);
@@ -565,6 +638,10 @@ namespace DubboNet.Clients.RegistryClient
         #endregion
 
         #region Disposes实现
+        /// <summary>
+        /// 获取当前节点是否已经释放。
+        /// EN: Gets whether the current node has been disposed.
+        /// </summary>
         public bool IsDisposed
         {
             get;
@@ -599,6 +676,10 @@ namespace DubboNet.Clients.RegistryClient
         //     Dispose(disposing: false);
         // }
 
+        /// <summary>
+        /// 释放当前节点及其后代节点持有的资源。
+        /// EN: Releases resources held by the current node and its descendants.
+        /// </summary>
         public void Dispose()
         {
             // 不要更改此代码。请将清理代码放入“Dispose(bool disposing)”方法中

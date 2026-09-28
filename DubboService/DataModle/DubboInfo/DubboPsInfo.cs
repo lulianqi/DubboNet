@@ -14,10 +14,18 @@ namespace DubboNet.DubboService.DataModle.DubboInfo
     /172.16.246.67:59054 -> /172.16.69.118:20882
     /172.16.193.136:59222 -> /172.16.69.118:20882
     */
+    /// <summary>
+    /// 表示 Dubbo Telnet <c>ps</c> 返回的连接端点对。
+    /// EN: Represents connection endpoint pairs returned by Dubbo Telnet <c>ps</c>.
+    /// </summary>
     public class DubboPsInfo : DubboInfoBase
     {
         public List<KeyValuePair<IPEndPoint, IPEndPoint>> Lines { get; set; } = new List<KeyValuePair<IPEndPoint, IPEndPoint>>();
 
+        /// <summary>
+        /// 解析 Dubbo Telnet <c>ps</c> 响应。
+        /// EN: Parses a Dubbo Telnet <c>ps</c> response.
+        /// </summary>
         public static DubboPsInfo GetDubboPsInfo(string source)
         {
             const string IP_START = "/";

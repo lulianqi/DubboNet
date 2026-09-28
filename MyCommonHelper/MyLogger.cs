@@ -85,6 +85,8 @@ namespace MyCommonHelper
         /// 打印调试数据，发布时请关闭LogDiagnostics，以禁止打印
         /// </summary>
         /// <param name="debugLog"></param>
+        /// <param name="title"></param>
+        /// <param name="isErrorLog"></param>
         public static void LogDiagnostics(string debugLog, string title = null, bool isErrorLog = false)
         {
 #if LogDiagnostics
@@ -98,7 +100,9 @@ namespace MyCommonHelper
         /// 打印调试数据，发布时请关闭LogDiagnostics，以禁止打印
         /// </summary>
         /// <param name="debugLog"></param>
+        /// <param name="title"></param>
         /// <param name="hexaDecimal"></param>
+        /// <param name="isErrorLog"></param>
         public static void LogDiagnostics(byte[] debugLog, string title = null, HexaDecimal hexaDecimal = HexaDecimal.hex16, bool isErrorLog = false)
         {
 #if LogDiagnostics

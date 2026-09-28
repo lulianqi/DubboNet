@@ -131,6 +131,7 @@ namespace DubboNet.Clients.Helper
 
         /// <summary>
         /// 获取目标节点
+        /// EN: Resolves the target node for a hash key.
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>

@@ -7,6 +7,10 @@ using System.Threading.Tasks;
 
 namespace DubboNet.DubboService.DataModle.DubboInfo
 {
+    /// <summary>
+    /// 表示 Dubbo Telnet <c>ls -l</c> 返回的一个方法定义。
+    /// EN: Represents one method definition returned by Dubbo Telnet <c>ls -l</c>.
+    /// </summary>
     public class DubboFuncInfo: DubboInfoBase
     {
         public string ServiceName { get; set; }
@@ -23,6 +27,7 @@ namespace DubboNet.DubboService.DataModle.DubboInfo
 
         /// <summary>
         /// 将ls -l命令返回值结果解析为DubboFuncInfo字典（内部使用）
+        /// EN: Parses an <c>ls -l</c> response into a dictionary of Dubbo function descriptions.
         /// </summary>
         /// <param name="lslStr"></param>
         /// <param name="serviceName"></param>

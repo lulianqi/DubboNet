@@ -1,0 +1,7 @@
+
+services:
+  nativedubbointegration:
+    image: nativedubbointegration
+    build:
+      context: .
+      dockerfile: Tests/NativeDubboIntegration/Dockerfile

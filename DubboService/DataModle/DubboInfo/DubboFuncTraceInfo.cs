@@ -7,6 +7,10 @@ using System.Threading.Tasks;
 namespace DubboNet.DubboService.DataModle.DubboInfo
 {
 
+    /// <summary>
+    /// 表示 Dubbo Telnet <c>trace</c> 返回的一次方法调用。
+    /// EN: Represents one method invocation returned by Dubbo Telnet <c>trace</c>.
+    /// </summary>
     public class DubboFuncTraceInfo : DubboInfoBase
     {
         public string FullName { get; set; }
@@ -18,6 +22,7 @@ namespace DubboNet.DubboService.DataModle.DubboInfo
 
         /// <summary>
         /// 从trace的返回消息里提取DubboFuncTraceInfo元数据（仅填充FullName，FuncRequest，FuncResponse）(如果失败将返回null)
+        /// EN: Extracts function, request, and response data from a trace message, or returns null when parsing fails.
         /// </summary>
         /// <param name="source"></param>
         /// <returns></returns>

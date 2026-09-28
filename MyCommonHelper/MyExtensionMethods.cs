@@ -20,6 +20,10 @@ using System.Text;
 
 namespace MyCommonHelper
 {
+    /// <summary>
+    /// 提供常用集合、字符串和字节数组扩展方法。
+    /// EN: Provides common extension methods for collections, strings, and byte arrays.
+    /// </summary>
     public static class MyExtensionMethods
     {
         /// <summary>
@@ -204,7 +208,7 @@ namespace MyCommonHelper
 
 
         /// <summary>
-        /// 以指定字符串拼合List<string>
+        /// 以指定字符串拼合字符串列表。
         /// </summary>
         /// <param name="lsStr">目标对象</param>
         /// <param name="splitStr">分割字符串</param>
@@ -281,11 +285,12 @@ namespace MyCommonHelper
         }
 
         /// <summary>
-        /// 【Dictionary<string, string>】添加键值，若遇到已有key则将Key改名(追加索引)
+        /// 向字符串字典添加键值；已有 key 时通过追加索引改名。
+        /// EN: Adds a key/value pair to a string dictionary and appends an index when the key already exists.
         /// </summary>
-        /// <param name="dc">Dictionary</param>
-        /// <param name="yourKey">Key</param>
-        /// <param name="yourValue">Value</param>
+        /// <param name="dc">目标字典。EN: The target dictionary.</param>
+        /// <param name="yourKey">要添加的键。EN: The key to add.</param>
+        /// <param name="yourValue">要添加的值。EN: The value to add.</param>
         public static void MyAddEx(this Dictionary<string, string> dc, string yourKey, string yourValue)
         {
             if (dc.ContainsKey(yourKey))
@@ -328,10 +333,11 @@ namespace MyCommonHelper
 
         /// <summary>
         /// 【NameValueCollection】添加键值，检查NameValueCollection是否为null
+        /// EN: Adds a name/value pair when the NameValueCollection is not null.
         /// </summary>
-        /// <param name="nvc">NameValueCollection</param>
-        /// <param name="yourKey">Key</param>
-        /// <param name="yourValue">Value</param>
+        /// <param name="nvc">目标名称值集合。EN: The target name/value collection.</param>
+        /// <param name="yourName">要添加的名称。EN: The name to add.</param>
+        /// <param name="yourValue">要添加的值。EN: The value to add.</param>
         public static void myAdd(this NameValueCollection nvc, string yourName, string yourValue)
         {
             if (nvc != null)

@@ -671,15 +671,6 @@ namespace NetService.Telnet
         }
 
         /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="cmd">命令</param>
-        /// <param name="expectPattern">expectPattern（如#$等）</param>
-        /// <returns>命令返回</returns>
-        /// 
-
-
-        /// <summary>
         /// 发起一个命令并以阻塞的形式获取返回（获取expectPattern时返回）
         /// </summary>
         /// <param name="cmd">命令</param>
