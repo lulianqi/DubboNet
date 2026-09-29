@@ -372,6 +372,169 @@ namespace UnitTestForDubboNet
         }
 
         [Fact]
+        public async Task ModernProviderChecksMetadataPathBeforeReadingNodeData()
+        {
+            const string serviceName = "com.foo.DemoService";
+            const string expectedPath =
+                "/dubbo/metadata/com.foo.DemoService/provider/demo-provider";
+            int existsCount = 0;
+            int dataReadCount = 0;
+            int telnetProbeCount = 0;
+            using MyZookeeper zookeeper = new MyZookeeper("127.0.0.1:2181");
+            using DubboMetadataManager manager = new DubboMetadataManager(
+                zookeeper,
+                "/dubbo",
+                _ => Task.FromResult<IReadOnlyList<DubboServiceEndPointInfo>>(
+                    new[] { Provider("2.7.3") }),
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref telnetProbeCount);
+                    DubboMethodMetadata telnetMethod = Method("find", "java.lang.Long");
+                    telnetMethod.MetadataSource = DubboMetadataSource.Telnet;
+                    return Task.FromResult(DubboTelnetMetadataResult.Success(
+                        new[] { telnetMethod }));
+                },
+                (path, _) =>
+                {
+                    Assert.Equal(expectedPath, path);
+                    Interlocked.Increment(ref existsCount);
+                    return Task.FromResult<org.apache.zookeeper.data.Stat>(null!);
+                },
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref dataReadCount);
+                    return Task.FromResult<org.apache.zookeeper.DataResult>(null!);
+                });
+
+            IReadOnlyList<DubboMethodMetadata> first =
+                await manager.GetServiceMethodsAsync(serviceName);
+            IReadOnlyList<DubboMethodMetadata> cached =
+                await manager.GetServiceMethodsAsync(serviceName);
+
+            Assert.Equal(1, existsCount);
+            Assert.Equal(0, dataReadCount);
+            Assert.Equal(1, telnetProbeCount);
+            Assert.Single(first);
+            Assert.Single(cached);
+            Assert.All(first, method =>
+                Assert.Equal(DubboMetadataSource.Telnet, method.MetadataSource));
+        }
+
+        [Fact]
+        public async Task ServiceTypes_LoadFromMetadataCenterAfterExistsCheckAndAreCached()
+        {
+            const string serviceName = "com.foo.DemoService";
+            const string metadataJson = """
+                {
+                  "canonicalName": "com.foo.DemoService",
+                  "methods": [],
+                  "types": [
+                    {
+                      "type": "com.foo.CreateRequest",
+                      "properties": {
+                        "name": { "type": "java.lang.String" },
+                        "children": {
+                          "type": "java.util.List<com.foo.ChildRequest>",
+                          "typeBuilderName": "CollectionTypeBuilder"
+                        }
+                      },
+                      "typeBuilderName": "DefaultTypeBuilder"
+                    }
+                  ]
+                }
+                """;
+            int existsCount = 0;
+            int dataReadCount = 0;
+            int telnetProbeCount = 0;
+            org.apache.zookeeper.data.Stat stat =
+                new org.apache.zookeeper.data.Stat(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+            using MyZookeeper zookeeper = new MyZookeeper("127.0.0.1:2181");
+            using DubboMetadataManager manager = new DubboMetadataManager(
+                zookeeper,
+                "/dubbo",
+                _ => Task.FromResult<IReadOnlyList<DubboServiceEndPointInfo>>(
+                    new[] { Provider("2.7.3") }),
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref telnetProbeCount);
+                    return Task.FromResult(
+                        DubboTelnetMetadataResult.Failure("must not be called"));
+                },
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref existsCount);
+                    return Task.FromResult(stat);
+                },
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref dataReadCount);
+                    return Task.FromResult(CreateDataResult(
+                        Encoding.UTF8.GetBytes(metadataJson),
+                        stat));
+                });
+
+            IReadOnlyList<DubboTypeMetadata> first =
+                await manager.GetServiceTypesAsync(serviceName);
+            IReadOnlyList<DubboTypeMetadata> cached =
+                await manager.GetServiceTypesAsync(serviceName);
+
+            DubboTypeMetadata request = Assert.Single(first);
+            Assert.Equal("com.foo.CreateRequest", request.Type);
+            Assert.Equal("java.lang.String", request.Properties["name"].Type);
+            Assert.Equal(
+                "java.util.List<com.foo.ChildRequest>",
+                request.Properties["children"].Type);
+            Assert.Single(cached);
+            Assert.Equal(1, existsCount);
+            Assert.Equal(1, dataReadCount);
+            Assert.Equal(0, telnetProbeCount);
+        }
+
+        [Fact]
+        public async Task ServiceTypes_MissingMetadataPathDoesNotReadNodeOrUseTelnet()
+        {
+            int existsCount = 0;
+            int dataReadCount = 0;
+            int telnetProbeCount = 0;
+            using MyZookeeper zookeeper = new MyZookeeper("127.0.0.1:2181");
+            using DubboMetadataManager manager = new DubboMetadataManager(
+                zookeeper,
+                "/dubbo",
+                _ => Task.FromResult<IReadOnlyList<DubboServiceEndPointInfo>>(
+                    new[] { Provider("2.7.3") }),
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref telnetProbeCount);
+                    return Task.FromResult(
+                        DubboTelnetMetadataResult.Failure("must not be called"));
+                },
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref existsCount);
+                    return Task.FromResult<org.apache.zookeeper.data.Stat>(null!);
+                },
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref dataReadCount);
+                    return Task.FromResult<org.apache.zookeeper.DataResult>(null!);
+                });
+
+            DubboMetadataException first = await Assert.ThrowsAsync<DubboMetadataException>(() =>
+                manager.GetServiceTypesAsync("com.foo.DemoService"));
+            DubboMetadataException cached = await Assert.ThrowsAsync<DubboMetadataException>(() =>
+                manager.GetServiceTypesAsync("com.foo.DemoService"));
+
+            Assert.Contains(
+                "/dubbo/metadata/com.foo.DemoService/provider/demo-provider",
+                first.Message);
+            Assert.Contains("does not exist", first.Message);
+            Assert.Equal(first.Message, cached.Message);
+            Assert.Equal(1, existsCount);
+            Assert.Equal(0, dataReadCount);
+            Assert.Equal(0, telnetProbeCount);
+        }
+
+        [Fact]
         public void ZookeeperStorage_ReusesOneClientForTheSameConnectionString()
         {
             using MultiMyZookeeperStorage storage = new MultiMyZookeeperStorage();
@@ -393,6 +556,22 @@ namespace UnitTestForDubboNet
                 ParameterTypes = parameterTypes,
                 ReturnType = "java.lang.Object"
             };
+        }
+
+        private static org.apache.zookeeper.DataResult CreateDataResult(
+            byte[] data,
+            org.apache.zookeeper.data.Stat stat)
+        {
+            org.apache.zookeeper.DataResult result =
+                (org.apache.zookeeper.DataResult)System.Runtime.CompilerServices.RuntimeHelpers
+                    .GetUninitializedObject(typeof(org.apache.zookeeper.DataResult));
+            typeof(org.apache.zookeeper.DataResult)
+                .GetField(nameof(org.apache.zookeeper.DataResult.Data))!
+                .SetValue(result, data);
+            typeof(org.apache.zookeeper.NodeResult)
+                .GetField(nameof(org.apache.zookeeper.NodeResult.Stat))!
+                .SetValue(result, stat);
+            return result;
         }
 
         private static DubboServiceEndPointInfo Provider(string release)

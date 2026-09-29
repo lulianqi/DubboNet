@@ -45,10 +45,10 @@ DubboClient
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `1.2.2`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `1.3.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 1.2.2
+dotnet add package DubboNet --version 1.3.0
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
@@ -286,6 +286,21 @@ foreach (DubboMethodMetadata method in overloads)
         $"[{method.MetadataSource}] {method.ReturnType} " +
         $"{method.Name}({string.Join(", ", method.ParameterTypes)})");
 }
+
+// 仅从元数据中心读取 FullServiceDefinition.types，适合 DubboTester
+// 生成 POJO/集合/嵌套参数编辑器；该接口不会使用 Telnet 回退。
+IReadOnlyList<DubboTypeMetadata> types =
+    await client.GetServiceTypesMetadataAsync(
+        "com.foo.JobService");
+
+foreach (DubboTypeMetadata type in types)
+{
+    Console.WriteLine(type.Type);
+    foreach (var property in type.Properties)
+    {
+        Console.WriteLine($"  {property.Key}: {property.Value.Type}");
+    }
+}
 ```
 
 主要字段包括：
@@ -296,6 +311,8 @@ foreach (DubboMethodMetadata method in overloads)
 - `MetadataPath`：ZooKeeper 节点或 `telnet://` 来源地址。
 - `TypeDefinitions`：FullServiceDefinition 中的 POJO、集合、枚举和引用定义；Telnet 来源通常没有这部分信息。
 - `MetadataVersion`、`LoadedAt`：ZooKeeper 数据版本和读取时间。
+
+`GetServiceTypesMetadataAsync` 会先对完整元数据叶子路径执行 ZooKeeper `exists` 并安装 watcher，确认节点存在后才读取数据。节点不存在、连接不可用或文档无效时会抛出包含预期路径的 `DubboMetadataException`；因为 Telnet `ls -l` 不包含 `types`，该接口不会退回 Telnet。成功结果和稳定的“节点不存在”结论都会按服务缓存，节点后续创建或修改时 watcher 会刷新缓存。
 
 ## 元数据策略与缓存 / Metadata Strategy and Cache
 

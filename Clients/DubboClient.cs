@@ -574,6 +574,23 @@ namespace DubboNet.Clients
             return methods.Select(method => method.CloneForCaller()).ToArray();
         }
 
+        /// <summary>
+        /// 从元数据中心获取指定服务的 <c>FullServiceDefinition.types</c>，用于构造 POJO、集合及嵌套请求参数。
+        /// <para>EN: Gets <c>FullServiceDefinition.types</c> from the metadata center for constructing POJO, collection, and nested request arguments.</para>
+        /// </summary>
+        /// <param name="serviceName">完整 Java 服务接口名。EN: Fully qualified Java service interface name.</param>
+        /// <returns>按类型标识去重后的递归类型定义；元数据文档存在但未声明类型时为空集合。EN: Recursive type definitions deduplicated by identifier, or an empty collection when the document declares no types.</returns>
+        /// <exception cref="ArgumentException">服务名为空。EN: The service name is empty.</exception>
+        /// <exception cref="DubboMetadataException">元数据中心路径不存在、不可访问或没有 FullServiceDefinition；Telnet 无法提供 types。EN: The metadata-center path is missing, unavailable, or has no FullServiceDefinition; Telnet cannot provide types.</exception>
+        public async Task<IReadOnlyList<DubboTypeMetadata>> GetServiceTypesMetadataAsync(
+            string serviceName)
+        {
+            ThrowIfDisposed();
+            IReadOnlyList<DubboTypeMetadata> types =
+                await _metadataManager.GetServiceTypesAsync(serviceName).ConfigureAwait(false);
+            return types.Select(type => type.CloneForCaller()).ToArray();
+        }
+
         private async Task<DubboInvocation> CreateMetadataInvocationAsync(
             string serviceName,
             string methodName,

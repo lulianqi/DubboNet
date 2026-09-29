@@ -10,6 +10,19 @@ namespace UnitTestForDubboNet
     public class NativeDubboCodecTest
     {
         [Fact]
+        public void SerializeJson_PreservesChineseCharacters()
+        {
+            Dictionary<string, object> value = new Dictionary<string, object>
+            {
+                ["message"] = "未知错误"
+            };
+
+            string json = NativeDubboCodec.SerializeJson(value);
+
+            Assert.Equal("{\"message\":\"未知错误\"}", json);
+        }
+
+        [Fact]
         public void EncodeGenericRequest_WritesDubboHeaderAndGenericBody()
         {
             DubboInvocation invocation = new DubboInvocation(

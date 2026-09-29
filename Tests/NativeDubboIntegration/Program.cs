@@ -10,7 +10,7 @@ using DubboClient client = new DubboClient(zooKeeper, new DubboClient.DubboClien
 {
     DubboRequestTimeout = 10_000,
     TelnetMetadataTimeout = 10_000,
-    MaintainServiceNum = 10
+    MaintainServiceNum = 10,
 });
 
 string[] endpoints =
@@ -27,6 +27,10 @@ foreach (string endpoint in endpoints)
     await PrintMethodMetadata(endpoint, "first lookup");
     await PrintMethodMetadata(endpoint, "cached lookup");
 }
+
+DubboRequestResult checkTestResult = await client.QueryGenericAsync(
+    "com.byai.tiandun.api.strategy.TiandunCheckRemoteService.checkTest");
+Console.WriteLine(checkTestResult.ToString());
 
 await Invoke(
     "com.byai.tiandun.api.strategy.TiandunCheckRemoteService.checkTest");

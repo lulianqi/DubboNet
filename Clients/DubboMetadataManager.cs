@@ -41,6 +41,15 @@ namespace DubboNet.Clients
                 new Dictionary<string, string>();
         }
 
+        private sealed class ParsedMetadataDocument
+        {
+            public IReadOnlyList<DubboMethodMetadata> Methods { get; init; } =
+                Array.Empty<DubboMethodMetadata>();
+            public IReadOnlyList<DubboTypeMetadata> Types { get; init; } =
+                Array.Empty<DubboTypeMetadata>();
+            public bool IsDocument { get; init; }
+        }
+
         private sealed class ServiceMetadataSnapshot
         {
             public IReadOnlyList<DubboMethodMetadata> Methods { get; init; } =
@@ -54,8 +63,11 @@ namespace DubboNet.Clients
         {
             public IReadOnlyList<DubboMethodMetadata> Methods { get; init; } =
                 Array.Empty<DubboMethodMetadata>();
+            public IReadOnlyList<DubboTypeMetadata> Types { get; init; } =
+                Array.Empty<DubboTypeMetadata>();
             public IReadOnlyList<string> ExpectedPaths { get; init; } = Array.Empty<string>();
             public string FailureReason { get; init; }
+            public bool HasMetadataDocument { get; init; }
             public bool CanCacheFallback { get; init; } = true;
         }
 
@@ -70,6 +82,7 @@ namespace DubboNet.Clients
         {
             public SemaphoreSlim RefreshLock { get; } = new SemaphoreSlim(1, 1);
             public ServiceMetadataSnapshot Snapshot { get; set; }
+            public MetadataCenterLoadResult MetadataCenterSnapshot { get; set; }
             public HashSet<string> WatchedPaths { get; set; } =
                 new HashSet<string>(StringComparer.Ordinal);
             public TelnetProbeState TelnetState { get; set; } = TelnetProbeState.NotAttempted;
@@ -110,6 +123,14 @@ namespace DubboNet.Clients
             string,
             IReadOnlyList<DubboServiceEndPointInfo>,
             Task<DubboTelnetMetadataResult>> _telnetMetadataLoader;
+        private readonly Func<
+            string,
+            Watcher,
+            Task<org.apache.zookeeper.data.Stat>> _metadataExists;
+        private readonly Func<
+            string,
+            Watcher,
+            Task<org.apache.zookeeper.DataResult>> _metadataDataLoader;
         private readonly ConcurrentDictionary<string, ServiceCacheEntry> _serviceCache =
             new ConcurrentDictionary<string, ServiceCacheEntry>(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _pathToService =
@@ -149,7 +170,15 @@ namespace DubboNet.Clients
             Func<
                 string,
                 IReadOnlyList<DubboServiceEndPointInfo>,
-                Task<DubboTelnetMetadataResult>> telnetMetadataLoader)
+                Task<DubboTelnetMetadataResult>> telnetMetadataLoader,
+            Func<
+                string,
+                Watcher,
+                Task<org.apache.zookeeper.data.Stat>> metadataExists = null,
+            Func<
+                string,
+                Watcher,
+                Task<org.apache.zookeeper.DataResult>> metadataDataLoader = null)
         {
             _metadataZookeeper = metadataZookeeper
                 ?? throw new ArgumentNullException(nameof(metadataZookeeper));
@@ -157,6 +186,10 @@ namespace DubboNet.Clients
                 ?? throw new ArgumentNullException(nameof(providerResolver));
             _telnetMetadataLoader = telnetMetadataLoader
                 ?? throw new ArgumentNullException(nameof(telnetMetadataLoader));
+            _metadataExists = metadataExists
+                ?? ((path, watcher) => _metadataZookeeper.ExistsAsync(path, watcher));
+            _metadataDataLoader = metadataDataLoader
+                ?? ((path, watcher) => _metadataZookeeper.GetDataAsync(path, watcher));
             _metadataRootPath = NormalizeRootPath(metadataRootPath);
             _watcher = new MetadataWatcher(this);
         }
@@ -212,7 +245,8 @@ namespace DubboNet.Clients
 
                 ServiceMetadataSnapshot snapshot = await LoadServiceMetadataAsync(
                     serviceName,
-                    cacheEntry).ConfigureAwait(false);
+                    cacheEntry,
+                    forceRefresh).ConfigureAwait(false);
                 if (snapshot.CanCache)
                 {
                     cacheEntry.Snapshot = snapshot;
@@ -267,6 +301,72 @@ namespace DubboNet.Clients
             return telnet.Methods
                 .Where(method => string.Equals(method.Name, methodName, StringComparison.Ordinal))
                 .ToArray();
+        }
+
+        /// <summary>
+        /// 仅从元数据中心获取指定服务的 <c>FullServiceDefinition.types</c> 类型定义，不使用 Telnet 回退。
+        /// <para>EN: Gets <c>FullServiceDefinition.types</c> for a service exclusively from the metadata center, without a Telnet fallback.</para>
+        /// </summary>
+        /// <param name="serviceName">Dubbo 接口全限定名。<para>EN: Fully qualified Dubbo interface name.</para></param>
+        /// <returns>按类型标识去重后的递归类型定义。<para>EN: Recursive type definitions deduplicated by type identifier.</para></returns>
+        internal async Task<IReadOnlyList<DubboTypeMetadata>> GetServiceTypesAsync(
+            string serviceName)
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(DubboMetadataManager));
+            }
+            if (string.IsNullOrWhiteSpace(serviceName))
+            {
+                throw new ArgumentException("Dubbo service name cannot be empty.", nameof(serviceName));
+            }
+
+            ServiceCacheEntry cacheEntry = _serviceCache.GetOrAdd(
+                serviceName,
+                _ => new ServiceCacheEntry());
+            await cacheEntry.RefreshLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (cacheEntry.MetadataCenterSnapshot != null)
+                {
+                    return EnsureTypeDefinitionsAvailable(
+                        serviceName,
+                        cacheEntry.MetadataCenterSnapshot);
+                }
+
+                IReadOnlyList<DubboServiceEndPointInfo> providers;
+                try
+                {
+                    providers = await _providerResolver(serviceName).ConfigureAwait(false)
+                        ?? Array.Empty<DubboServiceEndPointInfo>();
+                }
+                catch (Exception exception)
+                {
+                    throw new DubboMetadataException(
+                        $"Unable to discover providers before reading metadata-center types for " +
+                        $"Dubbo service '{serviceName}': {exception.Message}",
+                        exception);
+                }
+
+                if (!DubboTelnetMetadataResolver.ShouldPreferMetadataCenter(providers))
+                {
+                    throw new DubboMetadataException(
+                        $"Unable to obtain type definitions for Dubbo service '{serviceName}'. " +
+                        "Every reported provider release is below 2.7.3, so no compatible " +
+                        "FullServiceDefinition metadata path is expected. Telnet metadata does " +
+                        "not contain the 'types' structure.");
+                }
+
+                MetadataCenterLoadResult metadataCenterResult =
+                    await LoadFromMetadataCenterAsync(serviceName, providers, cacheEntry)
+                        .ConfigureAwait(false);
+                CacheMetadataCenterResult(cacheEntry, metadataCenterResult);
+                return EnsureTypeDefinitionsAvailable(serviceName, metadataCenterResult);
+            }
+            finally
+            {
+                cacheEntry.RefreshLock.Release();
+            }
         }
 
         internal async Task<DubboTelnetMetadataResult> GetTelnetServiceMetadataAsync(
@@ -394,9 +494,26 @@ namespace DubboNet.Clients
             int metadataVersion,
             DateTimeOffset loadedAt)
         {
+            return ParseMetadataDocumentDetails(
+                data,
+                serviceName,
+                provider,
+                metadataPath,
+                metadataVersion,
+                loadedAt).Methods;
+        }
+
+        private static ParsedMetadataDocument ParseMetadataDocumentDetails(
+            byte[] data,
+            string serviceName,
+            DubboServiceEndPointInfo provider,
+            string metadataPath,
+            int metadataVersion,
+            DateTimeOffset loadedAt)
+        {
             if (data == null || data.Length == 0)
             {
-                return Array.Empty<DubboMethodMetadata>();
+                return new ParsedMetadataDocument();
             }
 
             ProviderMetadataDocument document;
@@ -415,7 +532,7 @@ namespace DubboNet.Clients
 
             if (document == null)
             {
-                return Array.Empty<DubboMethodMetadata>();
+                return new ParsedMetadataDocument();
             }
 
             string effectiveServiceName = string.IsNullOrWhiteSpace(document.CanonicalName)
@@ -443,12 +560,18 @@ namespace DubboNet.Clients
                 method.LoadedAt = loadedAt;
             }
 
-            return document.Methods ?? new List<DubboMethodMetadata>();
+            return new ParsedMetadataDocument
+            {
+                Methods = document.Methods ?? new List<DubboMethodMetadata>(),
+                Types = types,
+                IsDocument = true
+            };
         }
 
         private async Task<ServiceMetadataSnapshot> LoadServiceMetadataAsync(
             string serviceName,
-            ServiceCacheEntry cacheEntry)
+            ServiceCacheEntry cacheEntry,
+            bool forceRefresh)
         {
             IReadOnlyList<DubboServiceEndPointInfo> providers;
             try
@@ -458,6 +581,10 @@ namespace DubboNet.Clients
             }
             catch (Exception exception)
             {
+                if (forceRefresh)
+                {
+                    cacheEntry.MetadataCenterSnapshot = null;
+                }
                 UpdatePathMappings(
                     serviceName,
                     cacheEntry,
@@ -479,10 +606,17 @@ namespace DubboNet.Clients
             MetadataCenterLoadResult metadataCenterResult = null;
             if (preferMetadataCenter)
             {
-                metadataCenterResult = await LoadFromMetadataCenterAsync(
-                    serviceName,
-                    providers,
-                    cacheEntry).ConfigureAwait(false);
+                metadataCenterResult = forceRefresh
+                    ? null
+                    : cacheEntry.MetadataCenterSnapshot;
+                if (metadataCenterResult == null)
+                {
+                    metadataCenterResult = await LoadFromMetadataCenterAsync(
+                        serviceName,
+                        providers,
+                        cacheEntry).ConfigureAwait(false);
+                    CacheMetadataCenterResult(cacheEntry, metadataCenterResult);
+                }
                 if (metadataCenterResult.Methods.Count > 0)
                 {
                     return new ServiceMetadataSnapshot
@@ -496,6 +630,7 @@ namespace DubboNet.Clients
             else
             {
                 // Known providers below 2.7.3 do not use the 2.7.3 FullServiceDefinition path.
+                cacheEntry.MetadataCenterSnapshot = null;
                 UpdatePathMappings(
                     serviceName,
                     cacheEntry,
@@ -558,14 +693,40 @@ namespace DubboNet.Clients
             UpdatePathMappings(serviceName, cacheEntry, newPaths);
 
             List<DubboMethodMetadata> methods = new List<DubboMethodMetadata>();
+            List<DubboTypeMetadata> types = new List<DubboTypeMetadata>();
             List<string> failures = new List<string>();
+            bool hasMetadataDocument = false;
             bool hasUnwatchedFailure = false;
             foreach ((string path, DubboServiceEndPointInfo provider) in metadataLocations)
             {
+                org.apache.zookeeper.data.Stat metadataStat;
+                try
+                {
+                    // 先检查完整的元数据叶子路径。节点不存在时 exists 会注册创建监听，
+                    // 无需先执行 getData 并制造一次可预期的 NoNodeException。
+                    // EN: Check the full metadata leaf path first. When it is absent, exists
+                    // registers a creation watch without producing an expected NoNodeException.
+                    metadataStat = await _metadataExists(path, _watcher).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    hasUnwatchedFailure = true;
+                    failures.Add(
+                        $"node '{path}' existence could not be checked or watched: " +
+                        exception.Message);
+                    continue;
+                }
+
+                if (metadataStat == null)
+                {
+                    failures.Add($"node '{path}' does not exist");
+                    continue;
+                }
+
                 org.apache.zookeeper.DataResult dataResult;
                 try
                 {
-                    dataResult = await _metadataZookeeper.GetDataAsync(path, _watcher)
+                    dataResult = await _metadataDataLoader(path, _watcher)
                         .ConfigureAwait(false);
                 }
                 catch (Exception exception)
@@ -581,16 +742,16 @@ namespace DubboNet.Clients
                 {
                     try
                     {
-                        // getData does not leave a watch when the node is absent. exists does, so a
-                        // later metadata publication replaces a cached Telnet fallback.
-                        await _metadataZookeeper.ExistsAsync(path, _watcher).ConfigureAwait(false);
-                        failures.Add($"node '{path}' does not exist");
+                        // The node may have been deleted between exists and getData. Reinstall an
+                        // exists watch so later publication replaces a cached Telnet fallback.
+                        await _metadataExists(path, _watcher).ConfigureAwait(false);
+                        failures.Add($"node '{path}' disappeared before its data could be read");
                     }
                     catch (Exception exception)
                     {
                         hasUnwatchedFailure = true;
                         failures.Add(
-                            $"node '{path}' does not exist and its creation could not be watched: " +
+                            $"node '{path}' disappeared and its creation could not be watched: " +
                             exception.Message);
                     }
                     continue;
@@ -599,19 +760,21 @@ namespace DubboNet.Clients
                 try
                 {
                     int metadataVersion = dataResult.Stat?.getVersion() ?? -1;
-                    IReadOnlyList<DubboMethodMetadata> parsed = ParseMetadataDocument(
+                    ParsedMetadataDocument parsed = ParseMetadataDocumentDetails(
                         dataResult.Data,
                         serviceName,
                         provider,
                         path,
                         metadataVersion,
                         DateTimeOffset.UtcNow);
-                    if (parsed.Count == 0)
+                    hasMetadataDocument |= parsed.IsDocument;
+                    types.AddRange(parsed.Types);
+                    if (parsed.Methods.Count == 0)
                     {
                         failures.Add($"node '{path}' contains no method definitions");
                         continue;
                     }
-                    methods.AddRange(parsed);
+                    methods.AddRange(parsed.Methods);
                 }
                 catch (Exception exception)
                 {
@@ -631,8 +794,10 @@ namespace DubboNet.Clients
             return new MetadataCenterLoadResult
             {
                 Methods = methods.ToArray(),
+                Types = DeduplicateTypeDefinitions(types),
                 ExpectedPaths = newPaths.ToArray(),
                 FailureReason = failureReason,
+                HasMetadataDocument = hasMetadataDocument,
                 CanCacheFallback = !hasUnwatchedFailure
             };
         }
@@ -679,6 +844,63 @@ namespace DubboNet.Clients
             cacheEntry.TelnetMethods = Array.Empty<DubboMethodMetadata>();
             cacheEntry.TelnetFailureReason = result.FailureReason;
             return DubboTelnetMetadataResult.Failure(cacheEntry.TelnetFailureReason);
+        }
+
+        private static void CacheMetadataCenterResult(
+            ServiceCacheEntry cacheEntry,
+            MetadataCenterLoadResult result)
+        {
+            cacheEntry.MetadataCenterSnapshot = result?.CanCacheFallback == true
+                ? result
+                : null;
+        }
+
+        private static IReadOnlyList<DubboTypeMetadata> EnsureTypeDefinitionsAvailable(
+            string serviceName,
+            MetadataCenterLoadResult result)
+        {
+            if (result?.HasMetadataDocument == true)
+            {
+                return result.Types ?? Array.Empty<DubboTypeMetadata>();
+            }
+
+            string expectedPaths = result?.ExpectedPaths?.Count > 0
+                ? string.Join(", ", result.ExpectedPaths)
+                : "none could be derived";
+            throw new DubboMetadataException(
+                $"Unable to obtain FullServiceDefinition.types for Dubbo service " +
+                $"'{serviceName}' from the metadata center. " +
+                $"Expected metadata path(s): {expectedPaths}. " +
+                $"{result?.FailureReason ?? "No FullServiceDefinition document was found."} " +
+                "Telnet metadata cannot provide POJO type structures.");
+        }
+
+        private static IReadOnlyList<DubboTypeMetadata> DeduplicateTypeDefinitions(
+            IEnumerable<DubboTypeMetadata> types)
+        {
+            Dictionary<string, DubboTypeMetadata> unique =
+                new Dictionary<string, DubboTypeMetadata>(StringComparer.Ordinal);
+            List<DubboTypeMetadata> anonymous = new List<DubboTypeMetadata>();
+            foreach (DubboTypeMetadata type in types ?? Array.Empty<DubboTypeMetadata>())
+            {
+                if (type == null)
+                {
+                    continue;
+                }
+
+                string key = !string.IsNullOrWhiteSpace(type.Id)
+                    ? type.Id
+                    : type.Type;
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    anonymous.Add(type);
+                }
+                else if (!unique.ContainsKey(key))
+                {
+                    unique[key] = type;
+                }
+            }
+            return unique.Values.Concat(anonymous).ToArray();
         }
 
         private static string BuildFailureReason(

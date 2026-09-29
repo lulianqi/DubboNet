@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 
 namespace DubboNet.DubboService.Native
 {
@@ -28,6 +30,15 @@ namespace DubboNet.DubboService.Native
         private const byte TwoWayFlag = 0x40;
         private const byte EventFlag = 0x20;
         private const byte SerializationMask = 0x1f;
+
+        private static readonly JsonSerializerOptions ResultJsonOptions =
+            new JsonSerializerOptions
+            {
+                // 保留中文等 Unicode 字符的可读形式，同时继续转义 JSON/HTML 敏感字符。
+                // EN: Keep Chinese and other Unicode characters readable while retaining
+                // the encoder's escaping of JSON/HTML-sensitive characters.
+                Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
+            };
 
         /// <summary>
         /// 将泛化调用编码为完整的双向 Dubbo2 请求帧。
@@ -253,7 +264,7 @@ namespace DubboNet.DubboService.Native
 
         internal static string SerializeJson(object value)
         {
-            return JsonSerializer.Serialize(ToJsonCompatible(value));
+            return JsonSerializer.Serialize(ToJsonCompatible(value), ResultJsonOptions);
         }
 
         internal static string DescribeException(object exception)
