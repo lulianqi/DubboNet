@@ -188,8 +188,19 @@ namespace DubboNet.Clients.DataModle
         /// 枚举类型的可选常量值。
         /// EN: Declared constants of an enum type.
         /// </summary>
-        [JsonPropertyName("enums")]
+        [JsonPropertyName("enum")]
         public List<string> EnumValues { get; set; } = new List<string>();
+
+        /// <summary>
+        /// 兼容 Dubbo 3.2+ 使用的复数字段名。
+        /// EN: Alias for the plural field name used by Dubbo 3.2+.
+        /// </summary>
+        [JsonPropertyName("enums")]
+        public List<string> Enums
+        {
+            get => EnumValues;
+            set => EnumValues = value ?? new List<string>();
+        }
 
         /// <summary>
         /// 指向另一类型定义的引用。

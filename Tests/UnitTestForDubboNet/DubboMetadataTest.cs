@@ -52,7 +52,8 @@ namespace UnitTestForDubboNet
                       "enums": ["ACTIVE", "INACTIVE"],
                       "properties": {
                         "name": { "type": "java.lang.String" }
-                      }
+                      },
+                      "typeBuilderName": "org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder"
                     }
                   ],
                   "parameters": {
@@ -89,9 +90,80 @@ namespace UnitTestForDubboNet
             Assert.Equal("demo-api.jar", method.CodeSource);
             Assert.Equal(DubboMetadataSource.MetadataCenter, method.MetadataSource);
             DubboTypeMetadata type = Assert.Single(method.TypeDefinitions);
+            Assert.Equal("com.foo.User", type.Id);
+            Assert.Equal("object", type.Type);
             Assert.Equal("java.lang.String", type.Properties["name"].Type);
             Assert.Equal(new[] { "ACTIVE", "INACTIVE" }, type.EnumValues);
+            Assert.Equal(
+                "org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder",
+                type.TypeBuilderName);
             Assert.Equal("1.0.0", method.ServiceParameters["version"]);
+        }
+
+        [Fact]
+        public void ParseMetadataDocument_MapsAllDubbo273TypeDefinitionFields()
+        {
+            const string json = """
+                {
+                  "canonicalName": "com.foo.DemoService",
+                  "methods": [
+                    {
+                      "name": "save",
+                      "parameterTypes": ["com.foo.Container"],
+                      "returnType": "void"
+                    }
+                  ],
+                  "types": [
+                    {
+                      "id": "container-id",
+                      "type": "com.foo.Container",
+                      "items": [
+                        {
+                          "type": "com.foo.Status",
+                          "enum": ["ACTIVE", "INACTIVE"],
+                          "typeBuilderName": "org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder"
+                        }
+                      ],
+                      "$ref": "com.foo.Container",
+                      "properties": {
+                        "status": {
+                          "type": "com.foo.Status",
+                          "$ref": "com.foo.Status"
+                        }
+                      },
+                      "typeBuilderName": "org.apache.dubbo.metadata.definition.builder.DefaultTypeBuilder"
+                    }
+                  ]
+                }
+                """;
+
+            IReadOnlyList<DubboMethodMetadata> methods =
+                DubboMetadataManager.ParseMetadataDocument(
+                    Encoding.UTF8.GetBytes(json),
+                    "com.foo.DemoService",
+                    Provider("2.7.3"),
+                    "/dubbo/metadata/com.foo.DemoService/provider/demo-provider",
+                    1,
+                    DateTimeOffset.UnixEpoch);
+
+            DubboTypeMetadata type = Assert.Single(Assert.Single(methods).TypeDefinitions);
+            Assert.Equal("container-id", type.Id);
+            Assert.Equal("com.foo.Container", type.Type);
+            Assert.Equal("com.foo.Container", type.Reference);
+            Assert.Equal(
+                "org.apache.dubbo.metadata.definition.builder.DefaultTypeBuilder",
+                type.TypeBuilderName);
+
+            DubboTypeMetadata item = Assert.Single(type.Items);
+            Assert.Equal("com.foo.Status", item.Type);
+            Assert.Equal(new[] { "ACTIVE", "INACTIVE" }, item.EnumValues);
+            Assert.Equal(
+                "org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder",
+                item.TypeBuilderName);
+
+            DubboTypeMetadata property = type.Properties["status"];
+            Assert.Equal("com.foo.Status", property.Type);
+            Assert.Equal("com.foo.Status", property.Reference);
         }
 
         [Fact]
@@ -439,6 +511,11 @@ namespace UnitTestForDubboNet
                         }
                       },
                       "typeBuilderName": "DefaultTypeBuilder"
+                    },
+                    {
+                      "type": "com.foo.EnvironmentTypeEnum",
+                      "enum": ["DEV", "PROD"],
+                      "typeBuilderName": "EnumTypeBuilder"
                     }
                   ]
                 }
@@ -478,13 +555,17 @@ namespace UnitTestForDubboNet
             IReadOnlyList<DubboTypeMetadata> cached =
                 await manager.GetServiceTypesAsync(serviceName);
 
-            DubboTypeMetadata request = Assert.Single(first);
+            DubboTypeMetadata request = Assert.Single(
+                first.Where(type => type.Type == "com.foo.CreateRequest"));
             Assert.Equal("com.foo.CreateRequest", request.Type);
             Assert.Equal("java.lang.String", request.Properties["name"].Type);
             Assert.Equal(
                 "java.util.List<com.foo.ChildRequest>",
                 request.Properties["children"].Type);
-            Assert.Single(cached);
+            DubboTypeMetadata environment = Assert.Single(
+                first.Where(type => type.Type == "com.foo.EnvironmentTypeEnum"));
+            Assert.Equal(new[] { "DEV", "PROD" }, environment.EnumValues);
+            Assert.Equal(2, cached.Count);
             Assert.Equal(1, existsCount);
             Assert.Equal(1, dataReadCount);
             Assert.Equal(0, telnetProbeCount);
