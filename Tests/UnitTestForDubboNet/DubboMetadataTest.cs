@@ -167,6 +167,116 @@ namespace UnitTestForDubboNet
         }
 
         [Fact]
+        public void ParseMetadataDocument_NormalizesOfficialStringTypeReferences()
+        {
+            const string json = """
+                {
+                  "canonicalName": "com.example.dubbonet.api.OrderService",
+                  "methods": [
+                    {
+                      "name": "calculateTotal",
+                      "parameterTypes": ["java.util.List<com.example.dubbonet.model.OrderItem>"],
+                      "returnType": "java.math.BigDecimal"
+                    }
+                  ],
+                  "types": [
+                    {
+                      "type": "java.util.List<com.example.dubbonet.model.OrderItem>",
+                      "items": ["com.example.dubbonet.model.OrderItem"],
+                      "properties": {},
+                      "enums": []
+                    },
+                    {
+                      "type": "com.example.dubbonet.model.OrderItem",
+                      "items": [],
+                      "properties": {
+                        "sku": "java.lang.String",
+                        "name": "java.lang.String",
+                        "quantity": "int",
+                        "unitPrice": "java.math.BigDecimal"
+                      },
+                      "enums": []
+                    },
+                    {
+                      "type": "java.util.Map<java.lang.String,com.example.dubbonet.model.OrderItem>",
+                      "items": [
+                        "java.lang.String",
+                        "com.example.dubbonet.model.OrderItem"
+                      ],
+                      "properties": {},
+                      "enums": []
+                    }
+                  ]
+                }
+                """;
+
+            DubboMethodMetadata method = Assert.Single(
+                DubboMetadataManager.ParseMetadataDocument(
+                    Encoding.UTF8.GetBytes(json),
+                    "com.example.dubbonet.api.OrderService",
+                    Provider("3.3.6"),
+                    "/dubbo-3.3.6/metadata/com.example.dubbonet.api.OrderService/1.0.0/provider/demo-provider",
+                    1,
+                    DateTimeOffset.UnixEpoch));
+
+            DubboTypeMetadata list = Assert.Single(method.TypeDefinitions.Where(type =>
+                type.Type == "java.util.List<com.example.dubbonet.model.OrderItem>"));
+            Assert.Equal("com.example.dubbonet.model.OrderItem", Assert.Single(list.Items).Type);
+
+            DubboTypeMetadata item = Assert.Single(method.TypeDefinitions.Where(type =>
+                type.Type == "com.example.dubbonet.model.OrderItem"));
+            Assert.Equal("java.lang.String", item.Properties["sku"].Type);
+            Assert.Equal("java.lang.String", item.Properties["name"].Type);
+            Assert.Equal("int", item.Properties["quantity"].Type);
+            Assert.Equal("java.math.BigDecimal", item.Properties["unitPrice"].Type);
+
+            DubboTypeMetadata map = Assert.Single(method.TypeDefinitions.Where(type =>
+                type.Type.StartsWith("java.util.Map", StringComparison.Ordinal)));
+            Assert.Equal(
+                new[] { "java.lang.String", "com.example.dubbonet.model.OrderItem" },
+                map.Items.Select(type => type.Type));
+        }
+
+        [Theory]
+        [InlineData("enum")]
+        [InlineData("enums")]
+        public void ParseMetadataDocument_AcceptsSingularAndPluralEnumFieldNames(
+            string enumFieldName)
+        {
+            string json = $$"""
+                {
+                  "canonicalName": "com.foo.DemoService",
+                  "methods": [
+                    {
+                      "name": "save",
+                      "parameterTypes": ["com.foo.Status"],
+                      "returnType": "void"
+                    }
+                  ],
+                  "types": [
+                    {
+                      "type": "com.foo.Status",
+                      "{{enumFieldName}}": ["ACTIVE", "INACTIVE"]
+                    }
+                  ]
+                }
+                """;
+
+            DubboMethodMetadata method = Assert.Single(
+                DubboMetadataManager.ParseMetadataDocument(
+                    Encoding.UTF8.GetBytes(json),
+                    "com.foo.DemoService",
+                    Provider("3.1.11"),
+                    "/dubbo-3.1.11/metadata/com.foo.DemoService/provider/demo-provider",
+                    1,
+                    DateTimeOffset.UnixEpoch));
+
+            Assert.Equal(
+                new[] { "ACTIVE", "INACTIVE" },
+                Assert.Single(method.TypeDefinitions).EnumValues);
+        }
+
+        [Fact]
         public void ParseMetadataDocument_MaterializesDubboJsonPathPropertyReferences()
         {
             const string json = """

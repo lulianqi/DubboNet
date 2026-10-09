@@ -111,9 +111,205 @@ namespace DubboNet.Clients
             }
         }
 
+        /// <summary>
+        /// Dubbo 官方 FullServiceDefinition 使用字符串表示元素和属性类型引用，部分旧版本或第三方实现则输出展开对象；
+        /// 此转换器将两种格式统一为 <see cref="DubboTypeMetadata"/>，使调用方无需感知元数据发布版本。
+        /// <para>EN: Dubbo's official FullServiceDefinition stores item and property type references as strings,
+        /// while some older or third-party publishers emit expanded objects. This converter normalizes both
+        /// representations into <see cref="DubboTypeMetadata"/> so callers remain independent of the publisher version.</para>
+        /// </summary>
+        private sealed class DubboTypeMetadataJsonConverter : JsonConverter<DubboTypeMetadata>
+        {
+            public override DubboTypeMetadata Read(
+                ref Utf8JsonReader reader,
+                Type typeToConvert,
+                JsonSerializerOptions options)
+            {
+                using JsonDocument document = JsonDocument.ParseValue(ref reader);
+                return ReadType(document.RootElement);
+            }
+
+            public override void Write(
+                Utf8JsonWriter writer,
+                DubboTypeMetadata value,
+                JsonSerializerOptions options)
+            {
+                if (value == null)
+                {
+                    writer.WriteNullValue();
+                    return;
+                }
+
+                writer.WriteStartObject();
+                WriteString(writer, "id", value.Id);
+                WriteString(writer, "type", value.Type);
+                if ((value.Items?.Count ?? 0) > 0)
+                {
+                    writer.WritePropertyName("items");
+                    writer.WriteStartArray();
+                    foreach (DubboTypeMetadata item in value.Items)
+                    {
+                        Write(writer, item, options);
+                    }
+                    writer.WriteEndArray();
+                }
+                if ((value.EnumValues?.Count ?? 0) > 0)
+                {
+                    writer.WritePropertyName("enums");
+                    writer.WriteStartArray();
+                    foreach (string enumValue in value.EnumValues)
+                    {
+                        writer.WriteStringValue(enumValue);
+                    }
+                    writer.WriteEndArray();
+                }
+                WriteString(writer, "$ref", value.Reference);
+                if ((value.Properties?.Count ?? 0) > 0)
+                {
+                    writer.WritePropertyName("properties");
+                    writer.WriteStartObject();
+                    foreach (KeyValuePair<string, DubboTypeMetadata> property in value.Properties)
+                    {
+                        writer.WritePropertyName(property.Key);
+                        Write(writer, property.Value, options);
+                    }
+                    writer.WriteEndObject();
+                }
+                WriteString(writer, "typeBuilderName", value.TypeBuilderName);
+                writer.WriteEndObject();
+            }
+
+            private static DubboTypeMetadata ReadType(JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    return new DubboTypeMetadata { Type = element.GetString() };
+                }
+
+                if (element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                {
+                    return new DubboTypeMetadata();
+                }
+
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    throw new JsonException(
+                        $"Expected a Dubbo type definition string or object, but found {element.ValueKind}.");
+                }
+
+                DubboTypeMetadata result = new DubboTypeMetadata();
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    if (property.Name.Equals("id", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Id = ReadOptionalString(property.Value);
+                    }
+                    else if (property.Name.Equals("type", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Type = ReadOptionalString(property.Value);
+                    }
+                    else if (property.Name.Equals("$ref", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Reference = ReadOptionalString(property.Value);
+                    }
+                    else if (property.Name.Equals("typeBuilderName", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.TypeBuilderName = ReadOptionalString(property.Value);
+                    }
+                    else if (property.Name.Equals("items", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Items = ReadItems(property.Value);
+                    }
+                    else if (property.Name.Equals("properties", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Properties = ReadProperties(property.Value);
+                    }
+                    else if (property.Name.Equals("enum", StringComparison.OrdinalIgnoreCase)
+                        || property.Name.Equals("enums", StringComparison.OrdinalIgnoreCase))
+                    {
+                        foreach (string enumValue in ReadEnumValues(property.Value))
+                        {
+                            if (!result.EnumValues.Contains(enumValue, StringComparer.Ordinal))
+                            {
+                                result.EnumValues.Add(enumValue);
+                            }
+                        }
+                    }
+                }
+                return result;
+            }
+
+            private static List<DubboTypeMetadata> ReadItems(JsonElement element)
+            {
+                if (element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                {
+                    return new List<DubboTypeMetadata>();
+                }
+                if (element.ValueKind != JsonValueKind.Array)
+                {
+                    return new List<DubboTypeMetadata> { ReadType(element) };
+                }
+                return element.EnumerateArray().Select(ReadType).ToList();
+            }
+
+            private static Dictionary<string, DubboTypeMetadata> ReadProperties(JsonElement element)
+            {
+                Dictionary<string, DubboTypeMetadata> result =
+                    new Dictionary<string, DubboTypeMetadata>(StringComparer.Ordinal);
+                if (element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                {
+                    return result;
+                }
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    throw new JsonException(
+                        $"Expected Dubbo type properties to be an object, but found {element.ValueKind}.");
+                }
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    result[property.Name] = ReadType(property.Value);
+                }
+                return result;
+            }
+
+            private static List<string> ReadEnumValues(JsonElement element)
+            {
+                if (element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                {
+                    return new List<string>();
+                }
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    return new List<string> { element.GetString() };
+                }
+                if (element.ValueKind != JsonValueKind.Array)
+                {
+                    throw new JsonException(
+                        $"Expected Dubbo enum values to be an array, but found {element.ValueKind}.");
+                }
+                return element.EnumerateArray()
+                    .Where(item => item.ValueKind == JsonValueKind.String)
+                    .Select(item => item.GetString())
+                    .Where(item => item != null)
+                    .ToList();
+            }
+
+            private static string ReadOptionalString(JsonElement element) =>
+                element.ValueKind == JsonValueKind.String ? element.GetString() : null;
+
+            private static void WriteString(Utf8JsonWriter writer, string name, string value)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    writer.WriteString(name, value);
+                }
+            }
+        }
+
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
-            PropertyNameCaseInsensitive = true
+            PropertyNameCaseInsensitive = true,
+            Converters = { new DubboTypeMetadataJsonConverter() }
         };
 
         private readonly MyZookeeper _metadataZookeeper;
@@ -526,7 +722,8 @@ namespace DubboNet.Clients
                 string preview = Encoding.UTF8.GetString(data, 0, Math.Min(data.Length, 256));
                 throw new DubboMetadataException(
                     $"Dubbo metadata node '{metadataPath}' does not contain a valid " +
-                    $"FullServiceDefinition JSON document. Data starts with: {preview}",
+                    $"FullServiceDefinition JSON document. {exception.Message} " +
+                    $"Data starts with: {preview}",
                     exception);
             }
 
