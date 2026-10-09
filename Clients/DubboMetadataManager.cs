@@ -542,6 +542,7 @@ namespace DubboNet.Clients
                 document.Parameters ?? new Dictionary<string, string>();
             IReadOnlyList<DubboTypeMetadata> types =
                 document.Types ?? new List<DubboTypeMetadata>();
+            MaterializeTypeReferences(types);
 
             foreach (DubboMethodMetadata method in document.Methods
                 ?? new List<DubboMethodMetadata>())
@@ -878,9 +879,8 @@ namespace DubboNet.Clients
         private static IReadOnlyList<DubboTypeMetadata> DeduplicateTypeDefinitions(
             IEnumerable<DubboTypeMetadata> types)
         {
-            Dictionary<string, DubboTypeMetadata> unique =
-                new Dictionary<string, DubboTypeMetadata>(StringComparer.Ordinal);
-            List<DubboTypeMetadata> anonymous = new List<DubboTypeMetadata>();
+            HashSet<string> namedTypes = new HashSet<string>(StringComparer.Ordinal);
+            List<DubboTypeMetadata> result = new List<DubboTypeMetadata>();
             foreach (DubboTypeMetadata type in types ?? Array.Empty<DubboTypeMetadata>())
             {
                 if (type == null)
@@ -891,16 +891,138 @@ namespace DubboNet.Clients
                 string key = !string.IsNullOrWhiteSpace(type.Id)
                     ? type.Id
                     : type.Type;
-                if (string.IsNullOrWhiteSpace(key))
+                if (string.IsNullOrWhiteSpace(key) || namedTypes.Add(key))
                 {
-                    anonymous.Add(type);
-                }
-                else if (!unique.ContainsKey(key))
-                {
-                    unique[key] = type;
+                    // Keep anonymous/reference entries in their original positions. Dubbo 2.7
+                    // emits JSONPath references such as $.types[3].properties.pageNo; moving all
+                    // anonymous entries to the end changes those indices and corrupts the schema.
+                    result.Add(type);
                 }
             }
-            return unique.Values.Concat(anonymous).ToArray();
+            return result;
+        }
+
+        private static void MaterializeTypeReferences(IReadOnlyList<DubboTypeMetadata> types)
+        {
+            Dictionary<string, DubboTypeMetadata> paths =
+                new Dictionary<string, DubboTypeMetadata>(StringComparer.Ordinal);
+            for (int index = 0; index < (types?.Count ?? 0); index++)
+            {
+                IndexTypeMetadata(
+                    types[index],
+                    $"$.types[{index}]",
+                    $"#/types/{index}",
+                    paths);
+            }
+
+            HashSet<DubboTypeMetadata> resolved = new HashSet<DubboTypeMetadata>();
+            HashSet<DubboTypeMetadata> resolving = new HashSet<DubboTypeMetadata>();
+            foreach (DubboTypeMetadata type in types ?? Array.Empty<DubboTypeMetadata>())
+            {
+                MaterializeTypeReference(type, paths, resolved, resolving);
+            }
+        }
+
+        private static void IndexTypeMetadata(
+            DubboTypeMetadata metadata,
+            string jsonPath,
+            string pointerPath,
+            IDictionary<string, DubboTypeMetadata> paths)
+        {
+            if (metadata == null)
+            {
+                return;
+            }
+
+            paths[jsonPath] = metadata;
+            paths[pointerPath] = metadata;
+            for (int index = 0; index < (metadata.Items?.Count ?? 0); index++)
+            {
+                IndexTypeMetadata(
+                    metadata.Items[index],
+                    $"{jsonPath}.items[{index}]",
+                    $"{pointerPath}/items/{index}",
+                    paths);
+            }
+            foreach (KeyValuePair<string, DubboTypeMetadata> property in
+                metadata.Properties ?? new Dictionary<string, DubboTypeMetadata>())
+            {
+                IndexTypeMetadata(
+                    property.Value,
+                    $"{jsonPath}.properties.{property.Key}",
+                    $"{pointerPath}/properties/{EscapeJsonPointerSegment(property.Key)}",
+                    paths);
+            }
+        }
+
+        private static void MaterializeTypeReference(
+            DubboTypeMetadata metadata,
+            IReadOnlyDictionary<string, DubboTypeMetadata> paths,
+            ISet<DubboTypeMetadata> resolved,
+            ISet<DubboTypeMetadata> resolving)
+        {
+            if (metadata == null || resolved.Contains(metadata) || !resolving.Add(metadata))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(metadata.Reference)
+                && paths.TryGetValue(metadata.Reference, out DubboTypeMetadata target)
+                && !ReferenceEquals(metadata, target))
+            {
+                MaterializeTypeReference(target, paths, resolved, resolving);
+                string targetType = !string.IsNullOrWhiteSpace(target.Id)
+                    && IsTypeCategory(target.Type)
+                        ? target.Id
+                        : target.Type ?? target.Id;
+                if (string.IsNullOrWhiteSpace(metadata.Type)
+                    && !string.IsNullOrWhiteSpace(targetType))
+                {
+                    metadata.Type = targetType;
+                }
+                if (string.IsNullOrWhiteSpace(metadata.TypeBuilderName))
+                {
+                    metadata.TypeBuilderName = target.TypeBuilderName;
+                }
+                if ((metadata.EnumValues?.Count ?? 0) == 0
+                    && (target.EnumValues?.Count ?? 0) > 0)
+                {
+                    metadata.EnumValues = target.EnumValues.ToList();
+                }
+            }
+
+            foreach (DubboTypeMetadata item in metadata.Items
+                ?? new List<DubboTypeMetadata>())
+            {
+                MaterializeTypeReference(item, paths, resolved, resolving);
+            }
+            foreach (DubboTypeMetadata property in (metadata.Properties
+                ?? new Dictionary<string, DubboTypeMetadata>()).Values)
+            {
+                MaterializeTypeReference(property, paths, resolved, resolving);
+            }
+
+            resolving.Remove(metadata);
+            resolved.Add(metadata);
+        }
+
+        private static bool IsTypeCategory(string type)
+        {
+            return type != null && (type.Equals("object", StringComparison.OrdinalIgnoreCase)
+                || type.Equals("array", StringComparison.OrdinalIgnoreCase)
+                || type.Equals("collection", StringComparison.OrdinalIgnoreCase)
+                || type.Equals("map", StringComparison.OrdinalIgnoreCase)
+                || type.Equals("enum", StringComparison.OrdinalIgnoreCase)
+                || type.Equals("string", StringComparison.OrdinalIgnoreCase)
+                || type.Equals("number", StringComparison.OrdinalIgnoreCase)
+                || type.Equals("boolean", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static string EscapeJsonPointerSegment(string value)
+        {
+            return value
+                .Replace("~", "~0", StringComparison.Ordinal)
+                .Replace("/", "~1", StringComparison.Ordinal);
         }
 
         private static string BuildFailureReason(

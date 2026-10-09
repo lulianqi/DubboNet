@@ -167,6 +167,64 @@ namespace UnitTestForDubboNet
         }
 
         [Fact]
+        public void ParseMetadataDocument_MaterializesDubboJsonPathPropertyReferences()
+        {
+            const string json = """
+                {
+                  "canonicalName": "com.example.dubbonet.api.OrderService",
+                  "methods": [
+                    {
+                      "name": "calculateTotal",
+                      "parameterTypes": ["java.util.List<com.example.dubbonet.model.OrderItem>"],
+                      "returnType": "java.math.BigDecimal"
+                    }
+                  ],
+                  "types": [
+                    {
+                      "type": "com.example.dubbonet.model.Order",
+                      "properties": {
+                        "orderId": { "type": "java.lang.String" },
+                        "totalAmount": { "type": "java.math.BigDecimal" }
+                      }
+                    },
+                    {
+                      "type": "com.example.dubbonet.model.OrderQuery",
+                      "properties": {
+                        "pageNo": { "type": "int" }
+                      }
+                    },
+                    {
+                      "type": "com.example.dubbonet.model.OrderItem",
+                      "properties": {
+                        "name": { "$ref": "$.types[0].properties.orderId" },
+                        "quantity": { "$ref": "$.types[1].properties.pageNo" },
+                        "sku": { "$ref": "#/types/0/properties/orderId" },
+                        "unitPrice": { "$ref": "$.types[0].properties.totalAmount" }
+                      }
+                    }
+                  ]
+                }
+                """;
+
+            DubboMethodMetadata method = Assert.Single(
+                DubboMetadataManager.ParseMetadataDocument(
+                    Encoding.UTF8.GetBytes(json),
+                    "com.example.dubbonet.api.OrderService",
+                    Provider("2.7.3"),
+                    "/dubbo/metadata/com.example.dubbonet.api.OrderService/provider/demo-provider",
+                    1,
+                    DateTimeOffset.UnixEpoch));
+            DubboTypeMetadata item = Assert.Single(method.TypeDefinitions.Where(type =>
+                type.Type == "com.example.dubbonet.model.OrderItem"));
+
+            Assert.Equal("java.lang.String", item.Properties["name"].Type);
+            Assert.Equal("int", item.Properties["quantity"].Type);
+            Assert.Equal("java.lang.String", item.Properties["sku"].Type);
+            Assert.Equal("java.math.BigDecimal", item.Properties["unitPrice"].Type);
+            Assert.Equal("$.types[0].properties.orderId", item.Properties["name"].Reference);
+        }
+
+        [Fact]
         public void Resolve_SelectsIntegerOverloadForClrInt()
         {
             DubboMethodMetadata resolved = DubboMethodMetadataResolver.Resolve(
@@ -513,6 +571,9 @@ namespace UnitTestForDubboNet
                       "typeBuilderName": "DefaultTypeBuilder"
                     },
                     {
+                      "$ref": "$.types[0].properties.name"
+                    },
+                    {
                       "type": "com.foo.EnvironmentTypeEnum",
                       "enum": ["DEV", "PROD"],
                       "typeBuilderName": "EnumTypeBuilder"
@@ -565,7 +626,9 @@ namespace UnitTestForDubboNet
             DubboTypeMetadata environment = Assert.Single(
                 first.Where(type => type.Type == "com.foo.EnvironmentTypeEnum"));
             Assert.Equal(new[] { "DEV", "PROD" }, environment.EnumValues);
-            Assert.Equal(2, cached.Count);
+            Assert.Equal("$.types[0].properties.name", first[1].Reference);
+            Assert.Equal("java.lang.String", first[1].Type);
+            Assert.Equal(3, cached.Count);
             Assert.Equal(1, existsCount);
             Assert.Equal(1, dataReadCount);
             Assert.Equal(0, telnetProbeCount);

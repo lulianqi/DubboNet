@@ -45,10 +45,10 @@ DubboClient
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `1.3.1`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `1.3.2`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 1.3.1
+dotnet add package DubboNet --version 1.3.2
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：

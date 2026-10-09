@@ -5,9 +5,10 @@ using DubboNet.DubboService.DataModle;
 using System.Diagnostics;
 using System.Web;
 
-string zooKeeper = args.Length > 0 ? args[0] : "10.90.0.234:2181";
+string zooKeeper = args.Length > 0 ? args[0] : "110.40.136.183:2181";
 using DubboClient client = new DubboClient(zooKeeper, new DubboClient.DubboClientConf
 {
+    DubboRootPath="dubbo-2.7.23",
     DubboRequestTimeout = 10_000,
     TelnetMetadataTimeout = 10_000,
     MaintainServiceNum = 10,
@@ -27,9 +28,12 @@ foreach (string endpoint in endpoints)
     await PrintMethodMetadata(endpoint, "first lookup");
     await PrintMethodMetadata(endpoint, "cached lookup");
 }
+DubboRequestResult checkTestResult0 = await client.QueryGenericAsync(
+    "com.example.dubbonet.api.DataTypeService.add", 1, 2);
+Console.WriteLine(checkTestResult0.ToString());
 
 DubboRequestResult checkTestResult = await client.QueryGenericAsync(
-    "com.byai.tiandun.api.strategy.TiandunCheckRemoteService.checkTest");
+    "com.example.dubbonet.api.DataTypeService.add",new string[] { "int", "int" }, 1, 2);
 Console.WriteLine(checkTestResult.ToString());
 
 await Invoke(

@@ -185,6 +185,96 @@ namespace UnitTestForDubboNet
         }
 
         [Fact]
+        public void EncodeGenericRequest_NormalizesUnsupportedClrScalarsInNestedCollections()
+        {
+            DubboInvocation invocation = new DubboInvocation(
+                "com.foo.OrderService",
+                "calculateTotal",
+                new[] { "java.util.List" },
+                new object[]
+                {
+                    new object[]
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["sku"] = "SKU-A",
+                            ["quantity"] = (short)2,
+                            ["unitPrice"] = 79.90m,
+                            ["marker"] = 'A',
+                            ["sequence"] = (uint)7
+                        }
+                    }
+                });
+
+            byte[] encoded = NativeDubboCodec.EncodeGenericRequestBody(
+                    invocation,
+                    null,
+                    null,
+                    1000);
+            Dictionary<object, object>[][] arguments =
+                ReadGenericArguments<Dictionary<object, object>[][]>(encoded);
+            IDictionary item = arguments[0][0];
+
+            Assert.Equal(2, Assert.IsType<int>(item["quantity"]));
+            Assert.Equal(79.90d, Assert.IsType<double>(item["unitPrice"]));
+            Assert.Equal("A", Assert.IsType<string>(item["marker"]));
+            Assert.Equal(7L, Assert.IsType<long>(item["sequence"]));
+        }
+
+        [Fact]
+        public void EncodeGenericRequest_NormalizesDecimalPropertiesInNestedPocos()
+        {
+            DubboInvocation invocation = new DubboInvocation(
+                "com.foo.OrderService",
+                "calculateTotal",
+                new[] { "java.util.List" },
+                new object[]
+                {
+                    new[]
+                    {
+                        new DecimalOrderItem
+                        {
+                            Sku = "SKU-A",
+                            Quantity = 2,
+                            UnitPrice = 79.90m
+                        }
+                    }
+                });
+
+            byte[] encoded = NativeDubboCodec.EncodeGenericRequestBody(
+                    invocation,
+                    null,
+                    null,
+                    1000);
+            Dictionary<object, object>[][] arguments =
+                ReadGenericArguments<Dictionary<object, object>[][]>(encoded);
+            IDictionary item = arguments[0][0];
+
+            Assert.Equal("SKU-A", item["Sku"]);
+            Assert.Equal(2, item["Quantity"]);
+            Assert.Equal(79.90d, Assert.IsType<double>(item["UnitPrice"]));
+        }
+
+        [Fact]
+        public void EncodeGenericRequest_RejectsUInt64OutsideHessianLongRange()
+        {
+            DubboInvocation invocation = new DubboInvocation(
+                "com.foo.DemoService",
+                "accept",
+                new[] { "java.lang.Object" },
+                new object[] { ulong.MaxValue });
+
+            ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(
+                () => NativeDubboCodec.EncodeGenericRequestBody(
+                    invocation,
+                    null,
+                    null,
+                    1000));
+
+            Assert.Contains("Int64.MaxValue", exception.Message);
+        }
+
+        [Fact]
         public void DecodeResponse_ReadsUnicodeErrorBody()
         {
             byte[] body;
@@ -281,6 +371,25 @@ namespace UnitTestForDubboNet
             Dictionary<string, object> value = Assert.IsType<Dictionary<string, object>>(response.Value);
 
             Assert.Equal("[Circular reference]", value["self"]);
+        }
+
+        private static T ReadGenericArguments<T>(byte[] body)
+        {
+            using MemoryStream stream = new MemoryStream(body, false);
+            using HessianStreamReader reader = new HessianStreamReader(stream, true);
+            HessianInputV2 input = new HessianInputV2(reader, TypeBindings.Java);
+            for (int i = 0; i < 7; i++)
+            {
+                _ = input.ReadObject();
+            }
+            return Assert.IsType<T>(input.ReadObject(typeof(T)));
+        }
+
+        private sealed class DecimalOrderItem
+        {
+            public string Sku { get; set; } = string.Empty;
+            public ushort Quantity { get; set; }
+            public decimal UnitPrice { get; set; }
         }
 
         private sealed class CodecPojo

@@ -200,10 +200,10 @@ namespace DubboNet.Clients
         public string MetadataCenterAddress { get; private set; }
 
         /// <summary>
-        /// 当前用于读取 Dubbo 元数据文档的根路径。
-        /// EN: Effective root path used to read Dubbo metadata documents.
+        /// 构造完成后用于读取 Dubbo 元数据文档的实际根路径；未显式配置时继承规范化后的 <see cref="DubboRootPath"/>。
+        /// EN: Effective root path used to read Dubbo metadata documents after construction; when omitted, it inherits the normalized <see cref="DubboRootPath"/>.
         /// </summary>
-        public string MetadataRootPath { get; private set; } = "/dubbo";
+        public string MetadataRootPath { get; private set; }
 
         /// <summary>
         /// 默认当前Dubbo方法名称

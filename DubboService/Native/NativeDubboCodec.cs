@@ -40,6 +40,12 @@ namespace DubboNet.DubboService.Native
                 Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
             };
 
+        private static readonly JsonSerializerOptions ArgumentJsonOptions =
+            new JsonSerializerOptions
+            {
+                IncludeFields = true
+            };
+
         /// <summary>
         /// 将泛化调用编码为完整的双向 Dubbo2 请求帧。
         /// <para>EN: Encodes a generic invocation as a complete two-way Dubbo2 request frame.</para>
@@ -119,9 +125,14 @@ namespace DubboNet.DubboService.Native
             string effectiveVersion = invocation.Version ?? serviceVersion;
             string effectiveGroup = invocation.Group ?? group;
             object[] arguments = new object[invocation.Arguments.Count];
+            Dictionary<object, object> normalizedReferences =
+                new Dictionary<object, object>(ReferenceEqualityComparer.Instance);
             for (int i = 0; i < arguments.Length; i++)
             {
-                arguments[i] = PrepareArgument(invocation.Arguments[i], invocation.ParameterTypes[i]);
+                object prepared = PrepareArgument(
+                    invocation.Arguments[i],
+                    invocation.ParameterTypes[i]);
+                arguments[i] = NormalizeHessianArgument(prepared, normalizedReferences);
             }
 
             output.WriteString(ProtocolVersion);
@@ -360,7 +371,9 @@ namespace DubboNet.DubboService.Native
                 default:
                     if (value != null && value is not string && IsPojoType(javaType))
                     {
-                        JsonElement serialized = JsonSerializer.SerializeToElement(value);
+                        JsonElement serialized = JsonSerializer.SerializeToElement(
+                            value,
+                            ArgumentJsonOptions);
                         if (serialized.ValueKind == JsonValueKind.Object)
                         {
                             return FromJsonElement(serialized, javaType);
@@ -415,6 +428,127 @@ namespace DubboNet.DubboService.Native
                 default:
                     throw new NotSupportedException($"Unsupported JSON value kind {element.ValueKind}.");
             }
+        }
+
+        private static object NormalizeHessianArgument(
+            object value,
+            Dictionary<object, object> normalizedReferences)
+        {
+            if (value == null
+                || value is string
+                || value is bool
+                || value is int
+                || value is long
+                || value is float
+                || value is double
+                || value is DateTime
+                || value is byte[]
+                || value is Enum)
+            {
+                return value;
+            }
+
+            // NHessian 0.4.3 only writes int, long, float and double as native
+            // Hessian numbers. Unsupported CLR numeric structs are otherwise
+            // reflected as POJOs; decimal/UInt64 can then recurse through their
+            // own backing fields until a StackOverflowException occurs.
+            if (value is decimal decimalValue)
+            {
+                return Convert.ToDouble(decimalValue);
+            }
+            if (value is byte
+                || value is sbyte
+                || value is short
+                || value is ushort)
+            {
+                return Convert.ToInt32(value);
+            }
+            if (value is uint uintValue)
+            {
+                return Convert.ToInt64(uintValue);
+            }
+            if (value is ulong ulongValue)
+            {
+                if (ulongValue > long.MaxValue)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(value),
+                        ulongValue,
+                        "UInt64 values greater than Int64.MaxValue cannot be encoded by Hessian2.");
+                }
+                return Convert.ToInt64(ulongValue);
+            }
+            if (value is char character)
+            {
+                return character.ToString();
+            }
+            if (value is DateTimeOffset dateTimeOffset)
+            {
+                return dateTimeOffset.UtcDateTime;
+            }
+            if (value is Guid guid)
+            {
+                return guid.ToString();
+            }
+            if (value is JsonDocument document)
+            {
+                return NormalizeHessianArgument(
+                    FromJsonElement(document.RootElement),
+                    normalizedReferences);
+            }
+            if (value is JsonElement element)
+            {
+                return NormalizeHessianArgument(
+                    FromJsonElement(element),
+                    normalizedReferences);
+            }
+
+            if (normalizedReferences.TryGetValue(value, out object existing))
+            {
+                return existing;
+            }
+
+            if (value is IDictionary dictionary)
+            {
+                Dictionary<object, object> normalized =
+                    new Dictionary<object, object>();
+                normalizedReferences[value] = normalized;
+                foreach (DictionaryEntry entry in dictionary)
+                {
+                    object key = NormalizeHessianArgument(entry.Key, normalizedReferences);
+                    if (key == null)
+                    {
+                        throw new ArgumentException(
+                            "Hessian request maps cannot contain a null key.",
+                            nameof(value));
+                    }
+                    normalized[key] = NormalizeHessianArgument(
+                        entry.Value,
+                        normalizedReferences);
+                }
+                return normalized;
+            }
+
+            if (value is IEnumerable enumerable)
+            {
+                List<object> normalized = new List<object>();
+                normalizedReferences[value] = normalized;
+                foreach (object item in enumerable)
+                {
+                    normalized.Add(NormalizeHessianArgument(item, normalizedReferences));
+                }
+                return normalized;
+            }
+
+            JsonElement serialized = JsonSerializer.SerializeToElement(
+                value,
+                ArgumentJsonOptions);
+            object normalizedPojo = FromJsonElement(serialized);
+            object normalizedValue = NormalizeHessianArgument(
+                normalizedPojo,
+                normalizedReferences);
+            normalizedReferences[value] = normalizedValue;
+            return normalizedValue;
         }
 
         private static object AddPojoClass(object value, string javaType)
