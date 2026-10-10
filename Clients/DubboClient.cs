@@ -386,8 +386,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 使用明确的 Java 参数类型执行原生 Dubbo 泛化调用；重载方法、null、集合和 POJO 参数建议使用此重载。
-        /// EN: Performs a native Dubbo generic invocation with explicit Java parameter types; use this overload for overloaded methods, nulls, collections, and POJO arguments.
+        /// 使用明确的 Java 参数类型执行 Dubbo/Triple 泛化调用；重载方法、null、集合和 POJO 参数建议使用此重载。
+        /// EN: Performs a Dubbo/Triple generic invocation with explicit Java parameter types; use this overload for overloaded methods, nulls, collections, and POJO arguments.
         /// </summary>
         /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
         /// <param name="javaParameterTypes">按声明顺序排列的精确 Java 参数类型。EN: Exact Java parameter type names in declaration order.</param>
@@ -412,8 +412,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 执行原生 Dubbo 泛化调用；精确 Java 参数类型从元数据中心或服务 Telnet 端点解析并按服务缓存。
-        /// EN: Performs a native Dubbo generic invocation; exact Java parameter types are resolved from the metadata center or service Telnet endpoint and cached per service.
+        /// 执行 Dubbo/Triple 泛化调用；精确 Java 参数类型从元数据中心或服务 Telnet 端点解析并按服务缓存。
+        /// EN: Performs a Dubbo/Triple generic invocation; exact Java parameter types are resolved from the metadata center or service Telnet endpoint and cached per service.
         /// </summary>
         /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
         /// <param name="arguments">用于选择方法签名的调用参数。EN: Invocation arguments used to select the method signature.</param>
@@ -435,8 +435,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 使用明确的 Java 参数类型执行原生 Dubbo 泛化调用，并将响应反序列化为指定类型。
-        /// EN: Performs a native Dubbo generic invocation with explicit Java parameter types and deserializes the response.
+        /// 使用明确的 Java 参数类型执行 Dubbo/Triple 泛化调用，并将响应反序列化为指定类型。
+        /// EN: Performs a Dubbo/Triple generic invocation with explicit Java parameter types and deserializes the response.
         /// </summary>
         /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
         /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
@@ -457,8 +457,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 执行原生 Dubbo 泛化调用并反序列化响应；Java 参数类型从元数据中心或 Telnet 回退解析。
-        /// EN: Performs a native Dubbo generic invocation and deserializes the response; Java parameter types are resolved from the metadata center or Telnet fallback.
+        /// 执行 Dubbo/Triple 泛化调用并反序列化响应；Java 参数类型从元数据中心或 Telnet 回退解析。
+        /// EN: Performs a Dubbo/Triple generic invocation and deserializes the response; Java parameter types are resolved from the metadata center or Telnet fallback.
         /// </summary>
         /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
         /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
@@ -474,8 +474,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 根据 <see cref="DubboInvocation"/> 执行原生 Dubbo 泛化调用；参数类型为空时自动解析元数据。
-        /// EN: Performs a native Dubbo generic invocation described by <see cref="DubboInvocation"/>; metadata is resolved when parameter types are empty.
+        /// 根据 <see cref="DubboInvocation"/> 执行 Dubbo/Triple 泛化调用；参数类型为空时自动解析元数据。
+        /// EN: Performs a Dubbo/Triple generic invocation described by <see cref="DubboInvocation"/>; metadata is resolved when parameter types are empty.
         /// </summary>
         /// <param name="invocation">调用描述，包括服务、方法、参数类型、参数和附件。EN: Invocation descriptor containing the service, method, parameter types, arguments, and attachments.</param>
         /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
@@ -505,8 +505,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 根据调用描述执行原生 Dubbo 泛化调用，并将响应反序列化为指定类型。
-        /// EN: Performs a native Dubbo generic invocation from a descriptor and deserializes the response.
+        /// 根据调用描述执行 Dubbo/Triple 泛化调用，并将响应反序列化为指定类型。
+        /// EN: Performs a Dubbo/Triple generic invocation from a descriptor and deserializes the response.
         /// </summary>
         /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
         /// <param name="invocation">调用描述。EN: Invocation descriptor.</param>
@@ -709,9 +709,11 @@ namespace DubboNet.Clients
             {
                 if (nativeInvocation != null)
                 {
-                    if (availableDubboActuatorInfo.AvailableDubboActuatorSuite is NativeDubboActuatorSuite nativeSuite)
+                    if (availableDubboActuatorInfo.AvailableDubboActuatorSuite
+                        is IDubboGenericInvocationActuator genericInvocationSuite)
                     {
-                        return await nativeSuite.SendQuery(nativeInvocation).ConfigureAwait(false);
+                        return await genericInvocationSuite.SendQuery(nativeInvocation)
+                            .ConfigureAwait(false);
                     }
 
                     return new DubboRequestResult
@@ -719,7 +721,7 @@ namespace DubboNet.Clients
                         QuerySuccess = false,
                         ServiceElapsed = -1,
                         ErrorMeaasge =
-                            $"Explicit Dubbo generic invocation requires a dubbo:// provider, but " +
+                            $"Explicit Dubbo generic invocation requires a dubbo:// or tri:// provider, but " +
                             $"{availableDubboActuatorInfo.AvailableDubboActuatorSuite.ProtocolType} was selected."
                     };
                 }

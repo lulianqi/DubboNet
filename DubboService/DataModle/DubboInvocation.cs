@@ -4,9 +4,9 @@ using System.Collections.Generic;
 namespace DubboNet.DubboService.DataModle
 {
     /// <summary>
-    /// 描述一次原生 Dubbo 泛化调用；ParameterTypes 使用 Java 源码类型名，例如
+    /// 描述一次 Dubbo 或 Triple 泛化调用；ParameterTypes 使用 Java 源码类型名，例如
     /// "java.lang.String"、"int" 或 "com.foo.User"。
-    /// EN: Describes one native Dubbo generic invocation. ParameterTypes contains Java
+    /// EN: Describes one Dubbo or Triple generic invocation. ParameterTypes contains Java
     /// source type names such as "java.lang.String", "int", or "com.foo.User".
     /// </summary>
     public sealed class DubboInvocation

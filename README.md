@@ -1,15 +1,15 @@
 # DubboNet
 
-DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper 发现 Provider，依据 Provider URL 选择传输执行器，并通过经典 Dubbo TCP 协议发送 Hessian2 `$invoke` 泛化请求，因此调用方不需要引用 Java 接口 JAR。
+DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper 发现 Provider，依据 Provider URL 选择传输执行器，并通过经典 Dubbo TCP/Hessian2 或 Dubbo 3 Triple HTTP/JSON 调用 Java 接口，因此调用方不需要引用 Java 接口 JAR。
 
-> 当前项目目标框架为 **.NET 10**。原生 Dubbo TCP 调用已在 **Dubbo 2.7.3** Provider 上完成真实环境验证。其他版本的支持边界请先阅读[版本兼容性 / Compatibility](#版本兼容性--compatibility)。
+> 当前项目目标框架为 **.NET 10**。原生 Dubbo TCP 调用已在 **Dubbo 2.7.3** Provider 上完成真实环境验证；Triple 第一期已在 **Dubbo 3.3.6** Java Interface Provider 上完成真实环境验证。其他版本的支持边界请先阅读[版本兼容性 / Compatibility](#版本兼容性--compatibility)。
 
 ## 功能概览 / Features
 
 - 从 ZooKeeper 的经典接口级目录 `/dubbo/{interface}/providers` 自动发现和监听 Provider。
 - 根据 Provider URL scheme 自动选择执行器：
   - `dubbo://`：`NativeDubboActuatorSuite`，使用 Dubbo2 TCP 帧和 Hessian2 泛化调用。
-  - `tri://`：`HttpDubboActuatorSuite`，使用 HTTP POST + JSON；它不是完整的 Triple/gRPC 实现。
+  - `tri://`：`TripleDubboActuatorSuite`，使用 Dubbo 3.3 的 Java Interface Unary HTTP/JSON 调用。
 - 支持按权重随机、平滑加权轮询、最短响应、一致性 Hash 等负载策略。
 - 自动从 Dubbo 元数据中心或 Provider Telnet `ls -l` 获取 Java 方法签名。
 - 根据实参数量和 CLR 类型推断重载，并缓存方法元数据。
@@ -38,17 +38,17 @@ DubboClient
    |
    +-- DubboServiceDriver --> 负载均衡 --> 按 scheme 选择执行器
            |-- dubbo:// --> NativeDubboActuatorSuite --> Dubbo TCP + Hessian2
-           +-- tri://   --> HttpDubboActuatorSuite   --> HTTP POST + JSON
+           +-- tri://   --> TripleDubboActuatorSuite --> Triple Unary HTTP/JSON
 ```
 
 `release` 只决定元数据获取顺序；执行器由 Provider URL 的 scheme 决定。Provider URL 中的 `dubbo=2.0.2` 是经典线协议版本，`version` 和 `group` 则是服务路由信息，这几个字段不要混用。
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `1.3.3`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `2.0.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 1.3.3
+dotnet add package DubboNet --version 2.0.0
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
@@ -243,6 +243,28 @@ var invocation = new DubboInvocation(
     new object[] { 1234 });
 
 DubboRequestResult result = await suite.SendQuery(invocation);
+```
+
+Dubbo 3.3+ Java Interface 服务也可以直接使用 Triple 第一期执行器。请求会发送到
+`/{service}/{method}`，正文始终是 JSON 参数数组，并携带服务 version/group 路由头：
+
+```csharp
+using var triple = new TripleDubboActuatorSuite(
+    "127.0.0.1",
+    50051,
+    new DubboActuatorSuiteConf { DubboRequestTimeout = 10_000 });
+
+var invocation = new DubboInvocation(
+    "com.foo.DataTypeService",
+    "negate",
+    new[] { "boolean" },
+    new object[] { false })
+{
+    Version = "1.0.0",
+    Group = "default"
+};
+
+DubboRequestResult result = await triple.SendQuery(invocation);
 ```
 
 Provider 开放 Dubbo Telnet 命令时，也可以显式使用 `DubboActuator` 做诊断：
@@ -456,7 +478,8 @@ else
 | Dubbo `< 2.7.3` | **条件兼容，未逐版本验证** | 自动签名依赖 Provider Telnet；也可完全绕过元数据并显式传入 Java 类型 |
 | Dubbo 3.x 的 classic `dubbo://` 兼容模式 | **条件兼容，未完整验证** | 仅限继续发布经典接口级 ZooKeeper URL 并接受 Dubbo2/Hessian2 `$invoke` 的 Provider |
 | Dubbo 3 应用级服务发现 | **未实现** | 未实现 Dubbo 3 application-level service discovery 元数据布局 |
-| 原生 Triple/gRPC | **未实现** | `tri://` 当前映射到 HTTP JSON 适配器，不是标准 Triple 客户端 |
+| Dubbo 3.3.6 + `tri://` + Java Interface Unary JSON | **真实验证（第一期）** | 支持 HTTP/1.1、`application/json`、version/group/timeout 头和 attachments |
+| Triple Protobuf/IDL、流式调用、gRPC framing | **未实现** | 第一期仅覆盖 Java Interface Unary HTTP/JSON，不宣称完整 Triple/gRPC 能力 |
 | Dubbo Telnet/QoS | **可选** | 仅在 Provider 地址和端口开放相关命令时用于元数据兜底和诊断 |
 
 ## 协议与序列化限制 / Protocol and Serialization Limits
@@ -479,6 +502,8 @@ else
 - ZooKeeper Provider URL 的 host 当前必须是 IP 地址，域名/主机名不会自动解析。
 
 更详细的帧头、请求体字段和响应结果 flag 请阅读 [Docs/NativeDubboProtocol.md](Docs/NativeDubboProtocol.md)。
+
+Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/TripleProtocol.md](Docs/TripleProtocol.md)。
 
 ## 使用建议 / Recommendations
 
@@ -549,7 +574,11 @@ var methods = await client.GetMethodMetadataAsync(
 
 ### `tri://` 调用失败
 
-当前 `HttpDubboActuatorSuite` 只是向 `http://{host}:{port}/{service}/{method}` 发送 JSON POST，不实现标准 Triple/gRPC framing。标准 Dubbo 3 Triple Provider 需要另行实现原生 Triple 客户端，不能把现有 `tri://` 分支视为完整支持。
+确认 Provider 使用 Dubbo 3.3+ 并开放 Java Interface 的 HTTP/JSON 访问。第一期执行器会向
+`http://{host}:{port}/{service}/{method}` 发送 HTTP/1.1 JSON POST，正文必须是参数数组，单参数也应为 `[value]`。有多个 version/group 时还要保证注册 URL 中这两个字段准确。
+
+第一期不支持 Protobuf/IDL、流式调用或 gRPC framing；这些服务不能通过当前的
+`TripleDubboActuatorSuite` 调用。
 
 ### 请求超时或连接中断
 

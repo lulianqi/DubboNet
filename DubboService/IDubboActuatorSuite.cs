@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DubboNet.DubboService
@@ -34,7 +35,39 @@ namespace DubboNet.DubboService
         /// 原生 Dubbo2 TCP 协议。
         /// EN: The native Dubbo2 TCP protocol.
         /// </summary>
-        NativeDubbo
+        NativeDubbo,
+        /// <summary>
+        /// 使用 HTTP 和 JSON 编码的 Dubbo Triple Java 接口一元调用。
+        /// EN: Dubbo Triple Java-interface unary invocation over HTTP with JSON encoding.
+        /// </summary>
+        Triple
+    }
+
+    /// <summary>
+    /// 为可直接识别 <see cref="DubboInvocation"/> 的传输层提供结构化泛化调用能力，例如原生 Dubbo 和 Triple。
+    /// EN: Exposes structured generic invocation support for transports that understand
+    /// <see cref="DubboInvocation"/> directly, such as native Dubbo and Triple.
+    /// </summary>
+    public interface IDubboGenericInvocationActuator
+    {
+        /// <summary>
+        /// 发送结构化泛化调用。
+        /// EN: Sends a structured generic invocation.
+        /// </summary>
+        /// <param name="invocation">调用描述。EN: Invocation descriptor.</param>
+        /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
+        Task<DubboRequestResult> SendQuery(DubboInvocation invocation);
+
+        /// <summary>
+        /// 发送支持取消的结构化泛化调用。
+        /// EN: Sends a structured generic invocation with cancellation.
+        /// </summary>
+        /// <param name="invocation">调用描述。EN: Invocation descriptor.</param>
+        /// <param name="cancellationToken">取消令牌。EN: Cancellation token.</param>
+        /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
+        Task<DubboRequestResult> SendQuery(
+            DubboInvocation invocation,
+            CancellationToken cancellationToken);
     }
 
     /// <summary>

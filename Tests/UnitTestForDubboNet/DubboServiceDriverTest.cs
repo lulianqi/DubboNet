@@ -83,6 +83,30 @@ namespace UnitTestForDubboNet
             Assert.Equal(DubboActuatorProtocolType.NativeDubbo, suite.ProtocolType);
         }
 
+        [Fact]
+        public void TriProviderScheme_SelectsTripleDubboActuatorSuite()
+        {
+            DubboServiceEndPointInfo endpoint = new DubboServiceEndPointInfo
+            {
+                EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 50051),
+                Scheme = "tri",
+                Interface = "com.foo.DemoService",
+                Release = "3.3.6",
+                Version = "1.0.0",
+                Group = "demo"
+            };
+
+            using DubboServiceDriver driver = new DubboServiceDriver(
+                endpoint.Interface,
+                new List<DubboServiceEndPointInfo> { endpoint },
+                new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
+
+            IDubboActuatorSuite suite = driver.GetDubboActuatorSuite(LoadBalanceMode.Random);
+
+            Assert.IsType<TripleDubboActuatorSuite>(suite);
+            Assert.Equal(DubboActuatorProtocolType.Triple, suite.ProtocolType);
+        }
+
 
         private void SetDubboActuatorSuiteStatusByReflection(IDubboActuatorSuite dubboActuatorSuite ,int lastQueryElapsed)
         {

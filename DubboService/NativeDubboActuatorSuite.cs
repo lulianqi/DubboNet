@@ -17,7 +17,7 @@ namespace DubboNet.DubboService
     /// EN: A native Dubbo2 TCP actuator using Hessian2 generic invocation. A single TCP
     /// connection can multiplex concurrent requests by request id.
     /// </summary>
-    public sealed class NativeDubboActuatorSuite : IDubboActuatorSuite
+    public sealed class NativeDubboActuatorSuite : IDubboActuatorSuite, IDubboGenericInvocationActuator
     {
         private sealed class ServiceMetadata
         {

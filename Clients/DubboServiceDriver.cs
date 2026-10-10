@@ -154,6 +154,11 @@ namespace DubboNet.Clients
                     if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
                     reusedNativeSuite.RegisterService(ep);
                 }
+                else if (ep.InnerDubboActuatorSuite is TripleDubboActuatorSuite reusedTripleSuite)
+                {
+                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
+                    reusedTripleSuite.RegisterService(ep);
+                }
                 if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
                     _sourceDubboActuatorSuiteCollection[ep.EndPoint].ReferenceCount++;
@@ -179,13 +184,15 @@ namespace DubboNet.Clients
                 }
                 else if (string.Equals(ep.Scheme, "tri", StringComparison.OrdinalIgnoreCase))
                 {
-                    newDubboActuatorSuite = new HttpDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
+                    newDubboActuatorSuite = new TripleDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
                     {
                         AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
                         MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
                         DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
                         MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
                     });
+                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
+                    ((TripleDubboActuatorSuite)newDubboActuatorSuite).RegisterService(ep);
                 }
                 if(newDubboActuatorSuite == null)
                 {

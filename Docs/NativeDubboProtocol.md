@@ -11,7 +11,7 @@ ZooKeeper Provider URL 中几个容易混淆的字段含义不同：
 - `version=...`：服务版本，会写入请求体的 service version 和 attachments。
 - `group=...`：服务分组，会写入 attachments。
 - URL scheme `dubbo://`：选择原生 Dubbo2 TCP 执行器。
-- URL scheme `tri://`：当前选择 `HttpDubboActuatorSuite`，以 HTTP POST 发送 JSON；这只是 HTTP JSON 适配器，不是标准 Dubbo Triple/gRPC 客户端。
+- URL scheme `tri://`：选择独立的 `TripleDubboActuatorSuite`；其第一期能力见 [TripleProtocol.md](TripleProtocol.md)。
 
 因此执行器选择依据是 Provider URL 的 scheme，而不是 `release` 的大小。
 

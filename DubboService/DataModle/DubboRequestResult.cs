@@ -80,8 +80,8 @@ namespace DubboNet.DubboService.DataModle
         public object RawResult { get; internal set; }
 
         /// <summary>
-        /// 获取原生 Dubbo 响应附件。
-        /// EN: Gets the native Dubbo response attachments.
+        /// 获取传输层响应附件；原生 Dubbo 返回 attachments，Triple 返回 HTTP 响应头。
+        /// EN: Gets transport response metadata: native Dubbo attachments or Triple HTTP response headers.
         /// </summary>
         public IReadOnlyDictionary<string, object> ResponseAttachments { get; internal set; }
 
