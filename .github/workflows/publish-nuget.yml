@@ -1,0 +1,85 @@
+name: Publish NuGet package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: publish-nuget-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Test, pack and publish
+    runs-on: ubuntu-latest
+    environment: release
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve package version from release tag
+        shell: bash
+        run: |
+          version="${{ github.event.release.tag_name }}"
+          version="${version#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag '${{ github.event.release.tag_name }}' is not a valid NuGet version."
+            exit 1
+          fi
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Restore dependencies
+        run: dotnet restore DubboNet.sln
+
+      - name: Run unit tests
+        run: >-
+          dotnet test Tests/UnitTestForDubboNet/UnitTestForDubboNet.csproj
+          --configuration Release
+          --no-restore
+          -p:GeneratePackageOnBuild=false
+
+      - name: Pack release
+        run: >-
+          dotnet pack DubboNet.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/nuget
+          -p:PackageVersion=${{ env.PACKAGE_VERSION }}
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DubboNet-${{ env.PACKAGE_VERSION }}
+          path: artifacts/nuget/*.nupkg
+          if-no-files-found: error
+
+      - name: Publish to GitHub Packages
+        run: >-
+          dotnet nuget push "artifacts/nuget/*.nupkg"
+          --api-key "${{ secrets.GITHUB_TOKEN }}"
+          --source https://nuget.pkg.github.com/lulianqi/index.json
+          --skip-duplicate
+
+      - name: Get temporary nuget.org API key
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: cllq
+
+      - name: Publish to nuget.org
+        run: >-
+          dotnet nuget push "artifacts/nuget/*.nupkg"
+          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate

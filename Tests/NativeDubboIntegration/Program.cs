@@ -1,120 +1,381 @@
 using DubboNet.Clients;
 using DubboNet.Clients.DataModle;
-using DubboNet.Clients.RegistryClient;
+using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
-using System.Diagnostics;
-using System.Web;
+using System.Text.Json;
 
-string zooKeeper = args.Length > 0 ? args[0] : "110.40.136.183:2181";
-using DubboClient client = new DubboClient(zooKeeper, new DubboClient.DubboClientConf
-{
-    DubboRootPath="dubbo-2.7.23",
-    DubboRequestTimeout = 10_000,
-    TelnetMetadataTimeout = 10_000,
-    MaintainServiceNum = 10,
-});
+const string DefaultZooKeeper = "110.40.136.183:2181";
+const string ProviderHost = "110.40.136.183";
+const string DataTypeService = "com.example.dubbonet.api.DataTypeService";
+const string EchoService = "com.example.dubbonet.api.EchoService";
+const string OrderService = "com.example.dubbonet.api.OrderService";
+const string UserService = "com.example.dubbonet.api.UserService";
 
-string[] endpoints =
+string zooKeeper = args.Length > 0 ? args[0] : DefaultZooKeeper;
+VersionScenario[] versions =
 {
-    "com.byai.tiandun.api.strategy.TiandunCheckRemoteService.checkTest",
-    "com.byai.saas.callservice.api.CallJobRemoteService.getCallJob",
-    "com.byai.transform.api.JdCustomerFacade.jdCustomerGet"
+    new("2.7.23", "/dubbo-2.7.23"),
+    new("3.1.11", "/dubbo-3.1.11"),
+    new("3.2.20", "/dubbo-3.2.20"),
+    new("3.3.6", "/dubbo-3.3.6")
 };
 
-foreach (string endpoint in endpoints)
+TestSummary summary = new();
+Console.WriteLine($"ZooKeeper: {zooKeeper}");
+Console.WriteLine("Dubbo versions: " + string.Join(", ", versions.Select(version => version.Version)));
+Console.WriteLine();
+
+foreach (VersionScenario version in versions)
 {
-    string service = endpoint[..endpoint.LastIndexOf('.')];
-    await PrintProviders(service);
-    await PrintMethodMetadata(endpoint, "first lookup");
-    await PrintMethodMetadata(endpoint, "cached lookup");
+    await RunVersionAsync(version, zooKeeper, summary);
 }
-DubboRequestResult checkTestResult0 = await client.QueryGenericAsync(
-    "com.example.dubbonet.api.DataTypeService.add", 1, 2);
-Console.WriteLine(checkTestResult0.ToString());
 
-DubboRequestResult checkTestResult = await client.QueryGenericAsync(
-    "com.example.dubbonet.api.DataTypeService.add",new string[] { "int", "int" }, 1, 2);
-Console.WriteLine(checkTestResult.ToString());
+await RunDirectProtocolCasesAsync(summary);
 
-await Invoke(
-    "com.byai.tiandun.api.strategy.TiandunCheckRemoteService.checkTest");
-await Invoke(
-    "com.byai.saas.callservice.api.CallJobRemoteService.getCallJob",
-    1234);
-await Invoke(
-    "com.byai.transform.api.JdCustomerFacade.jdCustomerGet",
-    "123",
-    1234L);
+Console.WriteLine();
+Console.WriteLine(
+    $"Integration summary: {summary.Passed} passed, {summary.Failed} failed, " +
+    $"{summary.Passed + summary.Failed} total.");
 
-async Task PrintMethodMetadata(string endpoint, string label)
+if (summary.Failed > 0)
 {
-    Stopwatch stopwatch = Stopwatch.StartNew();
-    Console.WriteLine($"metadata {label}: {endpoint}");
+    Console.WriteLine("Failures:");
+    foreach (string failure in summary.Failures)
+    {
+        Console.WriteLine($"  - {failure}");
+    }
+    Environment.ExitCode = 1;
+}
+
+static async Task RunVersionAsync(
+    VersionScenario version,
+    string zooKeeper,
+    TestSummary summary)
+{
+    Console.WriteLine($"=== Dubbo {version.Version} ({version.RootPath}) ===");
+    using DubboClient client = new(zooKeeper, new DubboClient.DubboClientConf
+    {
+        DubboRootPath = version.RootPath,
+        DubboRequestTimeout = 10_000,
+        TelnetMetadataTimeout = 5_000,
+        MaintainServiceNum = 10,
+        NowLoadBalanceMode = DubboClient.LoadBalanceMode.RoundRobin
+    });
+
+    await RunMetadataCaseAsync(version, client, summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "inferred/no-argument",
+        () => client.QueryGenericAsync($"{EchoService}.ping"),
+        Success,
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "explicit/string",
+        () => client.QueryGenericAsync(
+            $"{EchoService}.echo",
+            new[] { "java.lang.String" },
+            $"hello-{version.Version}"),
+        result => Success(result) && JsonStringEquals(result, $"hello-{version.Version}"),
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "inferred/typed-int-result",
+        async () => await client.QueryGenericAsync<int>($"{DataTypeService}.add", 19, 23),
+        result => Success(result)
+            && result is DubboRequestResult<int> typed
+            && typed.ResultModle == 42,
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "inferred/boolean",
+        () => client.QueryGenericAsync($"{DataTypeService}.negate", false),
+        result => Success(result) && JsonBooleanEquals(result, true),
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "explicit/primitive-array",
+        () => client.QueryGenericAsync(
+            $"{DataTypeService}.average",
+            new[] { "double[]" },
+            new double[] { 1, 2, 3, 4 }),
+        result => Success(result) && JsonNumberEquals(result, 2.5),
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "explicit/string-and-array",
+        () => client.QueryGenericAsync(
+            $"{DataTypeService}.join",
+            new[] { "java.lang.String", "java.lang.String[]" },
+            "|",
+            new[] { "A", "B", "C" }),
+        result => Success(result) && JsonStringEquals(result, "A|B|C"),
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "invocation/map-and-attachments",
+        () => client.QueryGenericAsync(new DubboInvocation(
+            EchoService,
+            "echoHeaders",
+            new[] { "java.util.Map" },
+            new object[]
+            {
+                new Dictionary<string, string>
+                {
+                    ["traceId"] = $"integration-{version.Version}",
+                    ["language"] = "中文"
+                }
+            })
+        {
+            Attachments = new Dictionary<string, string>
+            {
+                ["integration-version"] = version.Version
+            }
+        }),
+        Success,
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "inferred/pojo-result",
+        () => client.QueryGenericAsync($"{OrderService}.getOrder", "ORDER-1001"),
+        Success,
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "explicit/pojo-argument",
+        () => client.QueryGenericAsync(
+            $"{OrderService}.searchOrders",
+            new[] { "com.example.dubbonet.model.OrderQuery" },
+            new Dictionary<string, object>
+            {
+                ["pageNo"] = 1,
+                ["pageSize"] = 2
+            }),
+        Success,
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "explicit/long-array",
+        () => client.QueryGenericAsync(
+            $"{UserService}.batchGet",
+            new[] { "long[]" },
+            new long[] { 1, 2 }),
+        Success,
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "legacy/json-text",
+        () => client.QueryAsync($"{EchoService}.echo", "\"legacy-call\""),
+        result => Success(result) && JsonStringEquals(result, "legacy-call"),
+        summary);
+
+    await RunCaseAsync(
+        version.Version,
+        "provider-exception",
+        () => client.QueryGenericAsync($"{EchoService}.alwaysFail", "expected-error"),
+        result => !result.QuerySuccess
+            && !string.IsNullOrWhiteSpace(result.ErrorMeaasge),
+        summary);
+
+    Console.WriteLine();
+}
+
+static async Task RunMetadataCaseAsync(
+    VersionScenario version,
+    DubboClient client,
+    TestSummary summary)
+{
+    const string caseName = "metadata-center/cache";
     try
     {
-        IReadOnlyList<DubboMethodMetadata> methods =
-            await client.GetMethodMetadataAsync(endpoint);
-        stopwatch.Stop();
-        Console.WriteLine($"elapsed={stopwatch.ElapsedMilliseconds}ms, overloads={methods.Count}");
-        foreach (DubboMethodMetadata method in methods)
-        {
-            Console.WriteLine(
-                $"  [{method.MetadataSource}] {method.ReturnType} {method.Name}(" +
-                $"{string.Join(", ", method.ParameterTypes)}) " +
-                $"application={method.Application}, path={method.MetadataPath}");
-        }
+        IReadOnlyList<DubboMethodMetadata> first =
+            await client.GetServiceMethodsMetadataAsync(DataTypeService);
+        IReadOnlyList<DubboMethodMetadata> second =
+            await client.GetServiceMethodsMetadataAsync(DataTypeService);
+
+        bool passed = first.Count == 5
+            && second.Count == first.Count
+            && first.All(method => method.MetadataSource == DubboMetadataSource.MetadataCenter)
+            && first.Any(method => method.Name == "add"
+                && method.ParameterTypes.SequenceEqual(new[] { "int", "int" }));
+
+        Record(
+            version.Version,
+            caseName,
+            passed,
+            passed
+                ? $"{first.Count} methods, source={first[0].MetadataSource}"
+                : $"unexpected metadata: first={first.Count}, second={second.Count}",
+            summary);
     }
-    catch (DubboMetadataException exception)
+    catch (Exception exception)
     {
-        stopwatch.Stop();
-        Console.WriteLine($"elapsed={stopwatch.ElapsedMilliseconds}ms, unavailable: {exception.Message}");
+        Record(version.Version, caseName, false, exception.Message, summary);
     }
-    Console.WriteLine();
 }
 
-async Task Invoke(string endpoint, params object[] arguments)
+static async Task RunDirectProtocolCasesAsync(TestSummary summary)
+{
+    Console.WriteLine("=== Dubbo 3.3.6 direct protocol selection ===");
+    DubboInvocation invocation = new(
+        EchoService,
+        "echo",
+        new[] { "java.lang.String" },
+        new object[] { "direct-protocol" })
+    {
+        Version = "1.0.0",
+        Group = "dubbonet-3.3.6"
+    };
+    DubboActuatorSuiteConf configuration = new()
+    {
+        DubboRequestTimeout = 10_000
+    };
+
+    using (NativeDubboActuatorSuite native = new(ProviderHost, 20880, configuration))
+    {
+        await RunCaseAsync(
+            "3.3.6",
+            "direct/dubbo-tcp-hessian2",
+            () => native.SendQuery(invocation),
+            result => Success(result)
+                && result.ResponseStatus == 20
+                && result.SerializationId == 2
+                && JsonStringEquals(result, "direct-protocol"),
+            summary);
+    }
+
+    using (TripleDubboActuatorSuite triple = new(ProviderHost, 50051, configuration))
+    {
+        await RunCaseAsync(
+            "3.3.6",
+            "direct/triple-http-json",
+            () => triple.SendQuery(invocation),
+            result => Success(result) && JsonStringEquals(result, "direct-protocol"),
+            summary);
+    }
+}
+
+static async Task RunCaseAsync(
+    string version,
+    string caseName,
+    Func<Task<DubboRequestResult>> action,
+    Func<DubboRequestResult, bool> verify,
+    TestSummary summary)
 {
     try
     {
-        DubboRequestResult result = await client.QueryGenericAsync(endpoint, arguments);
-        string body = result.QuerySuccess ? result.Result : result.ErrorMeaasge;
-        if (body?.Length > 500)
-        {
-            body = body[..500] + "...";
-        }
-        Console.WriteLine(
-            $"invoke {endpoint}: success={result.QuerySuccess}, status={result.ResponseStatus}, " +
-            $"serialization={result.SerializationId}, elapsed={result.RequestElapsed}ms");
-        Console.WriteLine(body);
+        DubboRequestResult result = await action();
+        bool passed = verify(result);
+        string detail = passed
+            ? $"{result.RequestElapsed} ms, result={Shorten(result.Result)}"
+            : $"success={result.QuerySuccess}, result={Shorten(result.Result)}, " +
+              $"error={Shorten(result.ErrorMeaasge)}";
+        Record(version, caseName, passed, detail, summary);
     }
-    catch (DubboMetadataException exception)
+    catch (Exception exception)
     {
-        Console.WriteLine($"invoke {endpoint}: metadata unavailable: {exception.Message}");
+        Record(version, caseName, false, exception.Message, summary);
     }
-    Console.WriteLine();
 }
 
-async Task PrintProviders(string service)
+static bool Success(DubboRequestResult result)
 {
-    using MyZookeeper registry = new MyZookeeper(zooKeeper);
-    await registry.ConnectZooKeeperAsync();
-    var children = await registry.GetChildrenAsync($"/dubbo/{service}/providers");
-    Console.WriteLine($"providers: {service}");
-    foreach (string child in children?.Children ?? new List<string>())
+    return result.QuerySuccess && string.IsNullOrWhiteSpace(result.ErrorMeaasge);
+}
+
+static bool JsonStringEquals(DubboRequestResult result, string expected)
+{
+    return TryReadJson(result.Result, out JsonElement value)
+        && value.ValueKind == JsonValueKind.String
+        && value.GetString() == expected;
+}
+
+static bool JsonBooleanEquals(DubboRequestResult result, bool expected)
+{
+    return TryReadJson(result.Result, out JsonElement value)
+        && (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+        && value.GetBoolean() == expected;
+}
+
+static bool JsonNumberEquals(DubboRequestResult result, double expected)
+{
+    return TryReadJson(result.Result, out JsonElement value)
+        && value.ValueKind == JsonValueKind.Number
+        && Math.Abs(value.GetDouble() - expected) < 0.000001;
+}
+
+static bool TryReadJson(string? json, out JsonElement value)
+{
+    value = default;
+    if (string.IsNullOrWhiteSpace(json))
     {
-        string decoded = HttpUtility.UrlDecode(child);
-        if (!Uri.TryCreate(decoded, UriKind.Absolute, out Uri? uri)
-            || uri == null
-            || !string.Equals(uri.Scheme, "dubbo", StringComparison.OrdinalIgnoreCase))
-        {
-            continue;
-        }
-        DubboServiceEndPointInfo provider =
-            DubboServiceEndPointInfo.GetDubboServiceEndPointInfo(uri);
-        Console.WriteLine(
-            $"  endpoint={provider.EndPoint}, release={provider.Release ?? "unknown"}, " +
-            $"application={provider.Application ?? "unknown"}, version={provider.Version ?? "<empty>"}, " +
-            $"group={provider.Group ?? "<empty>"}");
+        return false;
     }
-    Console.WriteLine();
+
+    try
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        value = document.RootElement.Clone();
+        return true;
+    }
+    catch (JsonException)
+    {
+        return false;
+    }
+}
+
+static void Record(
+    string version,
+    string caseName,
+    bool passed,
+    string detail,
+    TestSummary summary)
+{
+    string status = passed ? "PASS" : "FAIL";
+    Console.WriteLine($"[{status}] {version,-6} {caseName,-32} {detail}");
+    if (passed)
+    {
+        summary.Passed++;
+        return;
+    }
+
+    summary.Failed++;
+    summary.Failures.Add($"Dubbo {version} / {caseName}: {detail}");
+}
+
+static string Shorten(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return "<empty>";
+    }
+
+    string singleLine = value
+        .Replace("\r", " ", StringComparison.Ordinal)
+        .Replace("\n", " ", StringComparison.Ordinal);
+    return singleLine.Length <= 160
+        ? singleLine
+        : singleLine[..160] + "...";
+}
+
+internal sealed record VersionScenario(
+    string Version,
+    string RootPath);
+
+internal sealed class TestSummary
+{
+    public int Passed { get; set; }
+    public int Failed { get; set; }
+    public List<string> Failures { get; } = new();
 }
