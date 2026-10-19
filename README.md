@@ -45,10 +45,10 @@ DubboClient
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `2.0.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `2.1.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 2.0.0
+dotnet add package DubboNet --version 2.1.0
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
@@ -575,7 +575,13 @@ var methods = await client.GetMethodMetadataAsync(
 ### `tri://` 调用失败
 
 确认 Provider 使用 Dubbo 3.3+ 并开放 Java Interface 的 HTTP/JSON 访问。第一期执行器会向
-`http://{host}:{port}/{service}/{method}` 发送 HTTP/1.1 JSON POST，正文必须是参数数组，单参数也应为 `[value]`。有多个 version/group 时还要保证注册 URL 中这两个字段准确。
+`http://{host}:{port}/{service}/{method}` 发送 HTTP/1.1 JSON POST，正文必须是参数数组，
+单参数也应为 `[value]`。有多个 version/group 时还要保证注册 URL 中这两个字段准确。
+
+Dubbo 3.3.6 的默认 Triple HTTP/JSON 映射不能可靠区分全部 Java 重载。通过
+`DubboClient` 调用时，检测到重载方法会在负载均衡前限定使用 `dubbo://` 原生协议节点；
+若只有 `tri://` 节点则返回明确错误。需要通过 Triple 暴露重载时，建议在 Provider 端为
+各重载声明不同的 REST 路由。
 
 第一期不支持 Protobuf/IDL、流式调用或 gRPC framing；这些服务不能通过当前的
 `TripleDubboActuatorSuite` 调用。

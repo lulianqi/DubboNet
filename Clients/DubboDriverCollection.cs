@@ -8,6 +8,7 @@ using static DubboNet.Clients.DubboClient;
 using System.Collections;
 using System.Collections.Concurrent;
 using DubboNet.Clients.DataModle;
+using DubboNet.DubboService;
 
 namespace DubboNet.Clients
 {
@@ -181,9 +182,14 @@ namespace DubboNet.Clients
         /// <param name="serviceName">服务名称；为空时使用默认服务名。EN: Service name; the configured default is used when omitted.</param>
         /// <param name="loadBalanceMode">负载均衡策略。EN: Load-balancing strategy.</param>
         /// <param name="qurey">请求内容，仅用于一致性 Hash 计算。EN: Request content used only as the consistent-hash key.</param>
+        /// <param name="requiredProtocol">可选的协议约束。EN: Optional protocol constraint applied before load balancing.</param>
         /// <returns>包含选择结果、服务驱动和执行器的结果对象。EN: Result describing the selection outcome, service driver, and actuator suite.</returns>
         /// <exception cref="ArgumentNullException">服务名和默认服务名均为空。EN: Both the service name and configured default service name are empty.</exception>
-        public AvailableDubboActuatorInfo GetDubboActuatorSuite(string serviceName , LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random ,string qurey = null) 
+        public AvailableDubboActuatorInfo GetDubboActuatorSuite(
+            string serviceName,
+            LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random,
+            string qurey = null,
+            DubboActuatorProtocolType? requiredProtocol = null)
         {
             AvailableDubboActuatorInfo availableDubboActuatorInfo = new AvailableDubboActuatorInfo();
             if (string.IsNullOrEmpty(serviceName))
@@ -196,22 +202,26 @@ namespace DubboNet.Clients
             }
             if(_dubboServiceDriverCollection.ContainsKey(serviceName))
             {
-                availableDubboActuatorInfo.AvailableDubboActuatorSuite = _dubboServiceDriverCollection[serviceName].GetDubboActuatorSuite(loadBalanceMode, qurey);
-                if (availableDubboActuatorInfo.AvailableDubboActuatorSuite == null)
+                availableDubboActuatorInfo.NowDubboServiceDriver =
+                    _dubboServiceDriverCollection[serviceName];
+                availableDubboActuatorInfo.AvailableDubboActuatorSuite =
+                    availableDubboActuatorInfo.NowDubboServiceDriver.GetDubboActuatorSuite(
+                        loadBalanceMode,
+                        qurey,
+                        requiredProtocol);
+                if (availableDubboActuatorInfo.NowDubboServiceDriver.InnerActuatorSuites.Count == 0)
+                {
+                    availableDubboActuatorInfo.ResultType =
+                        AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService;
+                }
+                else if (availableDubboActuatorInfo.AvailableDubboActuatorSuite == null)
                 {
                     availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator;
                 }
                 else
                 {
-                    if (_dubboServiceDriverCollection[serviceName].InnerActuatorSuites.Count == 0)
-                    {
-                        availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService;
-                    }
-                    else
-                    {
-                        availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite;
-                    }
-                    availableDubboActuatorInfo.NowDubboServiceDriver = _dubboServiceDriverCollection[serviceName];
+                    availableDubboActuatorInfo.ResultType =
+                        AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite;
                 }
             }
             else

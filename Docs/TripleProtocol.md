@@ -26,6 +26,12 @@ tri-service-timeout: 10000
 [false]
 ```
 
+Dubbo 3.3.6 的默认 Triple HTTP/JSON 映射不能可靠区分所有 Java 重载：当同名方法中
+包含无参重载时，`~signature` 仍可能同时匹配无参方法；基本类型数组签名中的 `[` 还会
+受到 URL 编码影响。因此 `DubboClient` 发现一个方法存在多个签名时，会在负载均衡前
+限定使用 `dubbo://` 原生协议节点。若服务只注册了 `tri://` 节点，会返回明确的兼容性
+错误，避免静默调用到错误重载。非重载方法继续使用 Triple HTTP/JSON。
+
 ## 服务路由和附件
 
 执行器优先使用 `DubboInvocation.Version` 和 `DubboInvocation.Group`；未显式填写时，
@@ -67,4 +73,5 @@ Provider 返回的错误正文同时写入 `ErrorMeaasge`。响应头会保存�
 - [Apache Dubbo：Triple 3.3 New Features](https://dubbo.apache.org/en/overview/mannual/java-sdk/reference-manual/protocol/triple-3.3/)
 
 实现同时对照 Apache Dubbo 3.3.6 源码中的 HTTP/JSON 解码器、
-`TripleHeaderEnum` 和 group/version 路由条件。
+`DefaultRequestMappingRegistry`、`TypeUtils.buildSig`、`TripleHeaderEnum` 和
+group/version 路由条件。

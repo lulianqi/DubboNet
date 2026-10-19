@@ -63,8 +63,6 @@ namespace DubboNet.Clients
 
         private DubboServiceDriverConf _innerDubboServiceDriverConf = null;
 
-        private int _totalWeightForActuatorSuites = 0;
-
         private DubboSuiteConsistentHash _dubboSuiteConsistentHash = new DubboSuiteConsistentHash(16);
 
         /// <summary>
@@ -96,24 +94,7 @@ namespace DubboNet.Clients
             {
                 AddActuatorSuite(ep);
             }
-            UpdateTotalWeight();
             UpdateConsistentHash();
-        }
-
-        /// <summary>
-        /// 更新TotalWeightForActuatorSuites
-        /// EN: Recalculates the total provider weight used by weighted load balancing.
-        /// </summary>
-        private void UpdateTotalWeight()
-        {
-            if (InnerActuatorSuites != null)
-            {
-                _totalWeightForActuatorSuites = InnerActuatorSuites.Sum(item => item.Value.Weight);
-            }
-            else
-            {
-                _totalWeightForActuatorSuites = 0;
-            }
         }
 
         /// <summary>
@@ -162,7 +143,6 @@ namespace DubboNet.Clients
                 if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
                 {
                     _sourceDubboActuatorSuiteCollection[ep.EndPoint].ReferenceCount++;
-                    //UpdateTotalWeight();
                     return true;
                 }
             }
@@ -215,7 +195,6 @@ namespace DubboNet.Clients
                 {
                     dubboActuatorSuiteEndPintInfo.ReferenceCount++;
                     _sourceDubboActuatorSuiteCollection.Add(ep.EndPoint, dubboActuatorSuiteEndPintInfo);
-                    //UpdateTotalWeight();
                     return true;
                 }
             }
@@ -270,7 +249,6 @@ namespace DubboNet.Clients
             }
             if(changeCount!=0)
             {
-                UpdateTotalWeight();
                 UpdateConsistentHash();
             }
             return changeCount;
@@ -282,59 +260,106 @@ namespace DubboNet.Clients
         /// </summary>
         /// <param name="loadBalanceMode">负载均衡策略。EN: Load-balancing strategy.</param>
         /// <param name="qurey">请求内容，仅用于一致性 Hash 计算。EN: Request content used only as the consistent-hash key.</param>
-        /// <returns>选中的执行器套件；当前服务没有节点时为 <see langword="null"/>。EN: Selected actuator suite, or <see langword="null"/> when the service has no endpoints.</returns>
+        /// <param name="requiredProtocol">可选的协议约束。EN: Optional protocol constraint applied before load balancing.</param>
+        /// <returns>选中的执行器套件；当前服务没有匹配节点时为 <see langword="null"/>。EN: Selected actuator suite, or <see langword="null"/> when the service has no matching endpoints.</returns>
         /// <exception cref="Exception">负载策略不受支持，或无法选出端点。EN: The load-balancing mode is unsupported or no endpoint can be selected.</exception>
-        public IDubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode ,string qurey = null)
+        public IDubboActuatorSuite GetDubboActuatorSuite(
+            LoadBalanceMode loadBalanceMode,
+            string qurey = null,
+            DubboActuatorProtocolType? requiredProtocol = null)
         {
             LastActivateTime = DateTime.Now;
-            if (InnerActuatorSuites.Count==0)
+            List<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>> candidates =
+                InnerActuatorSuites
+                    .Where(item => requiredProtocol == null
+                        || item.Value.InnerDubboActuatorSuite.ProtocolType == requiredProtocol.Value)
+                    .ToList();
+            if (candidates.Count == 0)
             {
                 return null;
             }
-            if (InnerActuatorSuites.Count == 1)
+            if (candidates.Count == 1)
             {
-                return InnerActuatorSuites.First().Value.InnerDubboActuatorSuite;
+                return candidates[0].Value.InnerDubboActuatorSuite;
             }
+            int candidateTotalWeight = candidates.Sum(item => Math.Max(0, item.Value.Weight));
             DubboServiceEndPointInfo selectedDubboServiceEndPointInfo = null;
             switch (loadBalanceMode)
             {
                 case LoadBalanceMode.Random:
                     Random random = new Random();
-                    int randomNumber = random.Next(0, _totalWeightForActuatorSuites) + 1;
-                    foreach(var weightedItem in InnerActuatorSuites)
+                    if (candidateTotalWeight <= 0)
                     {
-                        if(randomNumber <= weightedItem.Value.Weight)
+                        selectedDubboServiceEndPointInfo =
+                            candidates[random.Next(0, candidates.Count)].Value;
+                        break;
+                    }
+                    int randomNumber = random.Next(0, candidateTotalWeight) + 1;
+                    foreach(var weightedItem in candidates)
+                    {
+                        int weight = Math.Max(0, weightedItem.Value.Weight);
+                        if(randomNumber <= weight)
                         {
                             selectedDubboServiceEndPointInfo = weightedItem.Value;
                             break;
                         }
-                        randomNumber = randomNumber - weightedItem.Value.Weight;
+                        randomNumber -= weight;
                     }
                     break;
                 case LoadBalanceMode.RoundRobin:
-                    foreach (var weightedItem in InnerActuatorSuites)
+                    if (candidateTotalWeight <= 0)
                     {
-                        weightedItem.Value.NowDispatchWeight += weightedItem.Value.Weight;
+                        return GetDubboActuatorSuite(
+                            LoadBalanceMode.Random,
+                            qurey,
+                            requiredProtocol);
                     }
-                    var maxDispatchWeightItem = InnerActuatorSuites.MaxBy<KeyValuePair<IPEndPoint,DubboServiceEndPointInfo>,int>(it=>it.Value.NowDispatchWeight);
-                    maxDispatchWeightItem.Value.NowDispatchWeight -= _totalWeightForActuatorSuites;
+                    foreach (var weightedItem in candidates)
+                    {
+                        weightedItem.Value.NowDispatchWeight += Math.Max(0, weightedItem.Value.Weight);
+                    }
+                    var maxDispatchWeightItem = candidates.MaxBy<
+                        KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(
+                            item => item.Value.NowDispatchWeight);
+                    maxDispatchWeightItem.Value.NowDispatchWeight -= candidateTotalWeight;
                     selectedDubboServiceEndPointInfo = maxDispatchWeightItem.Value;
                     break;
                 case LoadBalanceMode.ConsistentHash:
                     if(qurey==null)
                     {
-                        return GetDubboActuatorSuite(LoadBalanceMode.Random);
+                        return GetDubboActuatorSuite(
+                            LoadBalanceMode.Random,
+                            qurey,
+                            requiredProtocol);
                     }
-                    IPEndPoint nowEp = _dubboSuiteConsistentHash.GetNode(qurey);
+                    DubboSuiteConsistentHash consistentHash = _dubboSuiteConsistentHash;
+                    if (requiredProtocol != null)
+                    {
+                        consistentHash = new DubboSuiteConsistentHash(16);
+                        consistentHash.Init(candidates.Select(item => item.Key));
+                    }
+                    IPEndPoint nowEp = consistentHash.GetNode(qurey);
                     selectedDubboServiceEndPointInfo = InnerActuatorSuites[nowEp];
                     break;
                 case LoadBalanceMode.ShortestResponse:
                     DateTime nowTime = DateTime.Now;
-                    int minQueryElapsedItemValue = InnerActuatorSuites.Min<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(it => (nowTime - it.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60 ? it.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed : 0);
-                    var minQueryElapsedItems = InnerActuatorSuites.Where(element => minQueryElapsedItemValue == ((nowTime - element.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60 ? element.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed : 0));
+                    int minQueryElapsedItemValue = candidates.Min<
+                        KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(
+                            item => (nowTime - item.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60
+                                ? item.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed
+                                : 0);
+                    var minQueryElapsedItems = candidates.Where(element =>
+                        minQueryElapsedItemValue ==
+                        ((nowTime - element.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60
+                            ? element.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed
+                            : 0));
                     if (minQueryElapsedItems.Count()==0)
                     {
-                        var minQueryElapsedItem = InnerActuatorSuites.MinBy<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(it => (DateTime.Now - it.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60 ? it.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed : 0);
+                        var minQueryElapsedItem = candidates.MinBy<
+                            KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(
+                                item => (DateTime.Now - item.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60
+                                    ? item.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed
+                                    : 0);
                         selectedDubboServiceEndPointInfo = minQueryElapsedItem.Value;
                     }
                     else if(minQueryElapsedItems.Count() == 1)
@@ -350,10 +375,19 @@ namespace DubboNet.Clients
                     break;
                 case LoadBalanceMode.LeastActive:
                     //未实现
-                    return GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    return GetDubboActuatorSuite(
+                        LoadBalanceMode.Random,
+                        qurey,
+                        requiredProtocol);
                 case LoadBalanceMode.P2CLoadBalance:
-                    IDubboActuatorSuite providerA = GetDubboActuatorSuite(LoadBalanceMode.Random);
-                    IDubboActuatorSuite providerB = GetDubboActuatorSuite(LoadBalanceMode.Random);
+                    IDubboActuatorSuite providerA = GetDubboActuatorSuite(
+                        LoadBalanceMode.Random,
+                        qurey,
+                        requiredProtocol);
+                    IDubboActuatorSuite providerB = GetDubboActuatorSuite(
+                        LoadBalanceMode.Random,
+                        qurey,
+                        requiredProtocol);
                     if (providerA?.ActuatorSuiteStatusInfo?.StatusInfo?.Load == null
                         || providerB?.ActuatorSuiteStatusInfo?.StatusInfo?.Load == null)
                     {

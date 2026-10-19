@@ -107,6 +107,75 @@ namespace UnitTestForDubboNet
             Assert.Equal(DubboActuatorProtocolType.Triple, suite.ProtocolType);
         }
 
+        [Theory]
+        [InlineData(LoadBalanceMode.Random)]
+        [InlineData(LoadBalanceMode.RoundRobin)]
+        [InlineData(LoadBalanceMode.ConsistentHash)]
+        [InlineData(LoadBalanceMode.ShortestResponse)]
+        [InlineData(LoadBalanceMode.P2CLoadBalance)]
+        public void RequiredProtocol_FiltersBeforeLoadBalancing(LoadBalanceMode loadBalanceMode)
+        {
+            const string serviceName = "com.foo.OverloadService";
+            List<DubboServiceEndPointInfo> endpoints = new List<DubboServiceEndPointInfo>
+            {
+                new DubboServiceEndPointInfo
+                {
+                    EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 20880),
+                    Scheme = "dubbo",
+                    Interface = serviceName
+                },
+                new DubboServiceEndPointInfo
+                {
+                    EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 20881),
+                    Scheme = "dubbo",
+                    Interface = serviceName
+                },
+                new DubboServiceEndPointInfo
+                {
+                    EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 50051),
+                    Scheme = "tri",
+                    Interface = serviceName
+                }
+            };
+
+            using DubboServiceDriver driver = new DubboServiceDriver(
+                serviceName,
+                endpoints,
+                new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
+
+            for (int index = 0; index < 10; index++)
+            {
+                IDubboActuatorSuite suite = driver.GetDubboActuatorSuite(
+                    loadBalanceMode,
+                    index.ToString(),
+                    DubboActuatorProtocolType.NativeDubbo);
+
+                Assert.NotNull(suite);
+                Assert.Equal(DubboActuatorProtocolType.NativeDubbo, suite.ProtocolType);
+            }
+        }
+
+        [Fact]
+        public void RequiredProtocol_ReturnsNullWhenNoProviderMatches()
+        {
+            const string serviceName = "com.foo.TripleOnlyService";
+            DubboServiceEndPointInfo endpoint = new DubboServiceEndPointInfo
+            {
+                EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 50051),
+                Scheme = "tri",
+                Interface = serviceName
+            };
+
+            using DubboServiceDriver driver = new DubboServiceDriver(
+                serviceName,
+                new List<DubboServiceEndPointInfo> { endpoint },
+                new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>());
+
+            Assert.Null(driver.GetDubboActuatorSuite(
+                LoadBalanceMode.Random,
+                requiredProtocol: DubboActuatorProtocolType.NativeDubbo));
+        }
+
 
         private void SetDubboActuatorSuiteStatusByReflection(IDubboActuatorSuite dubboActuatorSuite ,int lastQueryElapsed)
         {

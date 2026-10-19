@@ -703,7 +703,17 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentException("can not find the ServiceName or FuncName");
             }
-            AvailableDubboActuatorInfo availableDubboActuatorInfo = _dubboDriverCollection.GetDubboActuatorSuite(nowServiceName, NowLoadBalanceMode, req);
+            DubboActuatorProtocolType? requiredProtocol =
+                await GetRequiredProtocolAsync(
+                    nowServiceName,
+                    nowFuncName,
+                    nativeInvocation).ConfigureAwait(false);
+            AvailableDubboActuatorInfo availableDubboActuatorInfo =
+                _dubboDriverCollection.GetDubboActuatorSuite(
+                    nowServiceName,
+                    NowLoadBalanceMode,
+                    req,
+                    requiredProtocol);
             //获取到可用的DubboActuatorSuite
             if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
             {
@@ -794,6 +804,19 @@ namespace DubboNet.Clients
             //没有获取到可用的DubboActuatorSuite，因为没有可用的DubboActuatorSuite（比如配置的资源耗尽）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator)
             {
+                if (requiredProtocol == DubboActuatorProtocolType.NativeDubbo)
+                {
+                    return new DubboRequestResult()
+                    {
+                        QuerySuccess = false,
+                        ServiceElapsed = -1,
+                        ErrorMeaasge =
+                            $"[SendRequestAsync] overloaded method {nowServiceName}.{nowFuncName} " +
+                            "requires a dubbo:// provider. Dubbo 3.3 Triple HTTP/JSON cannot " +
+                            "reliably distinguish every Java overload; register a native Dubbo " +
+                            "provider or expose distinct REST mappings."
+                    };
+                }
                 return new DubboRequestResult()
                 {
                     QuerySuccess = false,
@@ -810,6 +833,39 @@ namespace DubboNet.Clients
                     ErrorMeaasge = "Unkonw error"
                 };
             }
+        }
+
+        private async Task<DubboActuatorProtocolType?> GetRequiredProtocolAsync(
+            string serviceName,
+            string methodName,
+            DubboInvocation invocation)
+        {
+            if (invocation == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                IReadOnlyList<DubboMethodMetadata> methods =
+                    await _metadataManager.GetMethodMetadataAsync(serviceName, methodName)
+                        .ConfigureAwait(false);
+                if (methods.Count > 1)
+                {
+                    return DubboActuatorProtocolType.NativeDubbo;
+                }
+            }
+            catch (DubboMetadataException exception)
+            {
+                // Explicit invocations are intentionally allowed when metadata is unavailable.
+                // Keep the historical selection behavior rather than turning a best-effort
+                // compatibility check into a new hard dependency on metadata discovery.
+                MyLogger.LogWarning(
+                    $"[GetRequiredProtocolAsync] unable to inspect overload metadata for " +
+                    $"{serviceName}.{methodName}: {exception.Message}");
+            }
+
+            return null;
         }
 
         /// <summary>
