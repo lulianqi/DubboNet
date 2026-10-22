@@ -578,7 +578,7 @@ namespace UnitTestForDubboNet
             Assert.Equal(1, probeCount);
             Assert.Contains("below 2.7.3", first.Message);
             Assert.Contains("connection refused", first.Message);
-            Assert.Contains("QueryGenericAsync", first.Message);
+            Assert.Contains("QueryAsync", first.Message);
             Assert.Equal(first.Message, second.Message);
         }
 

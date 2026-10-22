@@ -1250,7 +1250,7 @@ namespace DubboNet.Clients
                 $"Unable to obtain method metadata for Dubbo service '{serviceName}' " +
                 $"(provider release(s): {releases}). {metadataCenterPart} {telnetPart} " +
                 "Automatic Java parameter type inference cannot continue. Retry with the explicit " +
-                "type overload QueryGenericAsync(funcEndPoint, javaParameterTypes, arguments), " +
+                "type overload QueryAsync(funcEndPoint, javaParameterTypes, arguments), " +
                 "supplying the exact Java parameter type names.";
         }
 
@@ -1266,7 +1266,7 @@ namespace DubboNet.Clients
             throw new DubboMetadataException(
                 snapshot.FailureReason
                 ?? $"No Dubbo method metadata was found for service '{serviceName}'. " +
-                   "Retry with QueryGenericAsync(funcEndPoint, javaParameterTypes, arguments) " +
+                   "Retry with QueryAsync(funcEndPoint, javaParameterTypes, arguments) " +
                    "and supply the exact Java parameter type names.");
         }
 

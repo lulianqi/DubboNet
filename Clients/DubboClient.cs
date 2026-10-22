@@ -2,7 +2,6 @@
 using DubboNet.Clients.RegistryClient;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
-using DubboNet.DubboService.Native;
 using MyCommonHelper;
 using org.apache.zookeeper;
 using org.apache.zookeeper.data;
@@ -373,121 +372,172 @@ namespace DubboNet.Clients
 
         #region QueryAsync
         /// <summary>
-        /// 使用字符串形式的参数调用 Dubbo 方法；原生 Dubbo 协议会通过元数据推断精确 Java 参数类型。
-        /// EN: Invokes a Dubbo method with string-form arguments; the native Dubbo protocol resolves exact Java parameter types from metadata.
+        /// 调用 Dubbo 方法；Java 参数类型从元数据中心或 Provider Telnet 自动推断。
+        /// EN: Invokes a Dubbo method with Java parameter types inferred from the metadata center or Provider Telnet.
         /// </summary>
         /// <param name="funcEndPoint">服务和方法入口，例如 <c>com.foo.DemoService.find</c>。EN: Service and method endpoint, for example <c>com.foo.DemoService.find</c>.</param>
-        /// <param name="req">逗号分隔的 JSON 参数内容；无参数时传空字符串。EN: Comma-separated JSON argument content; use an empty string for no arguments.</param>
         /// <returns>包含调用结果、耗时和错误信息的请求结果。EN: A request result containing the response, timing, and error information.</returns>
-        /// <exception cref="DubboMetadataException">无法获取或唯一确定 Java 参数类型。EN: Java parameter types cannot be obtained or uniquely resolved.</exception>
-        public Task<DubboRequestResult> QueryAsync(string funcEndPoint, string req)
+        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定方法重载。EN: Metadata is unavailable or a method overload cannot be selected uniquely.</exception>
+        public Task<DubboRequestResult> QueryAsync(string funcEndPoint)
         {
-            return QueryInternalAsync(funcEndPoint, req, null);
+            return QueryWithInferredTypesAsync(funcEndPoint, Array.Empty<object>());
         }
 
         /// <summary>
-        /// 使用明确的 Java 参数类型执行 Dubbo/Triple 泛化调用；重载方法、null、集合和 POJO 参数建议使用此重载。
-        /// EN: Performs a Dubbo/Triple generic invocation with explicit Java parameter types; use this overload for overloaded methods, nulls, collections, and POJO arguments.
+        /// 使用单个参数调用 Dubbo 方法；数组和集合始终被视为一个参数。
+        /// EN: Invokes a Dubbo method with one argument; arrays and collections are always treated as one argument.
         /// </summary>
         /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="javaParameterTypes">按声明顺序排列的精确 Java 参数类型。EN: Exact Java parameter type names in declaration order.</param>
-        /// <param name="arguments">调用参数。EN: Invocation arguments.</param>
-        /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
-        /// <exception cref="ArgumentException">参数类型数量与参数数量不一致，或入口无效。EN: Type and argument counts differ, or the endpoint is invalid.</exception>
-        public Task<DubboRequestResult> QueryGenericAsync(
+        /// <param name="argument">单个调用参数。EN: The single invocation argument.</param>
+        /// <returns>包含调用结果、耗时和错误信息的请求结果。EN: A request result containing the response, timing, and error information.</returns>
+        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定方法重载。EN: Metadata is unavailable or a method overload cannot be selected uniquely.</exception>
+        public Task<DubboRequestResult> QueryAsync(
             string funcEndPoint,
-            IReadOnlyList<string> javaParameterTypes,
-            params object[] arguments)
+            object argument)
         {
-            Tuple<string, string> endpoint = GetSeviceNameFormFuncEndPoint(funcEndPoint);
-            DubboInvocation invocation = new DubboInvocation(
-                endpoint.Item1,
-                endpoint.Item2,
-                javaParameterTypes,
-                arguments);
-            return QueryInternalAsync(
+            return QueryWithInferredTypesAsync(
                 funcEndPoint,
-                JsonSerializer.Serialize(arguments),
-                invocation);
+                new[] { argument });
         }
 
         /// <summary>
-        /// 执行 Dubbo/Triple 泛化调用；精确 Java 参数类型从元数据中心或服务 Telnet 端点解析并按服务缓存。
-        /// EN: Performs a Dubbo/Triple generic invocation; exact Java parameter types are resolved from the metadata center or service Telnet endpoint and cached per service.
+        /// 使用两个或更多参数调用 Dubbo 方法；额外参数通过 <c>params</c> 传入。
+        /// EN: Invokes a Dubbo method with two or more arguments; additional arguments are supplied through <c>params</c>.
         /// </summary>
         /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="arguments">用于选择方法签名的调用参数。EN: Invocation arguments used to select the method signature.</param>
+        /// <param name="firstArgument">第一个调用参数。EN: The first invocation argument.</param>
+        /// <param name="secondArgument">第二个调用参数。EN: The second invocation argument.</param>
+        /// <param name="additionalArguments">其余调用参数。EN: Remaining invocation arguments.</param>
         /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
-        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定重载；可改用明确类型重载。EN: Metadata is unavailable or an overload cannot be uniquely selected; use the explicit-type overload.</exception>
-        public async Task<DubboRequestResult> QueryGenericAsync(
+        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定方法重载。EN: Metadata is unavailable or a method overload cannot be selected uniquely.</exception>
+        public Task<DubboRequestResult> QueryAsync(
             string funcEndPoint,
-            params object[] arguments)
+            object firstArgument,
+            object secondArgument,
+            params object[] additionalArguments)
         {
-            Tuple<string, string> endpoint = GetSeviceNameFormFuncEndPoint(funcEndPoint);
-            DubboInvocation invocation = await CreateMetadataInvocationAsync(
-                endpoint.Item1,
-                endpoint.Item2,
-                arguments ?? Array.Empty<object>()).ConfigureAwait(false);
-            return await QueryInternalAsync(
+            return QueryWithInferredTypesAsync(
                 funcEndPoint,
-                JsonSerializer.Serialize(invocation.Arguments),
-                invocation).ConfigureAwait(false);
+                CombineArguments(firstArgument, secondArgument, additionalArguments));
         }
 
         /// <summary>
-        /// 使用明确的 Java 参数类型执行 Dubbo/Triple 泛化调用，并将响应反序列化为指定类型。
-        /// EN: Performs a Dubbo/Triple generic invocation with explicit Java parameter types and deserializes the response.
+        /// 调用 Dubbo 方法并将响应反序列化为指定类型；Java 参数类型自动推断。
+        /// EN: Invokes a Dubbo method, deserializes the response, and infers Java parameter types automatically.
         /// </summary>
         /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
         /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="javaParameterTypes">精确 Java 参数类型。EN: Exact Java parameter type names.</param>
-        /// <param name="arguments">调用参数。EN: Invocation arguments.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        /// <exception cref="ArgumentException">参数类型数量与实参数量不一致，或调用描述无效。EN: The parameter-type count differs from the argument count, or the invocation descriptor is invalid.</exception>
-        public async Task<DubboRequestResult<T_Rsp>> QueryGenericAsync<T_Rsp>(
-            string funcEndPoint,
-            IReadOnlyList<string> javaParameterTypes,
-            params object[] arguments)
+        /// <returns>强类型 Dubbo 请求结果。EN: The typed Dubbo request result.</returns>
+        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定方法重载。EN: Metadata is unavailable or a method overload cannot be selected uniquely.</exception>
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(
+            string funcEndPoint)
         {
             return new DubboRequestResult<T_Rsp>(
-                await QueryGenericAsync(
+                await QueryWithInferredTypesAsync(
+                    funcEndPoint,
+                    Array.Empty<object>()).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// 使用单个参数调用 Dubbo 方法并将响应反序列化为指定类型；数组和集合保持为一个参数。
+        /// EN: Invokes a Dubbo method with one argument and deserializes the response; arrays and collections remain one argument.
+        /// </summary>
+        /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
+        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
+        /// <param name="argument">单个调用参数。EN: The single invocation argument.</param>
+        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
+        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定方法重载。EN: Metadata is unavailable or a method overload cannot be selected uniquely.</exception>
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(
+            string funcEndPoint,
+            object argument)
+        {
+            return new DubboRequestResult<T_Rsp>(
+                await QueryWithInferredTypesAsync(
+                    funcEndPoint,
+                    new[] { argument }).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// 使用两个或更多参数调用 Dubbo 方法并将响应反序列化为指定类型。
+        /// EN: Invokes a Dubbo method with two or more arguments and deserializes the response to the specified type.
+        /// </summary>
+        /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
+        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
+        /// <param name="firstArgument">第一个调用参数。EN: The first invocation argument.</param>
+        /// <param name="secondArgument">第二个调用参数。EN: The second invocation argument.</param>
+        /// <param name="additionalArguments">其余调用参数。EN: Remaining invocation arguments.</param>
+        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
+        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定方法重载。EN: Metadata is unavailable or a method overload cannot be selected uniquely.</exception>
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(
+            string funcEndPoint,
+            object firstArgument,
+            object secondArgument,
+            params object[] additionalArguments)
+        {
+            return new DubboRequestResult<T_Rsp>(
+                await QueryWithInferredTypesAsync(
+                    funcEndPoint,
+                    CombineArguments(
+                        firstArgument,
+                        secondArgument,
+                        additionalArguments)).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// 使用明确的 Java 参数类型调用 Dubbo 方法；重载、<see langword="null"/>、集合和 POJO 参数建议使用此重载。
+        /// EN: Invokes a Dubbo method with explicit Java parameter types; use this overload for overloads, <see langword="null"/>, collections, and POJOs.
+        /// </summary>
+        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
+        /// <param name="javaParameterTypes">按声明顺序排列的精确 Java 类型名。EN: Exact Java type names in declaration order.</param>
+        /// <param name="arguments">与类型列表一一对应的参数列表。EN: Arguments corresponding one-to-one with the type list.</param>
+        /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
+        /// <exception cref="ArgumentException">类型数量与参数数量不一致，或入口无效。EN: Type and argument counts differ, or the endpoint is invalid.</exception>
+        public Task<DubboRequestResult> QueryAsync(
+            string funcEndPoint,
+            IReadOnlyList<string> javaParameterTypes,
+            IReadOnlyList<object> arguments)
+        {
+            Tuple<string, string> endpoint = GetSeviceNameFormFuncEndPoint(funcEndPoint);
+            return QueryAsync(new DubboInvocation(
+                endpoint.Item1,
+                endpoint.Item2,
+                javaParameterTypes,
+                arguments));
+        }
+
+        /// <summary>
+        /// 使用明确的 Java 参数类型调用 Dubbo 方法并将响应反序列化为指定类型。
+        /// EN: Invokes a Dubbo method with explicit Java parameter types and deserializes the response.
+        /// </summary>
+        /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
+        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
+        /// <param name="javaParameterTypes">按声明顺序排列的精确 Java 类型名。EN: Exact Java type names in declaration order.</param>
+        /// <param name="arguments">与类型列表一一对应的参数列表。EN: Arguments corresponding one-to-one with the type list.</param>
+        /// <returns>强类型 Dubbo 请求结果。EN: The typed Dubbo request result.</returns>
+        /// <exception cref="ArgumentException">类型数量与参数数量不一致，或入口无效。EN: Type and argument counts differ, or the endpoint is invalid.</exception>
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(
+            string funcEndPoint,
+            IReadOnlyList<string> javaParameterTypes,
+            IReadOnlyList<object> arguments)
+        {
+            return new DubboRequestResult<T_Rsp>(
+                await QueryAsync(
                     funcEndPoint,
                     javaParameterTypes,
                     arguments).ConfigureAwait(false));
         }
 
         /// <summary>
-        /// 执行 Dubbo/Triple 泛化调用并反序列化响应；Java 参数类型从元数据中心或 Telnet 回退解析。
-        /// EN: Performs a Dubbo/Triple generic invocation and deserializes the response; Java parameter types are resolved from the metadata center or Telnet fallback.
+        /// 根据 <see cref="DubboInvocation"/> 调用 Dubbo 方法；参数类型为空时自动推断，并保留版本、分组和 attachments。
+        /// EN: Invokes a Dubbo method from a <see cref="DubboInvocation"/>; empty parameter types are inferred while version, group, and attachments are preserved.
         /// </summary>
-        /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="arguments">调用参数。EN: Invocation arguments.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        /// <exception cref="DubboMetadataException">元数据不可用或无法唯一确定重载。EN: Metadata is unavailable or an overload cannot be uniquely selected.</exception>
-        public async Task<DubboRequestResult<T_Rsp>> QueryGenericAsync<T_Rsp>(
-            string funcEndPoint,
-            params object[] arguments)
-        {
-            return new DubboRequestResult<T_Rsp>(
-                await QueryGenericAsync(funcEndPoint, arguments).ConfigureAwait(false));
-        }
-
-        /// <summary>
-        /// 根据 <see cref="DubboInvocation"/> 执行 Dubbo/Triple 泛化调用；参数类型为空时自动解析元数据。
-        /// EN: Performs a Dubbo/Triple generic invocation described by <see cref="DubboInvocation"/>; metadata is resolved when parameter types are empty.
-        /// </summary>
-        /// <param name="invocation">调用描述，包括服务、方法、参数类型、参数和附件。EN: Invocation descriptor containing the service, method, parameter types, arguments, and attachments.</param>
+        /// <param name="invocation">完整调用描述。EN: The complete invocation descriptor.</param>
         /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="invocation"/> 为空。EN: <paramref name="invocation"/> is null.</exception>
-        /// <exception cref="DubboMetadataException">需要自动推断但元数据不可用或不明确。EN: Inference is required but metadata is unavailable or ambiguous.</exception>
-        public async Task<DubboRequestResult> QueryGenericAsync(DubboInvocation invocation)
+        /// <exception cref="DubboMetadataException">需要自动推断但元数据不可用或存在歧义。EN: Inference is required but metadata is unavailable or ambiguous.</exception>
+        public async Task<DubboRequestResult> QueryAsync(DubboInvocation invocation)
         {
-            if (invocation == null)
-            {
-                throw new ArgumentNullException(nameof(invocation));
-            }
-
+            ArgumentNullException.ThrowIfNull(invocation);
             DubboInvocation effectiveInvocation = invocation;
             if (invocation.ParameterTypes == null || invocation.ParameterTypes.Count == 0)
             {
@@ -505,19 +555,58 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 根据调用描述执行 Dubbo/Triple 泛化调用，并将响应反序列化为指定类型。
-        /// EN: Performs a Dubbo/Triple generic invocation from a descriptor and deserializes the response.
+        /// 根据 <see cref="DubboInvocation"/> 调用 Dubbo 方法并将响应反序列化为指定类型。
+        /// EN: Invokes a Dubbo method from a <see cref="DubboInvocation"/> and deserializes the response.
         /// </summary>
         /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
         /// <param name="invocation">调用描述。EN: Invocation descriptor.</param>
         /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="invocation"/> 为空。EN: <paramref name="invocation"/> is null.</exception>
         /// <exception cref="DubboMetadataException">需要自动推断但元数据不可用或不明确。EN: Inference is required but metadata is unavailable or ambiguous.</exception>
-        public async Task<DubboRequestResult<T_Rsp>> QueryGenericAsync<T_Rsp>(
+        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(
             DubboInvocation invocation)
         {
             return new DubboRequestResult<T_Rsp>(
-                await QueryGenericAsync(invocation).ConfigureAwait(false));
+                await QueryAsync(invocation).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// 解析方法元数据并以结构化调用描述发送请求。
+        /// EN: Resolves method metadata and sends the request with a structured invocation descriptor.
+        /// </summary>
+        private async Task<DubboRequestResult> QueryWithInferredTypesAsync(
+            string funcEndPoint,
+            IReadOnlyList<object> arguments)
+        {
+            Tuple<string, string> endpoint = GetSeviceNameFormFuncEndPoint(funcEndPoint);
+            DubboInvocation invocation = await CreateMetadataInvocationAsync(
+                endpoint.Item1,
+                endpoint.Item2,
+                arguments ?? Array.Empty<object>()).ConfigureAwait(false);
+            return await QueryInternalAsync(
+                funcEndPoint,
+                JsonSerializer.Serialize(invocation.Arguments),
+                invocation).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 合并“两个及以上参数”重载收到的实参，同时避免单个数组被 <c>params</c> 展开。
+        /// EN: Combines arguments received by the two-or-more overload while preventing a single array from being expanded by <c>params</c>.
+        /// </summary>
+        private static IReadOnlyList<object> CombineArguments(
+            object firstArgument,
+            object secondArgument,
+            object[] additionalArguments)
+        {
+            int additionalCount = additionalArguments?.Length ?? 0;
+            object[] arguments = new object[additionalCount + 2];
+            arguments[0] = firstArgument;
+            arguments[1] = secondArgument;
+            if (additionalCount > 0)
+            {
+                Array.Copy(additionalArguments, 0, arguments, 2, additionalCount);
+            }
+            return arguments;
         }
 
         /// <summary>
@@ -629,8 +718,8 @@ namespace DubboNet.Clients
             {
                 throw new DubboMetadataException(
                     $"{exception.Message} Requested endpoint: '{serviceName}.{methodName}'. " +
-                    $"Use QueryGenericAsync(\"{serviceName}.{methodName}\", " +
-                    "new[] { \"<exact-java-type>\" }, arguments) to retry explicitly.",
+                    $"Use QueryAsync(\"{serviceName}.{methodName}\", " +
+                    "new[] { \"<exact-java-type>\" }, new object[] { argument }) to retry explicitly.",
                     exception);
             }
             DubboMethodMetadata resolved;
@@ -658,8 +747,8 @@ namespace DubboNet.Clients
                         $"{centerResolutionException.Message} The metadata-center definition " +
                         $"could not resolve this invocation, and Telnet fallback could not " +
                         $"supplement it: {telnet.FailureReason}. " +
-                        $"Use QueryGenericAsync(\"{serviceName}.{methodName}\", " +
-                        "new[] { \"<exact-java-type>\" }, arguments) to retry explicitly.",
+                        $"Use QueryAsync(\"{serviceName}.{methodName}\", " +
+                        "new[] { \"<exact-java-type>\" }, new object[] { argument }) to retry explicitly.",
                         centerResolutionException);
                 }
 
@@ -690,7 +779,7 @@ namespace DubboNet.Clients
         private async Task<DubboRequestResult> QueryInternalAsync(
             string funcEndPoint,
             string req,
-            DubboInvocation nativeInvocation)
+            DubboInvocation invocation)
         {
             if (IsDisposed)
             {
@@ -707,7 +796,7 @@ namespace DubboNet.Clients
                 await GetRequiredProtocolAsync(
                     nowServiceName,
                     nowFuncName,
-                    nativeInvocation).ConfigureAwait(false);
+                    invocation).ConfigureAwait(false);
             AvailableDubboActuatorInfo availableDubboActuatorInfo =
                 _dubboDriverCollection.GetDubboActuatorSuite(
                     nowServiceName,
@@ -717,41 +806,21 @@ namespace DubboNet.Clients
             //获取到可用的DubboActuatorSuite
             if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
             {
-                if (nativeInvocation != null)
-                {
-                    if (availableDubboActuatorInfo.AvailableDubboActuatorSuite
-                        is IDubboGenericInvocationActuator genericInvocationSuite)
-                    {
-                        return await genericInvocationSuite.SendQuery(nativeInvocation)
-                            .ConfigureAwait(false);
-                    }
-
-                    return new DubboRequestResult
-                    {
-                        QuerySuccess = false,
-                        ServiceElapsed = -1,
-                        ErrorMeaasge =
-                            $"Explicit Dubbo generic invocation requires a dubbo:// or tri:// provider, but " +
-                            $"{availableDubboActuatorInfo.AvailableDubboActuatorSuite.ProtocolType} was selected."
-                    };
-                }
                 if (availableDubboActuatorInfo.AvailableDubboActuatorSuite
-                    is NativeDubboActuatorSuite metadataAwareNativeSuite)
+                    is IDubboGenericInvocationActuator genericInvocationSuite)
                 {
-                    // Preserve the original QueryAsync API while improving it with an exact
-                    // metadata signature. If neither metadata source can supply a signature,
-                    // CreateMetadataInvocationAsync throws with the explicit-overload remedy.
-                    DubboInvocation parsedInvocation = NativeDubboCodec.ParseInvocation(
-                        $"{nowServiceName}#{nowFuncName}",
-                        req);
-                    DubboInvocation resolvedInvocation = await CreateMetadataInvocationAsync(
-                        nowServiceName,
-                        nowFuncName,
-                        parsedInvocation.Arguments).ConfigureAwait(false);
-                    return await metadataAwareNativeSuite.SendQuery(resolvedInvocation)
+                    return await genericInvocationSuite.SendQuery(invocation)
                         .ConfigureAwait(false);
                 }
-                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery($"{nowServiceName}{availableDubboActuatorInfo.AvailableDubboActuatorSuite.ServiceFuncSpit}{nowFuncName}", req);
+
+                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery(
+                    $"{nowServiceName}" +
+                    $"{availableDubboActuatorInfo.AvailableDubboActuatorSuite.ServiceFuncSpit}" +
+                    nowFuncName,
+                    SerializeLegacyArguments(
+                        invocation.Arguments,
+                        availableDubboActuatorInfo.AvailableDubboActuatorSuite.ProtocolType))
+                    .ConfigureAwait(false);
             }
             //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
@@ -771,7 +840,7 @@ namespace DubboNet.Clients
                 else
                 {
                     _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
-                    return await QueryInternalAsync(funcEndPoint, req, nativeInvocation);
+                    return await QueryInternalAsync(funcEndPoint, req, invocation);
                 }
             }
             //没有获取到可用的DubboActuatorSuite，因为服务里的节点信息为空
@@ -787,7 +856,7 @@ namespace DubboNet.Clients
                 else if (serviceEndPointsInfo.EndPoints.Count > 0)
                 {
                     _dubboDriverCollection.AddDubboServiceDriver(nowServiceName, serviceEndPointsInfo.EndPoints);
-                    return await QueryInternalAsync(funcEndPoint, req, nativeInvocation);
+                    return await QueryInternalAsync(funcEndPoint, req, invocation);
                 }
                 else
                 {
@@ -840,11 +909,6 @@ namespace DubboNet.Clients
             string methodName,
             DubboInvocation invocation)
         {
-            if (invocation == null)
-            {
-                return null;
-            }
-
             try
             {
                 IReadOnlyList<DubboMethodMetadata> methods =
@@ -869,210 +933,27 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 调用无参数 Dubbo 方法。
-        /// EN: Invokes a Dubbo method without arguments.
+        /// 按旧 HTTP 或 Telnet 执行器要求的格式序列化结构化参数。
+        /// EN: Serializes structured arguments in the format expected by legacy HTTP or Telnet actuators.
         /// </summary>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <returns>Dubbo 请求结果。EN: The Dubbo request result.</returns>
-        public async Task<DubboRequestResult> QueryAsync(string funcEndPoint)
+        private static string SerializeLegacyArguments(
+            IReadOnlyList<object> arguments,
+            DubboActuatorProtocolType protocolType)
         {
-            return await QueryAsync(funcEndPoint, "");
-        }
+            if (arguments == null || arguments.Count == 0)
+            {
+                return string.Empty;
+            }
 
-        /// <summary>
-        /// 使用字符串形式的参数调用 Dubbo 方法并反序列化响应。
-        /// EN: Invokes a Dubbo method with string-form arguments and deserializes the response.
-        /// </summary>
-        /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req">逗号分隔的 JSON 参数内容。EN: Comma-separated JSON argument content.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        /// <exception cref="DubboMetadataException">无法解析精确 Java 参数类型。EN: Exact Java parameter types cannot be resolved.</exception>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(string funcEndPoint, string req)
-        {
-            DubboRequestResult sourceDubboResult = await QueryAsync(funcEndPoint, req);
-            DubboRequestResult<T_Rsp> dubboRequestResult = new DubboRequestResult<T_Rsp>(sourceDubboResult);
-            return dubboRequestResult;
-        }
+            if (protocolType == DubboActuatorProtocolType.Http)
+            {
+                return arguments.Count == 1
+                    ? JsonSerializer.Serialize(arguments[0])
+                    : JsonSerializer.Serialize(arguments);
+            }
 
-        /// <summary>
-        /// 调用无参数 Dubbo 方法并反序列化响应。
-        /// EN: Invokes a Dubbo method without arguments and deserializes the response.
-        /// </summary>
-        /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp>(string funcEndPoint)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, "");
-        }
-
-
-        /// <summary>
-        /// 使用一个参数调用 Dubbo 方法并反序列化响应。
-        /// EN: Invokes a Dubbo method with one argument and deserializes the response.
-        /// </summary>
-        /// <typeparam name="T_Rsp">响应数据的 CLR 类型。EN: CLR type of the response value.</typeparam>
-        /// <typeparam name="T_Req">请求参数的 CLR 类型。EN: CLR type of the request argument.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req">请求参数。EN: Request argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        /// <exception cref="DubboMetadataException">无法解析精确 Java 参数类型。EN: Exact Java parameter types cannot be resolved.</exception>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req>(string funcEndPoint, T_Req req)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, JsonSerializer.Serialize<T_Req>(req));
-        }
-        /// <summary>使用两个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with two arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2>(string funcEndPoint, T_Req1 req1, T_Req2 req2)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)}");
-        }
-        /// <summary>使用三个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with three arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <typeparam name="T_Req3">第三个参数类型。EN: Third argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <param name="req3">第三个参数。EN: Third argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)}");
-        }
-        /// <summary>使用四个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with four arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <typeparam name="T_Req3">第三个参数类型。EN: Third argument type.</typeparam>
-        /// <typeparam name="T_Req4">第四个参数类型。EN: Fourth argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <param name="req3">第三个参数。EN: Third argument.</param>
-        /// <param name="req4">第四个参数。EN: Fourth argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)}");
-        }
-        /// <summary>使用五个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with five arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <typeparam name="T_Req3">第三个参数类型。EN: Third argument type.</typeparam>
-        /// <typeparam name="T_Req4">第四个参数类型。EN: Fourth argument type.</typeparam>
-        /// <typeparam name="T_Req5">第五个参数类型。EN: Fifth argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <param name="req3">第三个参数。EN: Third argument.</param>
-        /// <param name="req4">第四个参数。EN: Fourth argument.</param>
-        /// <param name="req5">第五个参数。EN: Fifth argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)}");
-        }
-        /// <summary>使用六个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with six arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <typeparam name="T_Req3">第三个参数类型。EN: Third argument type.</typeparam>
-        /// <typeparam name="T_Req4">第四个参数类型。EN: Fourth argument type.</typeparam>
-        /// <typeparam name="T_Req5">第五个参数类型。EN: Fifth argument type.</typeparam>
-        /// <typeparam name="T_Req6">第六个参数类型。EN: Sixth argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <param name="req3">第三个参数。EN: Third argument.</param>
-        /// <param name="req4">第四个参数。EN: Fourth argument.</param>
-        /// <param name="req5">第五个参数。EN: Fifth argument.</param>
-        /// <param name="req6">第六个参数。EN: Sixth argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)}");
-        }
-        /// <summary>使用七个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with seven arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <typeparam name="T_Req3">第三个参数类型。EN: Third argument type.</typeparam>
-        /// <typeparam name="T_Req4">第四个参数类型。EN: Fourth argument type.</typeparam>
-        /// <typeparam name="T_Req5">第五个参数类型。EN: Fifth argument type.</typeparam>
-        /// <typeparam name="T_Req6">第六个参数类型。EN: Sixth argument type.</typeparam>
-        /// <typeparam name="T_Req7">第七个参数类型。EN: Seventh argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <param name="req3">第三个参数。EN: Third argument.</param>
-        /// <param name="req4">第四个参数。EN: Fourth argument.</param>
-        /// <param name="req5">第五个参数。EN: Fifth argument.</param>
-        /// <param name="req6">第六个参数。EN: Sixth argument.</param>
-        /// <param name="req7">第七个参数。EN: Seventh argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6, T_Req7>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6, T_Req7 req7)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)},{JsonSerializer.Serialize<T_Req7>(req7)}");
-        }
-        /// <summary>使用八个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with eight arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <typeparam name="T_Req3">第三个参数类型。EN: Third argument type.</typeparam>
-        /// <typeparam name="T_Req4">第四个参数类型。EN: Fourth argument type.</typeparam>
-        /// <typeparam name="T_Req5">第五个参数类型。EN: Fifth argument type.</typeparam>
-        /// <typeparam name="T_Req6">第六个参数类型。EN: Sixth argument type.</typeparam>
-        /// <typeparam name="T_Req7">第七个参数类型。EN: Seventh argument type.</typeparam>
-        /// <typeparam name="T_Req8">第八个参数类型。EN: Eighth argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <param name="req3">第三个参数。EN: Third argument.</param>
-        /// <param name="req4">第四个参数。EN: Fourth argument.</param>
-        /// <param name="req5">第五个参数。EN: Fifth argument.</param>
-        /// <param name="req6">第六个参数。EN: Sixth argument.</param>
-        /// <param name="req7">第七个参数。EN: Seventh argument.</param>
-        /// <param name="req8">第八个参数。EN: Eighth argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6, T_Req7, T_Req8>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6, T_Req7 req7, T_Req8 req8)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)},{JsonSerializer.Serialize<T_Req7>(req7)},{JsonSerializer.Serialize<T_Req8>(req8)}");
-        }
-        /// <summary>使用九个参数调用 Dubbo 方法并反序列化响应。EN: Invokes a Dubbo method with nine arguments and deserializes the response.</summary>
-        /// <typeparam name="T_Rsp">响应类型。EN: Response type.</typeparam>
-        /// <typeparam name="T_Req1">第一个参数类型。EN: First argument type.</typeparam>
-        /// <typeparam name="T_Req2">第二个参数类型。EN: Second argument type.</typeparam>
-        /// <typeparam name="T_Req3">第三个参数类型。EN: Third argument type.</typeparam>
-        /// <typeparam name="T_Req4">第四个参数类型。EN: Fourth argument type.</typeparam>
-        /// <typeparam name="T_Req5">第五个参数类型。EN: Fifth argument type.</typeparam>
-        /// <typeparam name="T_Req6">第六个参数类型。EN: Sixth argument type.</typeparam>
-        /// <typeparam name="T_Req7">第七个参数类型。EN: Seventh argument type.</typeparam>
-        /// <typeparam name="T_Req8">第八个参数类型。EN: Eighth argument type.</typeparam>
-        /// <typeparam name="T_Req9">第九个参数类型。EN: Ninth argument type.</typeparam>
-        /// <param name="funcEndPoint">服务和方法入口。EN: Service and method endpoint.</param>
-        /// <param name="req1">第一个参数。EN: First argument.</param>
-        /// <param name="req2">第二个参数。EN: Second argument.</param>
-        /// <param name="req3">第三个参数。EN: Third argument.</param>
-        /// <param name="req4">第四个参数。EN: Fourth argument.</param>
-        /// <param name="req5">第五个参数。EN: Fifth argument.</param>
-        /// <param name="req6">第六个参数。EN: Sixth argument.</param>
-        /// <param name="req7">第七个参数。EN: Seventh argument.</param>
-        /// <param name="req8">第八个参数。EN: Eighth argument.</param>
-        /// <param name="req9">第九个参数。EN: Ninth argument.</param>
-        /// <returns>强类型 Dubbo 请求结果。EN: A strongly typed Dubbo request result.</returns>
-        public async Task<DubboRequestResult<T_Rsp>> QueryAsync<T_Rsp, T_Req1, T_Req2, T_Req3, T_Req4, T_Req5, T_Req6, T_Req7, T_Req8, T_Req9>(string funcEndPoint, T_Req1 req1, T_Req2 req2, T_Req3 req3, T_Req4 req4, T_Req5 req5, T_Req6 req6, T_Req7 req7, T_Req8 req8, T_Req9 req9)
-        {
-            return await QueryAsync<T_Rsp>(funcEndPoint, $"{JsonSerializer.Serialize<T_Req1>(req1)},{JsonSerializer.Serialize<T_Req2>(req2)},{JsonSerializer.Serialize<T_Req3>(req3)},{JsonSerializer.Serialize<T_Req4>(req4)},{JsonSerializer.Serialize<T_Req5>(req5)},{JsonSerializer.Serialize<T_Req6>(req6)},{JsonSerializer.Serialize<T_Req7>(req7)},{JsonSerializer.Serialize<T_Req8>(req8)},{JsonSerializer.Serialize<T_Req9>(req9)}");
+            return string.Join(",", arguments.Select(argument =>
+                JsonSerializer.Serialize(argument)));
         }
 
         #endregion

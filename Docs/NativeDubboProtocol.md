@@ -92,7 +92,7 @@ Body 是连续的 Hessian2 值，不是一个 JSON 对象。当前实现依次�
 
 - 只实现 Hessian2（serialization id `2`）。
 - 使用 `$invoke` 泛化调用，不要求 .NET 持有 Java 接口 jar。
-- `DubboClient.QueryGenericAsync(endpoint, arguments)` 会读取并缓存精确签名：Provider `release >= 2.7.3` 时优先使用元数据中心，失败后回退到 Telnet `ls -l`；已知低版本直接使用 Telnet；无法识别版本时先尝试元数据中心。
+- `DubboClient.QueryAsync(endpoint, arguments)` 会读取并缓存精确签名：Provider `release >= 2.7.3` 时优先使用元数据中心，失败后回退到 Telnet `ls -l`；已知低版本直接使用 Telnet；无法识别版本时先尝试元数据中心。
 - 元数据中心地址默认复用注册中心，也可以通过 `MetadataCenterAddress` 和 `MetadataRootPath` 单独配置。
 - Telnet 元数据和“不支持 Telnet”的失败结论都按服务缓存，一个 `DubboClient` 生命周期内只探测一次；若后续创建元数据节点，ZooKeeper watch 会切换回优先级更高的元数据中心结果。
 - 注册中心或元数据中心的瞬时连接错误不会被永久缓存；后续调用会重试高优先级来源，但会复用已有的 Telnet 正/负缓存，不会重复连接。元数据中心只返回部分方法/重载时，解析失败的目标方法会再用 Telnet 结果补全一次。
