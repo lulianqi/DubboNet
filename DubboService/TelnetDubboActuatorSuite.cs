@@ -215,6 +215,7 @@ namespace DubboNet.DubboService
                 AssistConnectionAliveTime = dubboActuatorSuiteConf.AssistConnectionAliveTime;
                 MasterConnectionAliveTime = dubboActuatorSuiteConf.MasterConnectionAliveTime;
                 MaxConnections = dubboActuatorSuiteConf.MaxConnections;
+                IsAutoUpdateStatusInfo = dubboActuatorSuiteConf.IsAutoUpdateStatusInfo;
             }
             _eventWaitHandle = new EventWaitHandle(true, EventResetMode.ManualReset);
             _actuatorSuiteCellList = new List<DubboSuiteCell> {new DubboSuiteCell(this)};

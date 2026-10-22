@@ -27,13 +27,13 @@ namespace DubboNet.Clients
         /// </summary>
         internal class DubboServiceDriverConf
         {
-            /// <summary>单个 Provider 端点允许创建的最大连接数。EN: Maximum number of connections allowed for one provider endpoint.</summary>
+            /// <summary>Triple 与 Telnet Provider 的最大连接数；Native 不使用。EN: Maximum connections for Triple and Telnet providers; ignored by Native.</summary>
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
-            /// <summary>辅助连接的空闲存活时间，单位秒。EN: Idle lifetime of auxiliary connections, in seconds.</summary>
+            /// <summary>Telnet 辅助连接的空闲存活时间，单位秒。EN: Idle lifetime of Telnet auxiliary connections, in seconds.</summary>
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
-            /// <summary>主连接的空闲存活时间，单位秒。EN: Idle lifetime of the primary connection, in seconds.</summary>
+            /// <summary>Telnet 主连接及 Triple HTTP 连接池的空闲存活时间，单位秒。EN: Idle lifetime for the Telnet primary connection and Triple HTTP connection pool, in seconds.</summary>
             public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
-            /// <summary>Dubbo 请求超时时间，单位毫秒。EN: Dubbo request timeout, in milliseconds.</summary>
+            /// <summary>Native、Triple 与 Telnet 请求超时时间，单位毫秒。EN: Native, Triple, and Telnet request timeout, in milliseconds.</summary>
             public int DubboRequestTimeout { get; set; } = 60 * 1000;
         }
 

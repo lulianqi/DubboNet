@@ -1,10 +1,10 @@
 
 services:
-  nativedubbointegration:
-    image: nativedubbointegration
+  dubboclientintegrationtests:
+    image: dubboclientintegrationtests
     build:
       context: .
-      dockerfile: Tests/NativeDubboIntegration/Dockerfile
+      dockerfile: Tests/DubboClientIntegrationTests/Dockerfile
       args:
         - configuration=Debug
     volumes:

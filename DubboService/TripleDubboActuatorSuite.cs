@@ -363,23 +363,23 @@ namespace DubboNet.DubboService
                 throw new ArgumentException("Provider address cannot be empty.", nameof(address));
             }
 
-            int maxConnections = Math.Max(1, configuration?.MaxConnections ?? 20);
+            DubboActuatorSuiteConf effectiveConfiguration =
+                configuration ?? new DubboActuatorSuiteConf();
+            int maxConnections = Math.Max(1, effectiveConfiguration.MaxConnections);
             SocketsHttpHandler handler = new SocketsHttpHandler
             {
-                MaxConnectionsPerServer = maxConnections
+                MaxConnectionsPerServer = maxConnections,
+                PooledConnectionIdleTimeout = effectiveConfiguration.MasterConnectionAliveTime > 0
+                    ? TimeSpan.FromSeconds(effectiveConfiguration.MasterConnectionAliveTime)
+                    : Timeout.InfiniteTimeSpan
             };
-            if ((configuration?.MasterConnectionAliveTime ?? 0) > 0)
-            {
-                handler.PooledConnectionIdleTimeout = TimeSpan.FromSeconds(
-                    configuration.MasterConnectionAliveTime);
-            }
 
             HttpClient client = new HttpClient(handler)
             {
                 BaseAddress = new Uri($"http://{address}:{port}"),
                 Timeout = TimeSpan.FromMilliseconds(Math.Max(
                     1,
-                    configuration?.DubboRequestTimeout ?? 10_000))
+                    effectiveConfiguration.DubboRequestTimeout))
             };
             return client;
         }
