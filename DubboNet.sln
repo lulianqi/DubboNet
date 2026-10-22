@@ -7,11 +7,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DubboNet", "DubboNet.csproj
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "UnitTestForDubboNet", "Tests\UnitTestForDubboNet\UnitTestForDubboNet.csproj", "{99005958-0F24-4A44-9FCA-BA4CC6FA7D07}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestConsoleDemo", "Tests\TestConsoleDemo\TestConsoleDemo.csproj", "{C2CA9473-5BC9-4B90-A5BA-947864519049}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QueryDemo", "Tests\QueryDemo\QueryDemo.csproj", "{C2CA9473-5BC9-4B90-A5BA-947864519049}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NativeDubboIntegration", "Tests\NativeDubboIntegration\NativeDubboIntegration.csproj", "{18B46F34-FCBB-4BD8-82C1-08BF6323DABD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DubboClientIntegrationTests", "Tests\DubboClientIntegrationTests\DubboClientIntegrationTests.csproj", "{18B46F34-FCBB-4BD8-82C1-08BF6323DABD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -76,6 +76,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{C2CA9473-5BC9-4B90-A5BA-947864519049} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{18B46F34-FCBB-4BD8-82C1-08BF6323DABD} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution

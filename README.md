@@ -45,10 +45,10 @@ DubboClient
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `2.1.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `3.1.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 2.1.0
+dotnet add package DubboNet --version 3.1.0
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
@@ -614,25 +614,32 @@ dotnet build DubboNet.csproj --no-restore
 dotnet test Tests/UnitTestForDubboNet/UnitTestForDubboNet.csproj --no-restore
 ```
 
-原生协议集成测试默认连接公开测试注册中心 `110.40.136.183:2181`，也可以把其他
+`DubboClientIntegrationTests` 默认连接公开测试注册中心 `110.40.136.183:2181`，也可以把其他
 ZooKeeper 地址作为第一个参数传入：
 
 ```bash
 dotnet run \
-  --project Tests/NativeDubboIntegration/NativeDubboIntegration.csproj \
+  --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
   -- 110.40.136.183:2181
 ```
 
 测试矩阵覆盖 Dubbo 2.7.23、3.1.11、3.2.20 和 3.3.6，并验证元数据缓存、
-自动签名推断、显式 Java 类型、强类型返回、`DubboInvocation`、旧 `QueryAsync`
-兼容入口、Provider 异常，以及 Dubbo TCP/Hessian2 和 Triple HTTP/JSON 的明确直连。
+自动签名推断、显式 Java 类型、强类型返回、`DubboInvocation`、Provider 异常，
+以及 Dubbo TCP/Hessian2 和 Triple HTTP/JSON 的明确直连。
 测试使用专门准备的 `com.example.dubbonet` 服务；如传入其他 ZooKeeper 地址，需确保
 存在相同的根路径和测试服务。程序以非零退出码报告失败，可直接用于手工验收或 CI。
+
+`QueryDemo` 使用顺序代码展示 `DubboClient.QueryAsync` 的全部重载，以及已知 Provider
+IP、端口和协议时如何绕过注册中心直接调用：
+
+```bash
+dotnet run --project Tests/QueryDemo/QueryDemo.csproj
+```
 
 ### 自动发布 NuGet 包 / Automated NuGet publishing
 
 仓库通过 `.github/workflows/publish-nuget.yml` 自动发布正式版本。创建并发布 GitHub
-Release 后，工作流会把 Release Tag（支持 `2.1.0` 或 `v2.1.0`）作为包版本，依次运行
+Release 后，工作流会把 Release Tag（支持 `3.1.0` 或 `v3.1.0`）作为包版本，依次运行
 单元测试、打包，并将同一个 `.nupkg` 发布到 GitHub Packages 和 nuget.org。
 
 nuget.org 使用 Trusted Publishing/OIDC 颁发的临时密钥，不在仓库中保存长期 API Key。

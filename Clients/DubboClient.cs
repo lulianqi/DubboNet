@@ -106,28 +106,46 @@ namespace DubboNet.Clients
             /// </summary>
             public string MetadataRootPath { get; set; } = null;
             /// <summary>
-            /// 单个Dubbo服务节点最多能开启的连接数量（默认情况会保持1个连接，当对单个节点出现并行请求时会自动开启更多连接）
-            /// EN: Maximum connections opened for one provider endpoint; extra connections are created for concurrent requests.
+            /// 单个 Provider 节点允许的最大连接数；仅对 <see cref="TripleDubboActuatorSuite"/> 和
+            /// <see cref="TelnetDubboActuatorSuite"/> 生效。<see cref="NativeDubboActuatorSuite"/> 使用单条可并发复用的
+            /// TCP 长连接，不使用此配置。
+            /// EN: Maximum connections allowed for one provider endpoint. This setting applies only to
+            /// <see cref="TripleDubboActuatorSuite"/> and <see cref="TelnetDubboActuatorSuite"/>.
+            /// <see cref="NativeDubboActuatorSuite"/> multiplexes requests over one reusable TCP connection and ignores it.
             /// </summary>
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
             /// <summary>
-            /// 服务节点辅助连接不再活跃超过此时间时释放辅助连接（单位秒,默认300s，0表示不进行主动释放）
-            /// EN: Idle lifetime in seconds for auxiliary connections; zero disables proactive release.
+            /// Telnet 执行器辅助连接的空闲存活时间（秒，默认 300 秒）；0 表示不主动释放。
+            /// 仅对 <see cref="TelnetDubboActuatorSuite"/> 生效。
+            /// EN: Idle lifetime, in seconds, for auxiliary Telnet connections; the default is 300 seconds and zero
+            /// disables proactive release. This setting applies only to <see cref="TelnetDubboActuatorSuite"/>.
             /// </summary>
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
             /// <summary>
-            /// 服务节点主连接不再活跃超过此时间时释放辅助连接（单位秒,默认1200s，0表示不进行主动释放）
-            /// EN: Idle lifetime in seconds for the primary connection; zero disables proactive release.
+            /// Provider 主连接的空闲存活时间（秒，默认 1200 秒）；0 表示不主动释放。
+            /// 对 <see cref="TelnetDubboActuatorSuite"/> 表示主 TCP 连接的空闲释放时间；对
+            /// <see cref="TripleDubboActuatorSuite"/> 表示 HTTP 连接池的空闲连接超时；不影响
+            /// <see cref="NativeDubboActuatorSuite"/>。
+            /// EN: Idle lifetime, in seconds, for the provider's primary connection; the default is 1200 seconds and
+            /// zero disables proactive release. It controls the primary TCP connection in <see cref="TelnetDubboActuatorSuite"/>
+            /// and the pooled HTTP connection idle timeout in <see cref="TripleDubboActuatorSuite"/>; it does not affect
+            /// <see cref="NativeDubboActuatorSuite"/>.
             /// </summary>
             public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
             /// <summary>
-            /// Dubbo请求的最大超时时间
-            /// EN: Maximum Dubbo request timeout in milliseconds.
+            /// Dubbo 请求的最大超时时间（毫秒）；对客户端创建的 <see cref="NativeDubboActuatorSuite"/>、
+            /// <see cref="TripleDubboActuatorSuite"/> 和 <see cref="TelnetDubboActuatorSuite"/> 均生效。
+            /// EN: Maximum Dubbo request timeout in milliseconds. This setting applies to
+            /// <see cref="NativeDubboActuatorSuite"/>, <see cref="TripleDubboActuatorSuite"/>, and
+            /// <see cref="TelnetDubboActuatorSuite"/> instances created by the client.
             /// </summary>
             public int DubboRequestTimeout { get; set; } = 60 * 1000;
             /// <summary>
-            /// 单次 Telnet 元数据探测的超时时间（毫秒）。
-            /// EN: Timeout in milliseconds for the one-time Telnet metadata probe.
+            /// 单次 Telnet 元数据回退探测的超时时间（毫秒）。仅用于无法从元数据中心获得方法签名时的
+            /// Telnet 元数据探测，不控制 <see cref="TelnetDubboActuatorSuite"/> 的业务请求超时。
+            /// EN: Timeout in milliseconds for one Telnet metadata fallback probe. It is used only when method metadata
+            /// cannot be obtained from the metadata center and does not control business requests sent by
+            /// <see cref="TelnetDubboActuatorSuite"/>.
             /// </summary>
             public int TelnetMetadataTimeout { get; set; } = 10 * 1000;
             /// <summary>
@@ -223,32 +241,33 @@ namespace DubboNet.Clients
         public LoadBalanceMode NowLoadBalanceMode { get; private set; } = LoadBalanceMode.Random;
 
         /// <summary>
-        /// 单个Dubbo服务节点最多能开启的连接数量（默认情况会保持1个连接，当对单个节点出现并行请求时会自动开启更多连接）
-        /// EN: Effective maximum connection count for one provider endpoint.
+        /// 当前对 Triple 和 Telnet Provider 生效的最大连接数；原生 Dubbo TCP 执行器不使用此值。
+        /// EN: Effective maximum connection count for Triple and Telnet providers; the native Dubbo TCP actuator ignores it.
         /// </summary>
         public int DubboActuatorSuiteMaxConnections { get;private set; } = 20;
 
         /// <summary>
-        /// 服务节点辅助连接不再活跃超过此时间时释放辅助连接（单位秒,默认300s，0表示不进行主动释放）
-        /// EN: Effective auxiliary-connection idle lifetime in seconds.
+        /// 当前 Telnet 辅助连接的空闲存活时间（秒）；仅对 Telnet 执行器生效。
+        /// EN: Effective auxiliary-connection idle lifetime in seconds; applies only to the Telnet actuator.
         /// </summary>
         public int DubboActuatorSuiteAssistConnectionAliveTime { get; private set; } = 60 * 5;
 
         /// <summary>
-        /// 服务节点主连接不再活跃超过此时间时释放辅助连接（单位秒,默认1200s，0表示不进行主动释放）
-        /// EN: Effective primary-connection idle lifetime in seconds.
+        /// 当前主连接空闲存活时间（秒）；对 Telnet 主连接和 Triple HTTP 连接池生效，原生 Dubbo TCP 执行器不使用此值。
+        /// EN: Effective primary-connection idle lifetime in seconds for Telnet and the Triple HTTP connection pool;
+        /// the native Dubbo TCP actuator ignores it.
         /// </summary>
         public int DubboActuatorSuiteMasterConnectionAliveTime { get; private set; } = 60 * 20;
 
         /// <summary>
-        /// Dubbo请求的最大超时时间
-        /// EN: Effective Dubbo request timeout in milliseconds.
+        /// 当前业务请求最大超时时间（毫秒）；对 Native、Triple 和 Telnet 执行器均生效。
+        /// EN: Effective business-request timeout in milliseconds for Native, Triple, and Telnet actuators.
         /// </summary>
         public int DubboRequestTimeout { get; private set; } = 60 * 1000;
 
         /// <summary>
-        /// 当前单次 Telnet 元数据探测的超时时间（毫秒）。
-        /// EN: Effective timeout in milliseconds for the one-time Telnet metadata probe.
+        /// 当前单次 Telnet 元数据回退探测的超时时间（毫秒）；不影响 Telnet 业务请求。
+        /// EN: Effective timeout in milliseconds for one Telnet metadata fallback probe; it does not affect Telnet business requests.
         /// </summary>
         public int TelnetMetadataTimeout { get; private set; } = 10 * 1000;
 
