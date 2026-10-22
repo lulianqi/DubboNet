@@ -71,7 +71,7 @@ using DubboNet.DubboService.DataModle;
 
 using var client = new DubboClient("127.0.0.1:2181");
 
-DubboRequestResult result = await client.QueryGenericAsync(
+DubboRequestResult result = await client.QueryAsync(
     "com.foo.JobService#getJob",
     1234);
 
@@ -97,7 +97,7 @@ com.foo.JobService/getJob
 ### 无参数调用 / No-argument Invocation
 
 ```csharp
-DubboRequestResult result = await client.QueryGenericAsync(
+DubboRequestResult result = await client.QueryAsync(
     "com.foo.HealthService#check");
 ```
 
@@ -106,7 +106,7 @@ DubboRequestResult result = await client.QueryGenericAsync(
 ### 自动推断参数类型 / Automatic Type Inference
 
 ```csharp
-DubboRequestResult result = await client.QueryGenericAsync(
+DubboRequestResult result = await client.QueryAsync(
     "com.foo.CustomerService#getCustomer",
     "123",
     1234L);
@@ -125,19 +125,18 @@ DubboRequestResult result = await client.QueryGenericAsync(
 
 ### 显式 Java 参数类型 / Explicit Java Parameter Types
 
-显式重载不查询元数据中心，也不连接 Telnet，是生产环境中最确定的调用方式：
+显式重载不依赖元数据获取成功，是生产环境中最确定的调用方式。客户端仍可能尽力读取元数据以辅助协议选择，但读取失败不会阻止使用用户提供的签名发送请求：
 
 ```csharp
-DubboRequestResult job = await client.QueryGenericAsync(
+DubboRequestResult job = await client.QueryAsync(
     "com.foo.JobService#getJob",
     new[] { "java.lang.Integer" },
-    1234);
+    new object[] { 1234 });
 
-DubboRequestResult customer = await client.QueryGenericAsync(
+DubboRequestResult customer = await client.QueryAsync(
     "com.foo.CustomerService#getCustomer",
     new[] { "java.lang.String", "java.lang.Long" },
-    "123",
-    1234L);
+    new object[] { "123", 1234L });
 ```
 
 数组中的类型必须是 Provider `$invoke` 能加载的准确 Java 类型名，例如：
@@ -157,10 +156,10 @@ public sealed class JobDto
 }
 
 DubboRequestResult<JobDto> result =
-    await client.QueryGenericAsync<JobDto>(
+    await client.QueryAsync<JobDto>(
         "com.foo.JobService#getJob",
         new[] { "java.lang.Long" },
-        1234L);
+        new object[] { 1234L });
 
 if (result.QuerySuccess)
 {
@@ -198,27 +197,35 @@ var invocation = new DubboInvocation(
     }
 };
 
-DubboRequestResult result = await client.QueryGenericAsync(invocation);
+DubboRequestResult result = await client.QueryAsync(invocation);
 ```
 
 对于 POJO 参数，客户端会根据 `ParameterTypes` 自动补充泛化调用需要的 `class=<Java FQCN>`。如果 `ParameterTypes` 为空，`DubboClient` 会尝试通过元数据自动推断。
 
-### 兼容的 JSON 调用接口 / Legacy JSON API
+### 统一调用 API / Unified Invocation API
 
-原有 `QueryAsync` 接口仍可使用：
+所有通过 `DubboClient` 发送请求的公共入口统一命名为 `QueryAsync`。常用重载如下：
 
 ```csharp
-DubboRequestResult result = await client.QueryAsync(
-    "com.foo.JobService#getJob",
-    "1234");
+// 无参数
+await client.QueryAsync("com.foo.HealthService#check");
 
-DubboRequestResult<MyResponse> typed =
-    await client.QueryAsync<MyResponse, long>(
-        "com.foo.JobService#getJob",
-        1234L);
+// 单参数；即使参数本身是数组，也不会被错误展开
+await client.QueryAsync("com.foo.UserService#batchGet", new long[] { 1, 2 });
+
+// 两个或更多参数
+DubboRequestResult result = await client.QueryAsync(
+    "com.foo.CustomerService#getCustomer",
+    "123",
+    1234L);
+
+// 强类型响应
+DubboRequestResult<MyResponse> typed = await client.QueryAsync<MyResponse>(
+    "com.foo.JobService#getJob",
+    1234L);
 ```
 
-在 `dubbo://` Provider 上，`QueryAsync` 最终也会尝试用元数据解析准确签名。新代码建议使用 `QueryGenericAsync`；当类型存在歧义时使用显式 Java 类型重载。
+release3.0 分支不再公开 `QueryGenericAsync`、原始 JSON 文本重载，以及按请求类型泛型数量扩展的旧重载。迁移时将 `QueryGenericAsync` 改为 `QueryAsync`；显式 Java 类型调用需要把实参放入独立的 `object[]`。字符串现在始终表示一个普通字符串参数，不再被解释为逗号分隔的原始 JSON 请求。
 
 ### 直接使用执行器 / Direct Actuator Usage
 
@@ -508,7 +515,7 @@ Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/Triple
 ## 使用建议 / Recommendations
 
 1. **复用 `DubboClient`。** 长生命周期实例才能充分复用 ZooKeeper、Provider TCP 连接、服务驱动和元数据缓存。
-2. **优先使用 `QueryGenericAsync`。** 它清楚地区分参数对象和 Java 签名；旧 `QueryAsync` 主要用于兼容已有代码。
+2. **统一使用 `QueryAsync`。** 普通调用让客户端自动推断签名；类型有歧义时使用显式 Java 类型重载。
 3. **关键接口显式传类型。** 对重载、包装类型、`null`、集合和 POJO，显式 Java 类型比运行时推断更稳定。
 4. **优先建设元数据中心。** Telnet 是可选的兜底能力，不应成为生产调用的唯一元数据来源；不要把诊断端口暴露到不可信网络。
 5. **确认 Provider URL 完整。** 元数据中心定位依赖 `application`，服务路由还可能依赖 `version` 和 `group`。
@@ -550,10 +557,10 @@ Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/Triple
 无法修复元数据来源时，按异常建议改用显式类型重载：
 
 ```csharp
-await client.QueryGenericAsync(
+await client.QueryAsync(
     "com.foo.JobService#getJob",
     new[] { "java.lang.Integer" },
-    1234);
+    new object[] { 1234 });
 ```
 
 ### 方法重载无法唯一确定

@@ -67,24 +67,24 @@ static async Task RunVersionAsync(
     await RunCaseAsync(
         version.Version,
         "inferred/no-argument",
-        () => client.QueryGenericAsync($"{EchoService}.ping"),
+        () => client.QueryAsync($"{EchoService}.ping"),
         Success,
         summary);
 
     await RunCaseAsync(
         version.Version,
         "explicit/string",
-        () => client.QueryGenericAsync(
+        () => client.QueryAsync(
             $"{EchoService}.echo",
             new[] { "java.lang.String" },
-            $"hello-{version.Version}"),
+            new object[] { $"hello-{version.Version}" }),
         result => Success(result) && JsonStringEquals(result, $"hello-{version.Version}"),
         summary);
 
     await RunCaseAsync(
         version.Version,
         "inferred/typed-int-result",
-        async () => await client.QueryGenericAsync<int>($"{DataTypeService}.add", 19, 23),
+        async () => await client.QueryAsync<int>($"{DataTypeService}.add", 19, 23),
         result => Success(result)
             && result is DubboRequestResult<int> typed
             && typed.ResultModle == 42,
@@ -93,35 +93,34 @@ static async Task RunVersionAsync(
     await RunCaseAsync(
         version.Version,
         "inferred/boolean",
-        () => client.QueryGenericAsync($"{DataTypeService}.negate", false),
+        () => client.QueryAsync($"{DataTypeService}.negate", false),
         result => Success(result) && JsonBooleanEquals(result, true),
         summary);
 
     await RunCaseAsync(
         version.Version,
         "explicit/primitive-array",
-        () => client.QueryGenericAsync(
+        () => client.QueryAsync(
             $"{DataTypeService}.average",
             new[] { "double[]" },
-            new double[] { 1, 2, 3, 4 }),
+            new object[] { new double[] { 1, 2, 3, 4 } }),
         result => Success(result) && JsonNumberEquals(result, 2.5),
         summary);
 
     await RunCaseAsync(
         version.Version,
         "explicit/string-and-array",
-        () => client.QueryGenericAsync(
+        () => client.QueryAsync(
             $"{DataTypeService}.join",
             new[] { "java.lang.String", "java.lang.String[]" },
-            "|",
-            new[] { "A", "B", "C" }),
+            new object[] { "|", new[] { "A", "B", "C" } }),
         result => Success(result) && JsonStringEquals(result, "A|B|C"),
         summary);
 
     await RunCaseAsync(
         version.Version,
         "invocation/map-and-attachments",
-        () => client.QueryGenericAsync(new DubboInvocation(
+        () => client.QueryAsync(new DubboInvocation(
             EchoService,
             "echoHeaders",
             new[] { "java.util.Map" },
@@ -145,20 +144,23 @@ static async Task RunVersionAsync(
     await RunCaseAsync(
         version.Version,
         "inferred/pojo-result",
-        () => client.QueryGenericAsync($"{OrderService}.getOrder", "ORDER-1001"),
+        () => client.QueryAsync($"{OrderService}.getOrder", "ORDER-1001"),
         Success,
         summary);
 
     await RunCaseAsync(
         version.Version,
         "explicit/pojo-argument",
-        () => client.QueryGenericAsync(
+        () => client.QueryAsync(
             $"{OrderService}.searchOrders",
             new[] { "com.example.dubbonet.model.OrderQuery" },
-            new Dictionary<string, object>
+            new object[]
             {
-                ["pageNo"] = 1,
-                ["pageSize"] = 2
+                new Dictionary<string, object>
+                {
+                    ["pageNo"] = 1,
+                    ["pageSize"] = 2
+                }
             }),
         Success,
         summary);
@@ -166,24 +168,24 @@ static async Task RunVersionAsync(
     await RunCaseAsync(
         version.Version,
         "explicit/long-array",
-        () => client.QueryGenericAsync(
+        () => client.QueryAsync(
             $"{UserService}.batchGet",
             new[] { "long[]" },
-            new long[] { 1, 2 }),
+            new object[] { new long[] { 1, 2 } }),
         Success,
         summary);
 
     await RunCaseAsync(
         version.Version,
-        "legacy/json-text",
-        () => client.QueryAsync($"{EchoService}.echo", "\"legacy-call\""),
-        result => Success(result) && JsonStringEquals(result, "legacy-call"),
+        "unified/string-argument",
+        () => client.QueryAsync($"{EchoService}.echo", "unified-call"),
+        result => Success(result) && JsonStringEquals(result, "unified-call"),
         summary);
 
     await RunCaseAsync(
         version.Version,
         "provider-exception",
-        () => client.QueryGenericAsync($"{EchoService}.alwaysFail", "expected-error"),
+        () => client.QueryAsync($"{EchoService}.alwaysFail", "expected-error"),
         result => !result.QuerySuccess
             && !string.IsNullOrWhiteSpace(result.ErrorMeaasge),
         summary);

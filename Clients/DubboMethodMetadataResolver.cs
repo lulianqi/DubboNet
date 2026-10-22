@@ -285,8 +285,8 @@ namespace DubboNet.Clients
         private static string ExplicitTypesSuggestion(string serviceName, string methodName)
         {
             return
-                $"Retry with QueryGenericAsync(\"{serviceName}.{methodName}\", " +
-                "new[] { \"<exact-java-type>\" }, arguments).";
+                $"Retry with QueryAsync(\"{serviceName}.{methodName}\", " +
+                "new[] { \"<exact-java-type>\" }, new object[] { argument }).";
         }
     }
 }
