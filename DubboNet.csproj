@@ -8,7 +8,7 @@
     <PackageProjectUrl>https://github.com/lulianqi/DubboNet</PackageProjectUrl>
     <PackageIcon>DubboNet.png</PackageIcon>
     <RepositoryUrl>https://github.com/lulianqi/DubboNet</RepositoryUrl>
-    <PackageTags>dubbo;triple;hessian2;zookeeper</PackageTags>
+    <PackageTags>dubbo;triple;hessian2;zookeeper;nacos</PackageTags>
     <IncludeSymbols>False</IncludeSymbols>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
@@ -31,6 +31,7 @@
 
   <ItemGroup>
     <PackageReference Include="DistributedLock.ZooKeeper" Version="1.0.0" />
+    <PackageReference Include="nacos-sdk-csharp" Version="1.3.10" />
     <PackageReference Include="NHessian" Version="0.4.3" />
   </ItemGroup>
 

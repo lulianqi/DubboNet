@@ -177,6 +177,49 @@ namespace UnitTestForDubboNet
         }
 
 
+        [Fact]
+        public void RemovingAllProviders_ReleasesOnlyUnsharedSuitesAndCanRecover()
+        {
+            var shared = new Dictionary<System.Net.IPEndPoint, DubboActuatorSuiteEndPintInfo>();
+            DubboServiceEndPointInfo Endpoint(string service) =>
+                DubboServiceEndPointInfo.GetDubboServiceEndPointInfo(new Uri($"dubbo://127.0.0.1:20880/{service}?interface={service}"));
+            using var first = new DubboServiceDriver("ServiceA", new() { Endpoint("ServiceA") }, shared);
+            using var second = new DubboServiceDriver("ServiceB", new() { Endpoint("ServiceB") }, shared);
+            Assert.Equal(2, shared.Values.Single().ReferenceCount);
+            Assert.Equal(1, first.UpdateActuatorSuiteEndPoints(new()));
+            Assert.Empty(first.InnerActuatorSuites);
+            foreach (LoadBalanceMode mode in Enum.GetValues<LoadBalanceMode>())
+                Assert.Null(first.GetDubboActuatorSuite(mode, "key"));
+            Assert.Equal(1, shared.Values.Single().ReferenceCount);
+            Assert.NotNull(second.GetDubboActuatorSuite(LoadBalanceMode.Random));
+            second.UpdateActuatorSuiteEndPoints(new());
+            Assert.Empty(shared);
+            first.UpdateActuatorSuiteEndPoints(new() { Endpoint("ServiceA") });
+            Assert.NotNull(first.GetDubboActuatorSuite(LoadBalanceMode.Random));
+        }
+
+        [Theory]
+        [InlineData(LoadBalanceMode.Random)]
+        [InlineData(LoadBalanceMode.RoundRobin)]
+        [InlineData(LoadBalanceMode.ConsistentHash)]
+        [InlineData(LoadBalanceMode.ShortestResponse)]
+        [InlineData(LoadBalanceMode.P2CLoadBalance)]
+        public void UpdatedZeroWeightAndDisabledProviders_DoNotReceiveRequests(LoadBalanceMode mode)
+        {
+            DubboServiceEndPointInfo Endpoint(int port, string options = "") =>
+                DubboServiceEndPointInfo.GetDubboServiceEndPointInfo(new Uri($"dubbo://127.0.0.1:{port}/Service?interface=Service&{options}"));
+            using var driver = new DubboServiceDriver("Service", new() { Endpoint(20880), Endpoint(20881), Endpoint(20882) }, new());
+            var originalConnection = driver.InnerActuatorSuites[Endpoint(20880).EndPoint].InnerDubboActuatorSuite;
+            driver.UpdateActuatorSuiteEndPoints(new() { Endpoint(20880, "weight=0"), Endpoint(20881, "disabled=true"), Endpoint(20882) });
+            Assert.Same(originalConnection, driver.InnerActuatorSuites[Endpoint(20880).EndPoint].InnerDubboActuatorSuite);
+            Assert.Equal(2, driver.InnerActuatorSuites.Count);
+            for (int i = 0; i < 30; i++)
+                Assert.Same(driver.InnerActuatorSuites[Endpoint(20882).EndPoint].InnerDubboActuatorSuite,
+                    driver.GetDubboActuatorSuite(mode, i.ToString()));
+            driver.UpdateActuatorSuiteEndPoints(new() { Endpoint(20880, "weight=0") });
+            Assert.Null(driver.GetDubboActuatorSuite(mode, "key"));
+        }
+
         private void SetDubboActuatorSuiteStatusByReflection(IDubboActuatorSuite dubboActuatorSuite ,int lastQueryElapsed)
         {
             // 获取类型信息

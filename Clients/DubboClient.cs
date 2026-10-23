@@ -91,18 +91,18 @@ namespace DubboNet.Clients
         public class DubboClientConf
         {
             /// <summary>
-            /// Zookeeper上默认的Dubbo跟路径，默认/dubbo/
-            /// EN: Root path of Dubbo data in ZooKeeper; defaults to <c>/dubbo/</c>.
+            /// 注册位置；不填写时 ZooKeeper 使用 <c>/dubbo/</c>，Nacos Naming 使用 <c>DEFAULT_GROUP</c>。
+            /// EN: Registry location; when omitted, ZooKeeper uses <c>/dubbo/</c> and Nacos Naming uses <c>DEFAULT_GROUP</c>.
             /// </summary>
-            public string DubboRootPath { get; set; } = "/dubbo/";
+            public string DubboRootPath { get; set; } = null;
             /// <summary>
-            /// Dubbo 元数据中心的 ZooKeeper 连接字符串；未填写时复用服务注册中心连接，不创建额外连接。
-            /// EN: ZooKeeper connection string for the metadata center; when omitted, the service registry connection is reused.
+            /// Dubbo 元数据中心地址；支持 ZooKeeper 与以 <c>nacos://</c> 开头的 Nacos 地址。未填写时复用服务注册中心连接。
+            /// EN: Dubbo metadata-center address. ZooKeeper and <c>nacos://</c> Nacos addresses are supported; when omitted, the service registry is reused.
             /// </summary>
             public string MetadataCenterAddress { get; set; } = null;
             /// <summary>
-            /// 元数据中心的根路径（metadata-report 分组）；未填写时使用 <see cref="DubboRootPath"/>，Dubbo 2.7 默认使用 <c>/dubbo</c>。
-            /// EN: Metadata-report root path; defaults to <see cref="DubboRootPath"/> (normally <c>/dubbo</c>).
+            /// 元数据中心位置；Nacos Config 默认 <c>dubbo</c>（独立于 Naming 分组）。ZooKeeper 默认沿用 ZooKeeper 注册根路径，混合中心时默认 <c>/dubbo</c>。
+            /// EN: Metadata location; Nacos Config defaults to <c>dubbo</c>, independently of Naming. ZooKeeper inherits a ZooKeeper registry root, or uses <c>/dubbo</c> for mixed centers.
             /// </summary>
             public string MetadataRootPath { get; set; } = null;
             /// <summary>
@@ -172,11 +172,21 @@ namespace DubboNet.Clients
 
         private static MultiMyZookeeperStorage DubboClientMultiMyZookeeperStorage = new MultiMyZookeeperStorage();
 
+        private static MultiMyNacosStorage DubboClientMultiMyNacosStorage = new MultiMyNacosStorage();
+
         private MyZookeeper _innerMyZookeeper;
+
+        private MyNacos _innerMyNacos;
 
         private MyZookeeper _metadataMyZookeeper;
 
-        private bool _metadataZookeeperHasSeparateReference;
+        private MyNacos _metadataMyNacos;
+
+        private bool _metadataRegistryHasSeparateReference;
+
+        private bool _registryUsesNacos;
+
+        private bool _metadataUsesNacos;
 
         private DubboMetadataManager _metadataManager;
 
@@ -205,20 +215,20 @@ namespace DubboNet.Clients
         internal ReadOnlyDictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> DubboActuatorSuiteCollection => new ReadOnlyDictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo>(_retainDubboActuatorSuiteCollection);
 
         /// <summary>
-        /// Zookeeper上默认的Dubbo跟路径，默认/dubbo/
-        /// EN: Effective root path of Dubbo registry data in ZooKeeper.
+        /// 注册数据根路径；ZooKeeper 中为节点路径，Nacos 中为 Naming 分组。
+        /// EN: Effective registry root; a node path in ZooKeeper and a Naming group in Nacos.
         /// </summary>
         public string DubboRootPath { get; private set; } = "/dubbo/";
 
         /// <summary>
-        /// 当前用于读取 Dubbo 元数据的 ZooKeeper 连接字符串；默认复用服务注册中心。
-        /// EN: Effective metadata-center ZooKeeper connection string; defaults to the service registry.
+        /// 当前用于读取 Dubbo 元数据的注册中心地址；默认复用服务注册中心。
+        /// EN: Effective metadata-center registry address; defaults to the service registry.
         /// </summary>
         public string MetadataCenterAddress { get; private set; }
 
         /// <summary>
-        /// 构造完成后用于读取 Dubbo 元数据文档的实际根路径；未显式配置时继承规范化后的 <see cref="DubboRootPath"/>。
-        /// EN: Effective root path used to read Dubbo metadata documents after construction; when omitted, it inherits the normalized <see cref="DubboRootPath"/>.
+        /// 元数据实际根位置；ZooKeeper 中为节点根路径，Nacos 中为 Config 分组。
+        /// EN: Effective metadata root; a node root in ZooKeeper and a Config group in Nacos.
         /// </summary>
         public string MetadataRootPath { get; private set; }
 
@@ -283,9 +293,9 @@ namespace DubboNet.Clients
         /// 初始化DubboClient
         /// EN: Initializes a Dubbo client with default options.
         /// </summary>
-        /// <param name="zookeeperCoonectString">ZooKeeper 连接字符串；多个地址以逗号分隔，认证格式为 <c>[Scheme Auth]</c>。EN: ZooKeeper connection string; separate multiple addresses with commas and append authentication as <c>[Scheme Auth]</c>.</param>
+        /// <param name="registryCoonectString">注册中心地址。ZooKeeper 示例：<c>127.0.0.1:2181</c>，多个地址以逗号分隔，认证格式为 <c>[Scheme Auth]</c>；Nacos 示例：<c>nacos://127.0.0.1:8848</c>，以 <c>nacos://</c> 前缀选择 Nacos。EN: Registry address. ZooKeeper example: <c>127.0.0.1:2181</c>; separate multiple addresses with commas and append authentication as <c>[Scheme Auth]</c>. Nacos example: <c>nacos://127.0.0.1:8848</c>; the <c>nacos://</c> prefix selects Nacos.</param>
         /// <exception cref="ArgumentException">连接字符串为空。EN: The connection string is empty.</exception>
-        public DubboClient(string zookeeperCoonectString) : this(zookeeperCoonectString,new DubboClientConf())
+        public DubboClient(string registryCoonectString) : this(registryCoonectString,new DubboClientConf())
         {
         }
 
@@ -293,28 +303,28 @@ namespace DubboNet.Clients
         /// 初始化DubboClient
         /// EN: Initializes a Dubbo client with explicit options.
         /// </summary>
-        /// <param name="zookeeperCoonectString">ZooKeeper 连接字符串；多个地址以逗号分隔，认证格式为 <c>[Scheme Auth]</c>。EN: ZooKeeper connection string; separate multiple addresses with commas and append authentication as <c>[Scheme Auth]</c>.</param>
+        /// <param name="registryCoonectString">注册中心地址。ZooKeeper 使用 <c>host:2181</c>；Nacos 使用 <c>nacos://host:8848</c>，并可附加 <c>?namespace=...&amp;username=...&amp;password=...</c>。EN: Registry address. Use <c>host:2181</c> for ZooKeeper or <c>nacos://host:8848</c> for Nacos; Nacos also accepts <c>?namespace=...&amp;username=...&amp;password=...</c>.</param>
         /// <param name="dubboClientConf">客户端配置；传入 <see langword="null"/> 时使用默认配置。EN: Client options; defaults are used when <see langword="null"/> is supplied.</param>
         /// <exception cref="ArgumentException">连接字符串为空。EN: The connection string is empty.</exception>
-        public DubboClient(string zookeeperCoonectString , DubboClientConf dubboClientConf)
+        public DubboClient(string registryCoonectString , DubboClientConf dubboClientConf)
         {
-            zookeeperCoonectString = zookeeperCoonectString?.Trim();
-            if (string.IsNullOrEmpty(zookeeperCoonectString))
+            registryCoonectString = registryCoonectString?.Trim();
+            if (string.IsNullOrEmpty(registryCoonectString))
             {
-                throw new ArgumentException($"“{nameof(zookeeperCoonectString)}” can not be null or empty", nameof(zookeeperCoonectString));
+                throw new ArgumentException($"“{nameof(registryCoonectString)}” can not be null or empty", nameof(registryCoonectString));
             }
             if (dubboClientConf == null)
             {
                 //throw new ArgumentNullException(nameof(dubboClientConf));
                 dubboClientConf = new DubboClientConf();
             }
-            DubboRootPath = NormalizeDubboRootPath(dubboClientConf.DubboRootPath);
             MetadataCenterAddress = string.IsNullOrWhiteSpace(dubboClientConf.MetadataCenterAddress)
-                ? zookeeperCoonectString
+                ? registryCoonectString
                 : dubboClientConf.MetadataCenterAddress.Trim();
-            MetadataRootPath = string.IsNullOrWhiteSpace(dubboClientConf.MetadataRootPath)
-                ? DubboRootPath.TrimEnd('/')
-                : NormalizeMetadataRootPath(dubboClientConf.MetadataRootPath);
+            _registryUsesNacos = MyNacos.IsNacosConnectionString(registryCoonectString);
+            _metadataUsesNacos = MyNacos.IsNacosConnectionString(MetadataCenterAddress);
+            (DubboRootPath, MetadataRootPath) = ResolveRegistryPaths(
+                _registryUsesNacos, _metadataUsesNacos, dubboClientConf);
             DefaultFuncName = dubboClientConf.DefaultFuncName;
             DefaultServiceName = dubboClientConf.DefaultServiceName;
             NowLoadBalanceMode = dubboClientConf.NowLoadBalanceMode;
@@ -326,28 +336,47 @@ namespace DubboNet.Clients
                 ? dubboClientConf.TelnetMetadataTimeout
                 : 10 * 1000;
             MaintainServiceNum = dubboClientConf.MaintainServiceNum;
-            
-            _innerMyZookeeper = DubboClientMultiMyZookeeperStorage.GetMyZookeeper(zookeeperCoonectString);
-            if (string.Equals(
-                MetadataCenterAddress,
-                zookeeperCoonectString,
-                StringComparison.Ordinal))
+
+            if (_registryUsesNacos)
             {
-                _metadataMyZookeeper = _innerMyZookeeper;
-                _metadataZookeeperHasSeparateReference = false;
+                _innerMyNacos = DubboClientMultiMyNacosStorage.GetMyNacos(registryCoonectString);
             }
             else
             {
-                _metadataMyZookeeper =
-                    DubboClientMultiMyZookeeperStorage.GetMyZookeeper(MetadataCenterAddress);
-                _metadataZookeeperHasSeparateReference = true;
+                _innerMyZookeeper = DubboClientMultiMyZookeeperStorage.GetMyZookeeper(registryCoonectString);
             }
-            _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
-            _metadataManager = new DubboMetadataManager(
-                _metadataMyZookeeper,
-                MetadataRootPath,
-                GetProviderEndPointsForMetadataAsync,
-                TelnetMetadataTimeout);
+
+            bool metadataReusesRegistry = string.Equals(
+                NormalizeRegistryAddress(MetadataCenterAddress),
+                NormalizeRegistryAddress(registryCoonectString),
+                StringComparison.Ordinal);
+            _metadataRegistryHasSeparateReference = !metadataReusesRegistry;
+            if (_metadataUsesNacos)
+            {
+                _metadataMyNacos = metadataReusesRegistry && _registryUsesNacos
+                    ? _innerMyNacos
+                    : DubboClientMultiMyNacosStorage.GetMyNacos(MetadataCenterAddress);
+                _metadataManager = new DubboMetadataManager(
+                    _metadataMyNacos,
+                    MetadataRootPath,
+                    GetProviderEndPointsForMetadataAsync,
+                    TelnetMetadataTimeout);
+            }
+            else
+            {
+                _metadataMyZookeeper = metadataReusesRegistry && !_registryUsesNacos
+                    ? _innerMyZookeeper
+                    : DubboClientMultiMyZookeeperStorage.GetMyZookeeper(MetadataCenterAddress);
+                _metadataManager = new DubboMetadataManager(
+                    _metadataMyZookeeper,
+                    MetadataRootPath,
+                    GetProviderEndPointsForMetadataAsync,
+                    TelnetMetadataTimeout);
+            }
+            if (!_registryUsesNacos)
+            {
+                _dubboClientZookeeperWatcher = new DubboClientZookeeperWatcher(this);
+            }
             _dubboDriverCollection = new DubboDriverCollection(_retainDubboActuatorSuiteCollection, new DubboDriverCollection.DubboDriverCollectionConf()
             {
                 DefaultServiceName = DefaultServiceName,
@@ -365,10 +394,10 @@ namespace DubboNet.Clients
         /// 初始化DubboClient
         /// EN: Initializes a Dubbo client and configures a default service and method endpoint.
         /// </summary>
-        /// <param name="zookeeperCoonectString">ZooKeeper 连接字符串，多个地址以逗号分隔。EN: ZooKeeper connection string with multiple addresses separated by commas.</param>
+        /// <param name="registryCoonectString">ZooKeeper 或 Nacos 注册中心地址；Nacos 地址必须以 <c>nacos://</c> 开头。EN: ZooKeeper or Nacos registry address; a Nacos address must start with <c>nacos://</c>.</param>
         /// <param name="funcEndPoint">默认调用入口，例如 <c>ServiceName.FuncName</c> 或 <c>ServiceName#FuncName</c>。EN: Default invocation endpoint, such as <c>ServiceName.FuncName</c> or <c>ServiceName#FuncName</c>.</param>
         /// <exception cref="ArgumentException">连接字符串或调用入口格式无效。EN: The connection string or endpoint format is invalid.</exception>
-        public DubboClient(string zookeeperCoonectString, string funcEndPoint ) : this(zookeeperCoonectString)
+        public DubboClient(string registryCoonectString, string funcEndPoint ) : this(registryCoonectString)
         {
             if (funcEndPoint.Contains('#'))
             {
@@ -376,7 +405,7 @@ namespace DubboNet.Clients
                 DefaultFuncName = funcEndPoint.Substring(tempSpitIndex + 1);
                 DefaultServiceName = funcEndPoint.Remove(tempSpitIndex);
             }
-            else if (DefaultFuncName.Contains('.'))
+            else if (funcEndPoint.Contains('.'))
             {
                 int tempSpitIndex = funcEndPoint.LastIndexOf('.');
                 DefaultFuncName = funcEndPoint.Substring(tempSpitIndex + 1);
@@ -1104,6 +1133,22 @@ namespace DubboNet.Clients
             DubboServiceEndPointInfos serviceEndPointsInfo = await ConcurrentGetProviderEndPoints(serviceName,isFullPath);
             if (serviceEndPointsInfo.ErrorInfo != null)
             {
+                string unavailableServiceName = serviceName;
+                if (isFullPath
+                    && TryGetServiceNameFromProviderPath(serviceName, out string parsedServiceName))
+                {
+                    unavailableServiceName = parsedServiceName;
+                }
+                if (_dubboDriverCollection.HasServiceDriver(unavailableServiceName)
+                    && IsNoProviderError(serviceEndPointsInfo.ErrorInfo))
+                {
+                    bool changed = _dubboDriverCollection.AddDubboServiceDriver(
+                        unavailableServiceName,
+                        new List<DubboServiceEndPointInfo>());
+                    await _metadataManager.RefreshCachedServiceAsync(unavailableServiceName)
+                        .ConfigureAwait(false);
+                    return changed;
+                }
                 MyLogger.LogError($"[ReflushProviderByPathAsync] fail by {serviceName} : {serviceEndPointsInfo.ErrorInfo}");
                 return false;
             }
@@ -1129,6 +1174,11 @@ namespace DubboNet.Clients
                 return changed;
             }
         }
+
+        private static bool IsNoProviderError(string errorInfo) =>
+            !string.IsNullOrWhiteSpace(errorInfo)
+            && (errorInfo.Contains("no provider", StringComparison.OrdinalIgnoreCase)
+                || errorInfo.Contains("no healthy provider", StringComparison.OrdinalIgnoreCase));
 
         internal bool TryGetServiceNameFromProviderPath(
             string providerPath,
@@ -1200,6 +1250,38 @@ namespace DubboNet.Clients
             if(string.IsNullOrEmpty(serviceName))
             {
                 throw new ArgumentNullException(nameof(serviceName));
+            }
+            if (_registryUsesNacos)
+            {
+                DubboServiceEndPointInfos nacosResult = new DubboServiceEndPointInfos();
+                if (isFullPath)
+                {
+                    nacosResult.ErrorInfo =
+                        $"Nacos discovery expects a Dubbo interface name instead of a ZooKeeper path: {serviceName}";
+                    return nacosResult;
+                }
+                try
+                {
+                    IReadOnlyList<DubboServiceEndPointInfo> endpoints =
+                        await _innerMyNacos.GetProviderEndPointsAsync(
+                            serviceName,
+                            DubboRootPath,
+                            this,
+                            HandleNacosProviderChangedAsync).ConfigureAwait(false);
+                    nacosResult.EndPoints.AddRange(endpoints);
+                    if (nacosResult.EndPoints.Count == 0)
+                    {
+                        nacosResult.ErrorInfo =
+                            $"no healthy provider endpoint for [{serviceName}] in Nacos group " +
+                            $"[{MyNacos.NormalizeGroup(DubboRootPath)}]";
+                    }
+                }
+                catch (Exception exception)
+                {
+                    nacosResult.ErrorInfo =
+                        $"can not get [{serviceName}] from Nacos: {exception.Message}";
+                }
+                return nacosResult;
             }
             string nowFullPath = isFullPath? serviceName: $"{DubboRootPath}{serviceName}/providers";
             DubboServiceEndPointInfos serviceEndPointsInfo = new DubboServiceEndPointInfos();
@@ -1274,6 +1356,22 @@ namespace DubboNet.Clients
             return serviceEndPointsInfo;
         }
 
+        private async Task HandleNacosProviderChangedAsync(string serviceName)
+        {
+            if (IsDisposed || string.IsNullOrWhiteSpace(serviceName))
+            {
+                return;
+            }
+            if (HasServiceDriver(serviceName))
+            {
+                await ReflushProviderAsync(serviceName).ConfigureAwait(false);
+            }
+            else if (HasCachedMetadata(serviceName))
+            {
+                await RefreshCachedMetadataAsync(serviceName).ConfigureAwait(false);
+            }
+        }
+
         private void ThrowIfDisposed()
         {
             if (IsDisposed)
@@ -1300,6 +1398,29 @@ namespace DubboNet.Clients
                 normalized = "/" + normalized;
             }
             return normalized.TrimEnd('/');
+        }
+
+        internal static (string RegistryRoot, string MetadataRoot) ResolveRegistryPaths(
+            bool registryUsesNacos, bool metadataUsesNacos, DubboClientConf configuration)
+        {
+            string registryRoot = registryUsesNacos
+                ? MyNacos.NormalizeGroup(configuration.DubboRootPath, "DEFAULT_GROUP")
+                : NormalizeDubboRootPath(configuration.DubboRootPath);
+            string metadataRoot = metadataUsesNacos
+                ? MyNacos.NormalizeGroup(configuration.MetadataRootPath, "dubbo")
+                : string.IsNullOrWhiteSpace(configuration.MetadataRootPath)
+                    ? (registryUsesNacos ? "/dubbo" : registryRoot.TrimEnd('/'))
+                    : NormalizeMetadataRootPath(configuration.MetadataRootPath);
+            return (registryRoot, metadataRoot);
+        }
+
+        private static string NormalizeRegistryAddress(string registryAddress)
+        {
+            if (MyNacos.IsNacosConnectionString(registryAddress))
+            {
+                return MyNacos.NormalizeConnectionString(registryAddress);
+            }
+            return registryAddress?.Trim();
         }
 
         /// <summary>
@@ -1373,16 +1494,33 @@ namespace DubboNet.Clients
                 IsDisposed = true;
                 _metadataManager?.Dispose();
                 _metadataManager = null;
-                if (_metadataZookeeperHasSeparateReference && _metadataMyZookeeper != null)
+                _innerMyNacos?.RemoveSubscriber(this);
+                if (_metadataRegistryHasSeparateReference)
                 {
-                    DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(
-                        _metadataMyZookeeper);
+                    if (_metadataMyNacos != null)
+                    {
+                        DubboClientMultiMyNacosStorage.RemoveMyNacos(_metadataMyNacos);
+                    }
+                    if (_metadataMyZookeeper != null)
+                    {
+                        DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(
+                            _metadataMyZookeeper);
+                    }
                 }
+                _metadataMyNacos = null;
                 _metadataMyZookeeper = null;
-                DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(_innerMyZookeeper);
+                if (_innerMyNacos != null)
+                {
+                    DubboClientMultiMyNacosStorage.RemoveMyNacos(_innerMyNacos);
+                }
+                if (_innerMyZookeeper != null)
+                {
+                    DubboClientMultiMyZookeeperStorage.RemoveMyZookeeper(_innerMyZookeeper);
+                }
+                _innerMyNacos = null;
                 _innerMyZookeeper = null;
                 _dubboClientZookeeperWatcher = null;
-                _dubboDriverCollection.Dispose();
+                _dubboDriverCollection?.Dispose();
                 _dubboDriverCollection = null;
                 foreach(var item in _retainDubboActuatorSuiteCollection)
                 {
@@ -1401,8 +1539,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 释放客户端持有的 ZooKeeper 观察器、连接驱动和执行器资源。
-        /// EN: Releases ZooKeeper watchers, connection drivers, and actuator resources owned by the client.
+        /// 释放客户端持有的注册中心订阅、连接驱动和执行器资源。
+        /// EN: Releases registry subscriptions, connection drivers, and actuator resources owned by the client.
         /// </summary>
         public void Dispose()
         {
