@@ -45,10 +45,10 @@ DubboClient
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `3.1.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `3.2.1`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 3.1.0
+dotnet add package DubboNet --version 3.2.1
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
@@ -752,7 +752,7 @@ dotnet run --project Tests/QueryDemo/QueryDemo.csproj
 ### 自动发布 NuGet 包 / Automated NuGet publishing
 
 仓库通过 `.github/workflows/publish-nuget.yml` 自动发布正式版本。创建并发布 GitHub
-Release 后，工作流会把 Release Tag（支持 `3.1.0` 或 `v3.1.0`）作为包版本，依次运行
+Release 后，工作流会把 Release Tag（支持 `3.2.1` 或 `v3.2.1`）作为包版本，依次运行
 单元测试、打包，并将同一个 `.nupkg` 发布到 GitHub Packages 和 nuget.org。
 
 nuget.org 使用 Trusted Publishing/OIDC 颁发的临时密钥，不在仓库中保存长期 API Key。
