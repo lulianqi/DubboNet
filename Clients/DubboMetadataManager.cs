@@ -71,6 +71,12 @@ namespace DubboNet.Clients
             public bool CanCacheFallback { get; init; } = true;
         }
 
+        private sealed class RawMetadataDocument
+        {
+            public byte[] Data { get; init; }
+            public int Version { get; init; } = -1;
+        }
+
         private enum TelnetProbeState
         {
             NotAttempted,
@@ -313,20 +319,17 @@ namespace DubboNet.Clients
         };
 
         private readonly MyZookeeper _metadataZookeeper;
+        private readonly MyNacos _metadataNacos;
         private readonly string _metadataRootPath;
+        private readonly Func<string, string, string, string, string, string>
+            _metadataLocationBuilder;
         private readonly Func<string, Task<IReadOnlyList<DubboServiceEndPointInfo>>> _providerResolver;
         private readonly Func<
             string,
             IReadOnlyList<DubboServiceEndPointInfo>,
             Task<DubboTelnetMetadataResult>> _telnetMetadataLoader;
-        private readonly Func<
-            string,
-            Watcher,
-            Task<org.apache.zookeeper.data.Stat>> _metadataExists;
-        private readonly Func<
-            string,
-            Watcher,
-            Task<org.apache.zookeeper.DataResult>> _metadataDataLoader;
+        private readonly Func<string, Task<bool>> _metadataExists;
+        private readonly Func<string, Task<RawMetadataDocument>> _metadataDataLoader;
         private readonly ConcurrentDictionary<string, ServiceCacheEntry> _serviceCache =
             new ConcurrentDictionary<string, ServiceCacheEntry>(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _pathToService =
@@ -359,6 +362,43 @@ namespace DubboNet.Clients
         {
         }
 
+        /// <summary>
+        /// 创建使用 Nacos Config 读取并订阅 Dubbo 远程元数据的管理器。
+        /// <para>EN: Creates a manager that reads and subscribes to Dubbo remote metadata through Nacos Config.</para>
+        /// </summary>
+        /// <param name="metadataNacos">元数据中心 Nacos 客户端。<para>EN: Nacos client for the metadata center.</para></param>
+        /// <param name="metadataRootPath">Nacos Config 分组；可使用带斜杠的 Dubbo 根路径形式。<para>EN: Nacos Config group; a slash-delimited Dubbo root form is also accepted.</para></param>
+        /// <param name="providerResolver">服务提供者发现函数。<para>EN: Service-provider discovery function.</para></param>
+        /// <param name="telnetRequestTimeout">Telnet 探测超时（毫秒）。<para>EN: Telnet probe timeout in milliseconds.</para></param>
+        public DubboMetadataManager(
+            MyNacos metadataNacos,
+            string metadataRootPath,
+            Func<string, Task<IReadOnlyList<DubboServiceEndPointInfo>>> providerResolver,
+            int telnetRequestTimeout = 10_000)
+        {
+            _metadataNacos = metadataNacos
+                ?? throw new ArgumentNullException(nameof(metadataNacos));
+            _providerResolver = providerResolver
+                ?? throw new ArgumentNullException(nameof(providerResolver));
+            _telnetMetadataLoader = (serviceName, providers) =>
+                DubboTelnetMetadataResolver.LoadAsync(
+                    serviceName,
+                    providers,
+                    telnetRequestTimeout);
+            _metadataRootPath = MyNacos.NormalizeGroup(metadataRootPath);
+            _metadataLocationBuilder = MyNacos.BuildMetadataLocation;
+            _metadataExists = location => _metadataNacos.MetadataExistsAsync(
+                location,
+                this,
+                () => ProcessMetadataLocationChangeAsync(location));
+            _metadataDataLoader = async location => new RawMetadataDocument
+            {
+                Data = await _metadataNacos.GetMetadataAsync(location).ConfigureAwait(false),
+                Version = -1
+            };
+            _watcher = new MetadataWatcher(this);
+        }
+
         internal DubboMetadataManager(
             MyZookeeper metadataZookeeper,
             string metadataRootPath,
@@ -382,12 +422,29 @@ namespace DubboNet.Clients
                 ?? throw new ArgumentNullException(nameof(providerResolver));
             _telnetMetadataLoader = telnetMetadataLoader
                 ?? throw new ArgumentNullException(nameof(telnetMetadataLoader));
-            _metadataExists = metadataExists
-                ?? ((path, watcher) => _metadataZookeeper.ExistsAsync(path, watcher));
-            _metadataDataLoader = metadataDataLoader
-                ?? ((path, watcher) => _metadataZookeeper.GetDataAsync(path, watcher));
             _metadataRootPath = NormalizeRootPath(metadataRootPath);
+            _metadataLocationBuilder = BuildMetadataPath;
             _watcher = new MetadataWatcher(this);
+            Func<string, Watcher, Task<org.apache.zookeeper.data.Stat>> exists =
+                metadataExists
+                ?? ((path, watcher) => _metadataZookeeper.ExistsAsync(path, watcher));
+            Func<string, Watcher, Task<org.apache.zookeeper.DataResult>> dataLoader =
+                metadataDataLoader
+                ?? ((path, watcher) => _metadataZookeeper.GetDataAsync(path, watcher));
+            _metadataExists = async path =>
+                await exists(path, _watcher).ConfigureAwait(false) != null;
+            _metadataDataLoader = async path =>
+            {
+                org.apache.zookeeper.DataResult result =
+                    await dataLoader(path, _watcher).ConfigureAwait(false);
+                return result == null
+                    ? null
+                    : new RawMetadataDocument
+                    {
+                        Data = result.Data,
+                        Version = result.Stat?.getVersion() ?? -1
+                    };
+            };
         }
 
         /// <summary>
@@ -620,8 +677,8 @@ namespace DubboNet.Clients
         }
 
         /// <summary>
-        /// 在已有缓存项存在时刷新服务元数据；该方法通常由 ZooKeeper watcher 调用。
-        /// <para>EN: Refreshes service metadata when a cache entry exists; normally called by a ZooKeeper watcher.</para>
+        /// 在已有缓存项存在时刷新服务元数据；通常由 ZooKeeper watcher 或 Nacos listener 调用。
+        /// <para>EN: Refreshes service metadata when a cache entry exists; normally called by a ZooKeeper watcher or Nacos listener.</para>
         /// </summary>
         /// <param name="serviceName">Dubbo 接口全限定名。<para>EN: Fully qualified Dubbo interface name.</para></param>
         /// <returns>表示刷新操作的任务。<para>EN: A task representing the refresh operation.</para></returns>
@@ -721,7 +778,7 @@ namespace DubboNet.Clients
             {
                 string preview = Encoding.UTF8.GetString(data, 0, Math.Min(data.Length, 256));
                 throw new DubboMetadataException(
-                    $"Dubbo metadata node '{metadataPath}' does not contain a valid " +
+                    $"Dubbo metadata location '{metadataPath}' does not contain a valid " +
                     $"FullServiceDefinition JSON document. {exception.Message} " +
                     $"Data starts with: {preview}",
                     exception);
@@ -874,7 +931,7 @@ namespace DubboNet.Clients
             List<(string Path, DubboServiceEndPointInfo Provider)> metadataLocations = providers
                 .Where(provider => provider != null && !string.IsNullOrWhiteSpace(provider.Application))
                 .Select(provider => (
-                    BuildMetadataPath(
+                    _metadataLocationBuilder(
                         _metadataRootPath,
                         serviceName,
                         provider.Version,
@@ -897,34 +954,34 @@ namespace DubboNet.Clients
             bool hasUnwatchedFailure = false;
             foreach ((string path, DubboServiceEndPointInfo provider) in metadataLocations)
             {
-                org.apache.zookeeper.data.Stat metadataStat;
+                bool metadataExists;
                 try
                 {
                     // 先检查完整的元数据叶子路径。节点不存在时 exists 会注册创建监听，
                     // 无需先执行 getData 并制造一次可预期的 NoNodeException。
                     // EN: Check the full metadata leaf path first. When it is absent, exists
                     // registers a creation watch without producing an expected NoNodeException.
-                    metadataStat = await _metadataExists(path, _watcher).ConfigureAwait(false);
+                    metadataExists = await _metadataExists(path).ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {
                     hasUnwatchedFailure = true;
                     failures.Add(
-                        $"node '{path}' existence could not be checked or watched: " +
+                        $"metadata location '{path}' existence could not be checked or watched: " +
                         exception.Message);
                     continue;
                 }
 
-                if (metadataStat == null)
+                if (!metadataExists)
                 {
-                    failures.Add($"node '{path}' does not exist");
+                    failures.Add($"metadata location '{path}' does not exist");
                     continue;
                 }
 
-                org.apache.zookeeper.DataResult dataResult;
+                RawMetadataDocument dataResult;
                 try
                 {
-                    dataResult = await _metadataDataLoader(path, _watcher)
+                    dataResult = await _metadataDataLoader(path)
                         .ConfigureAwait(false);
                 }
                 catch (Exception exception)
@@ -932,7 +989,7 @@ namespace DubboNet.Clients
                     // No data watch was installed. A cached Telnet answer may still be returned to
                     // this caller, but the next call must retry the preferred metadata center.
                     hasUnwatchedFailure = true;
-                    failures.Add($"node '{path}' could not be read: {exception.Message}");
+                    failures.Add($"metadata location '{path}' could not be read: {exception.Message}");
                     continue;
                 }
 
@@ -942,14 +999,14 @@ namespace DubboNet.Clients
                     {
                         // The node may have been deleted between exists and getData. Reinstall an
                         // exists watch so later publication replaces a cached Telnet fallback.
-                        await _metadataExists(path, _watcher).ConfigureAwait(false);
-                        failures.Add($"node '{path}' disappeared before its data could be read");
+                        await _metadataExists(path).ConfigureAwait(false);
+                        failures.Add($"metadata location '{path}' disappeared before its data could be read");
                     }
                     catch (Exception exception)
                     {
                         hasUnwatchedFailure = true;
                         failures.Add(
-                            $"node '{path}' disappeared and its creation could not be watched: " +
+                            $"metadata location '{path}' disappeared and its creation could not be watched: " +
                             exception.Message);
                     }
                     continue;
@@ -957,19 +1014,18 @@ namespace DubboNet.Clients
 
                 try
                 {
-                    int metadataVersion = dataResult.Stat?.getVersion() ?? -1;
                     ParsedMetadataDocument parsed = ParseMetadataDocumentDetails(
                         dataResult.Data,
                         serviceName,
                         provider,
                         path,
-                        metadataVersion,
+                        dataResult.Version,
                         DateTimeOffset.UtcNow);
                     hasMetadataDocument |= parsed.IsDocument;
                     types.AddRange(parsed.Types);
                     if (parsed.Methods.Count == 0)
                     {
-                        failures.Add($"node '{path}' contains no method definitions");
+                        failures.Add($"metadata location '{path}' contains no method definitions");
                         continue;
                     }
                     methods.AddRange(parsed.Methods);
@@ -978,7 +1034,7 @@ namespace DubboNet.Clients
                 {
                     // getData succeeded, so its watch will invalidate this stable parse failure
                     // when the document changes. One damaged document must not hide another one.
-                    failures.Add($"node '{path}' failed: {exception.Message}");
+                    failures.Add($"metadata location '{path}' failed: {exception.Message}");
                 }
             }
 
@@ -1338,6 +1394,17 @@ namespace DubboNet.Clients
             }
         }
 
+        private Task ProcessMetadataLocationChangeAsync(string location)
+        {
+            if (_disposed
+                || string.IsNullOrEmpty(location)
+                || !_pathToService.TryGetValue(location, out string serviceName))
+            {
+                return Task.CompletedTask;
+            }
+            return RefreshCachedServiceAsync(serviceName);
+        }
+
         private async Task ReloadAllCachedServicesAsync()
         {
             foreach (string serviceName in _serviceCache.Keys)
@@ -1367,6 +1434,7 @@ namespace DubboNet.Clients
                 return;
             }
             _disposed = true;
+            _metadataNacos?.RemoveSubscriber(this);
             foreach (ServiceCacheEntry entry in _serviceCache.Values)
             {
                 entry.Dispose();

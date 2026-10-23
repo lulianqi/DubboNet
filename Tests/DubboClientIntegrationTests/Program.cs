@@ -5,29 +5,41 @@ using DubboNet.DubboService.DataModle;
 using System.Text.Json;
 
 const string DefaultZooKeeper = "110.40.136.183:2181";
+const string DefaultNacos = "nacos://110.40.136.183:8848";
 const string ProviderHost = "110.40.136.183";
 const string DataTypeService = "com.example.dubbonet.api.DataTypeService";
 const string EchoService = "com.example.dubbonet.api.EchoService";
 const string OrderService = "com.example.dubbonet.api.OrderService";
 const string UserService = "com.example.dubbonet.api.UserService";
 
-string zooKeeper = args.Length > 0 ? args[0] : DefaultZooKeeper;
-VersionScenario[] versions =
-{
-    new("2.7.23", "/dubbo-2.7.23"),
-    new("3.1.11", "/dubbo-3.1.11"),
-    new("3.2.20", "/dubbo-3.2.20"),
-    new("3.3.6", "/dubbo-3.3.6")
-};
+string registryAddress = args.Length > 0
+    ? (string.Equals(args[0], "nacos", StringComparison.OrdinalIgnoreCase)
+        ? DefaultNacos
+        : args[0])
+    : DefaultZooKeeper;
+bool useNacos = registryAddress.StartsWith("nacos://", StringComparison.OrdinalIgnoreCase);
+VersionScenario[] versions = useNacos
+    ? new[]
+    {
+        new VersionScenario("3.2.20", "/dubbo-3.2.20"),
+        new VersionScenario("3.3.6", "/dubbo-3.3.6")
+    }
+    : new[]
+    {
+        new VersionScenario("2.7.23", "/dubbo-2.7.23"),
+        new VersionScenario("3.1.11", "/dubbo-3.1.11"),
+        new VersionScenario("3.2.20", "/dubbo-3.2.20"),
+        new VersionScenario("3.3.6", "/dubbo-3.3.6")
+    };
 
 TestSummary summary = new();
-Console.WriteLine($"ZooKeeper: {zooKeeper}");
+Console.WriteLine($"Registry: {registryAddress} ({(useNacos ? "Nacos" : "ZooKeeper")})");
 Console.WriteLine("Dubbo versions: " + string.Join(", ", versions.Select(version => version.Version)));
 Console.WriteLine();
 
 foreach (VersionScenario version in versions)
 {
-    await RunVersionAsync(version, zooKeeper, summary);
+    await RunVersionAsync(version, registryAddress, summary);
 }
 
 await RunDirectProtocolCasesAsync(summary);
@@ -49,13 +61,16 @@ if (summary.Failed > 0)
 
 static async Task RunVersionAsync(
     VersionScenario version,
-    string zooKeeper,
+    string registryAddress,
     TestSummary summary)
 {
     Console.WriteLine($"=== Dubbo {version.Version} ({version.RootPath}) ===");
-    using DubboClient client = new(zooKeeper, new DubboClient.DubboClientConf
+    using DubboClient client = new(registryAddress, new DubboClient.DubboClientConf
     {
         DubboRootPath = version.RootPath,
+        // 测试环境显式把元数据存放在版本分组；Nacos Config 的默认分组独立为 dubbo。
+        // EN: This environment stores metadata per version; the independent Nacos Config default is dubbo.
+        MetadataRootPath = version.RootPath,
         DubboRequestTimeout = 10_000,
         TelnetMetadataTimeout = 5_000,
         MaintainServiceNum = 10,
@@ -205,9 +220,13 @@ static async Task RunMetadataCaseAsync(
             await client.GetServiceMethodsMetadataAsync(DataTypeService);
         IReadOnlyList<DubboMethodMetadata> second =
             await client.GetServiceMethodsMetadataAsync(DataTypeService);
+        IReadOnlyList<DubboTypeMetadata> types =
+            await client.GetServiceTypesMetadataAsync(DataTypeService);
 
         bool passed = first.Count == 5
             && second.Count == first.Count
+            && types.Count > 0
+            && types.Any(type => type.Type == "int")
             && first.All(method => method.MetadataSource == DubboMetadataSource.MetadataCenter)
             && first.Any(method => method.Name == "add"
                 && method.ParameterTypes.SequenceEqual(new[] { "int", "int" }));
@@ -217,8 +236,8 @@ static async Task RunMetadataCaseAsync(
             caseName,
             passed,
             passed
-                ? $"{first.Count} methods, source={first[0].MetadataSource}"
-                : $"unexpected metadata: first={first.Count}, second={second.Count}",
+                ? $"{first.Count} methods, {types.Count} types, source={first[0].MetadataSource}"
+                : $"unexpected metadata: first={first.Count}, second={second.Count}, types={types.Count}",
             summary);
     }
     catch (Exception exception)

@@ -1,12 +1,12 @@
 # DubboNet
 
-DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper 发现 Provider，依据 Provider URL 选择传输执行器，并通过经典 Dubbo TCP/Hessian2 或 Dubbo 3 Triple HTTP/JSON 调用 Java 接口，因此调用方不需要引用 Java 接口 JAR。
+DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper 或 Nacos 发现 Provider，依据 Provider URL 选择传输执行器，并通过经典 Dubbo TCP/Hessian2 或 Dubbo 3 Triple HTTP/JSON 调用 Java 接口，因此调用方不需要引用 Java 接口 JAR。
 
 > 当前项目目标框架为 **.NET 10**。原生 Dubbo TCP 调用已在 **Dubbo 2.7.3** Provider 上完成真实环境验证；Triple 第一期已在 **Dubbo 3.3.6** Java Interface Provider 上完成真实环境验证。其他版本的支持边界请先阅读[版本兼容性 / Compatibility](#版本兼容性--compatibility)。
 
 ## 功能概览 / Features
 
-- 从 ZooKeeper 的经典接口级目录 `/dubbo/{interface}/providers` 自动发现和监听 Provider。
+- 从 ZooKeeper 的经典接口级目录或 Nacos 接口级 Naming 服务自动发现和订阅 Provider。
 - 根据 Provider URL scheme 自动选择执行器：
   - `dubbo://`：`NativeDubboActuatorSuite`，使用 Dubbo2 TCP 帧和 Hessian2 泛化调用。
   - `tri://`：`TripleDubboActuatorSuite`，使用 Dubbo 3.3 的 Java Interface Unary HTTP/JSON 调用。
@@ -16,7 +16,7 @@ DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper �
 - 支持调用方显式指定 Java 参数类型，用于元数据缺失、`null`、包装类型和重载歧义等场景。
 - 支持服务版本、分组、自定义 attachments、POJO、集合和 Map 参数。
 - 暴露 Request ID、Dubbo response status、serialization id、响应 attachments 和动态原始结果。
-- ZooKeeper、Provider 连接和服务驱动在多个请求之间复用。
+- 同地址的 ZooKeeper/Nacos 客户端、Provider 连接和服务驱动在多个请求之间复用。
 - 主要公共 API 提供中英文 XML documentation，并随程序集/NuGet 包生成 `DubboNet.xml`。
 
 ## 调用架构 / Architecture
@@ -26,9 +26,9 @@ DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper �
    |
    v
 DubboClient
-   |-- ZooKeeper 注册中心 --> /dubbo/{interface}/providers
-   |                            |
-   |                            +-- Provider URL / 节点变更 Watch
+   |-- 注册中心
+   |       |-- ZooKeeper --> /dubbo/{interface}/providers + Watch
+   |       +-- Nacos -----> providers:{interface}:{version}:{group} + Subscribe
    |
    |-- DubboMetadataManager
    |       |-- release >= 2.7.3 或未知 --> 元数据中心 FullServiceDefinition
@@ -59,7 +59,7 @@ dotnet add package DubboNet --version 3.1.0
 </ItemGroup>
 ```
 
-运行和编译需要 .NET 10 SDK。项目的主要依赖是 `DistributedLock.ZooKeeper` 和 `NHessian`。
+运行和编译需要 .NET 10 SDK。项目的主要依赖是 `DistributedLock.ZooKeeper`、`nacos-sdk-csharp` 和 `NHessian`。
 
 ## 快速开始 / Quick Start
 
@@ -82,6 +82,20 @@ if (!result.QuerySuccess)
 }
 
 Console.WriteLine(result.Result);
+```
+
+使用 Nacos 时只需把注册中心地址改为固定的 `nacos://` 格式；该前缀也是客户端选择注册中心实现的依据：
+
+```csharp
+using var client = new DubboClient(
+    "nacos://127.0.0.1:8848",
+    new DubboClient.DubboClientConf
+    {
+        // Naming 分组；不填写时为 DEFAULT_GROUP。
+        DubboRootPath = "dubbo-prod",
+        // Config 元数据分组独立配置；不填写时为 dubbo。
+        MetadataRootPath = "dubbo-metadata-prod"
+    });
 ```
 
 服务和方法之间支持 `#`、`.` 或 `/`，例如：
@@ -337,11 +351,11 @@ foreach (DubboTypeMetadata type in types)
 - `ParameterTypes`、`ReturnType`：准确 Java 签名。
 - `MetadataSource`：`MetadataCenter` 或 `Telnet`。
 - `Application`、`Version`、`Group`：对应 Provider 信息。
-- `MetadataPath`：ZooKeeper 节点或 `telnet://` 来源地址。
+- `MetadataPath`：ZooKeeper 节点、`nacos-config://` 配置位置或 `telnet://` 来源地址。
 - `TypeDefinitions`：FullServiceDefinition 中的 POJO、集合、枚举和引用定义；Telnet 来源通常没有这部分信息。
-- `MetadataVersion`、`LoadedAt`：ZooKeeper 数据版本和读取时间。
+- `MetadataVersion`、`LoadedAt`：元数据版本和读取时间；Nacos Config 当前不提供等价节点版本，因此版本为 `-1`。
 
-`GetServiceTypesMetadataAsync` 会先对完整元数据叶子路径执行 ZooKeeper `exists` 并安装 watcher，确认节点存在后才读取数据。节点不存在、连接不可用或文档无效时会抛出包含预期路径的 `DubboMetadataException`；因为 Telnet `ls -l` 不包含 `types`，该接口不会退回 Telnet。成功结果和稳定的“节点不存在”结论都会按服务缓存，节点后续创建或修改时 watcher 会刷新缓存。
+`GetServiceTypesMetadataAsync` 会先检查完整元数据位置是否存在并安装变化监听，确认存在后才读取数据。ZooKeeper 使用 `exists`/watcher，Nacos 使用 Config listener。位置不存在、连接不可用或文档无效时会抛出包含预期位置的 `DubboMetadataException`；因为 Telnet `ls -l` 不包含 `types`，该接口不会退回 Telnet。成功结果和稳定的“不存在”结论都会按服务缓存，元数据后续创建或修改时会刷新缓存。
 
 ## 元数据策略与缓存 / Metadata Strategy and Cache
 
@@ -354,7 +368,7 @@ foreach (DubboTypeMetadata type in types)
 | 缺失或格式无法识别 | 元数据中心优先，失败后 Telnet `ls -l` |
 | 多个 Provider 版本混合 | 只要存在 `>= 2.7.3` 或未知版本，就优先元数据中心 |
 
-元数据中心节点按以下结构读取：
+ZooKeeper 元数据按以下节点结构读取：
 
 ```text
 {MetadataRootPath}/metadata/{interface}/{version?}/{group?}/provider/{application}
@@ -366,11 +380,24 @@ foreach (DubboTypeMetadata type in types)
 /dubbo/metadata/com.foo.JobService/provider/job-service
 ```
 
+Nacos Config 使用 `MetadataRootPath` 去除首尾斜杠后的值作为分组，并按 Dubbo 官方规则生成 DataId：
+
+```text
+Group:  {MetadataRootPath}
+DataId: {interface}:{version}:{serviceGroup}:provider:{application}
+```
+
+例如 `MetadataRootPath=/dubbo-3.3.6` 时，实际 Config 分组为 `dubbo-3.3.6`。
+Nacos Naming 默认分组为 `DEFAULT_GROUP`，Config 元数据默认分组为 `dubbo`；两者独立。
+如果 Provider 将元数据写入自定义分组，需要显式填写 `MetadataRootPath`，不会自动沿用 Naming 分组。
+
 行为说明：
 
-- `MetadataCenterAddress` 不填写时复用注册中心地址和同一个 ZooKeeper 客户端。
-- FullServiceDefinition 成功加载后，会对数据节点安装 ZooKeeper watch。
-- 节点修改、删除、后续创建，Provider application/version/group 变化以及 ZooKeeper 会话恢复都会触发缓存刷新。
+- `MetadataCenterAddress` 不填写时复用注册中心地址及同一个 ZooKeeper 或 Nacos 客户端；也允许注册中心和元数据中心使用不同类型。
+- FullServiceDefinition 成功加载后，会安装 ZooKeeper watch 或 Nacos Config listener。
+- 元数据修改、删除、后续创建以及 Provider application/version/group 变化都会触发缓存刷新；ZooKeeper 会话恢复还会重建 watch。
+- Nacos 为已使用接口每 30 秒检查一次服务目录，新注册的版本/分组无需重建客户端即可发现；同一地址的目录扫描按 Naming 分组复用。已有服务的实例变化仍使用 SDK 订阅。
+- 最后一个可用 Provider 下线后会清空服务驱动；禁用节点和零权重节点不会接收请求，节点恢复后可重新加入。
 - Telnet 元数据按服务缓存；一次探测可能依次尝试该服务的多个 `dubbo://` Provider，直到成功。
 - Telnet 成功结果和“Telnet 不可用”的失败结论都会缓存，一个 `DubboClient` 生命周期内不会对同一服务反复连接。
 - 如果之后创建了已被 watch 的元数据节点，缓存会切回优先级更高的 FullServiceDefinition。
@@ -404,11 +431,34 @@ ZooKeeper 地址支持多个节点，以逗号分隔。认证字符串可以写�
 zk-1:2181,zk-2:2181 [digest user:password]
 ```
 
+Nacos 地址必须以 `nacos://` 开头，同样支持逗号分隔的多个节点。可通过查询参数配置命名空间和认证：
+
+```text
+nacos://nacos-1:8848,nacos-2:8848?namespace=prod&username=nacos&password=nacos
+```
+
+`namespace` 应填写命名空间 ID，省略、空值或 `public` 表示默认命名空间。还支持 `accessKey` 和 `secretKey` 查询参数。
+查询参数值中的 `+`、`&`、`#` 等特殊字符需要 URL 编码，例如密码中的 `+` 写成 `%2B`。
+主机名、地址顺序和查询参数顺序会规范化；namespace、用户名、密码及密钥的值严格区分大小写。
+等价配置创建的多个 `DubboClient` 共享底层 `MyNacos` 实例（包括先后创建的客户端），一个实例内部包含 Naming 和 Config 两个 SDK 客户端，不表示只使用一条 TCP 连接。
+Naming/Config 订阅按调用方隔离，最后一个订阅者释放时注销监听；没有接口订阅后停止目录刷新。
+
+**Nacos SDK 生命周期限制：** `nacos-sdk-csharp 1.3.10` 的 `ShutDown()` 不会停止内部 RPC 后台线程。
+因此共享池保留 SDK 实例供后续复用，并将进程内不同连接配置的总数限制为 **32**（包含空闲实例）。
+达到上限时，新配置会明确抛出异常；已有配置仍可继续复用。`Dispose()` 释放本客户端的订阅和业务连接，
+不代表 SDK 的后台连接已退出。需要使用超过 32 个不同地址/namespace/认证组合的应用，应分进程管理或重启进程；
+当前不通过驱逐空闲实例再创建来掩盖 SDK 线程泄漏。
+
+EN: Nacos Naming defaults to `DEFAULT_GROUP`, while Config metadata independently defaults to `dubbo`.
+Equivalent addresses share clients, but namespaces and credentials are case sensitive. Catalogs refresh every 30 seconds.
+The SDK cannot shut down RPC workers, so a bounded process-wide pool retains at most 32 distinct configurations;
+disposing a DubboClient removes its subscriptions and business connections, not the retained SDK workers.
+
 | 配置项 | 默认值 | 说明 |
 | --- | ---: | --- |
-| `DubboRootPath` | `/dubbo/` | 经典接口级注册目录根路径 |
-| `MetadataCenterAddress` | 注册中心地址 | 元数据中心 ZooKeeper；相同地址会复用连接 |
-| `MetadataRootPath` | `DubboRootPath` | metadata-report group 根路径，内部会规范为无结尾 `/` |
+| `DubboRootPath` | 自动 | ZooKeeper 默认 `/dubbo/`；Nacos Naming 默认 `DEFAULT_GROUP`（自动去除首尾 `/`） |
+| `MetadataCenterAddress` | 注册中心地址 | ZooKeeper 或 `nacos://` Nacos 元数据中心；相同地址会复用客户端 |
+| `MetadataRootPath` | 自动 | Nacos Config 默认 `dubbo`；ZooKeeper 沿用 ZooKeeper 注册根路径，混合中心时默认 `/dubbo` |
 | `DubboRequestTimeout` | `60000` ms | 业务请求最大等待时间 |
 | `TelnetMetadataTimeout` | `10000` ms | 单次 Telnet 元数据探测超时；非正数会恢复默认值 |
 | `MaintainServiceNum` | `20` | 可复用服务驱动数量；`0` 表示不限制 |
@@ -479,11 +529,12 @@ else
 | .NET 10 | **支持** | 当前库、示例和测试项目均只目标化 `net10.0` |
 | .NET 6/7/8/9 | **当前包不支持** | 项目已从 `net6.0` 改为 `net10.0`，未提供多目标构建 |
 | ZooKeeper 经典接口级注册 | **支持** | 读取 `/dubbo/{interface}/providers` 并注册 watch |
-| Nacos、Consul、Kubernetes 等注册中心 | **未实现** | 当前 `DubboClient` 只实现 ZooKeeper 发现 |
+| Nacos 2.5.4 接口级注册 | **真实验证** | 使用 Naming 服务发现/订阅 Provider，并从 Config 读取/监听远程元数据；已验证 Dubbo 3.2.20、3.3.6 |
+| Consul、Kubernetes 等其他注册中心 | **未实现** | 当前 `DubboClient` 实现 ZooKeeper 与 Nacos |
 | Dubbo 2.7.3 + `dubbo://` + Hessian2 | **真实验证** | 已验证无参数、单参数、双参数调用以及元数据/Telnet 回退 |
 | Dubbo `>= 2.7.3` 的其他版本 | **条件兼容，未逐版本验证** | 需要经典 ZooKeeper 接口级目录、`dubbo://`、Hessian2 和 `$invoke` 泛化能力 |
 | Dubbo `< 2.7.3` | **条件兼容，未逐版本验证** | 自动签名依赖 Provider Telnet；也可完全绕过元数据并显式传入 Java 类型 |
-| Dubbo 3.x 的 classic `dubbo://` 兼容模式 | **条件兼容，未完整验证** | 仅限继续发布经典接口级 ZooKeeper URL 并接受 Dubbo2/Hessian2 `$invoke` 的 Provider |
+| Dubbo 3.x 的 classic `dubbo://` 兼容模式 | **真实验证（指定版本）** | ZooKeeper/Nacos 下已验证 3.2.20、3.3.6 的 Dubbo2/Hessian2 `$invoke` Provider；其他版本仍需实测 |
 | Dubbo 3 应用级服务发现 | **未实现** | 未实现 Dubbo 3 application-level service discovery 元数据布局 |
 | Dubbo 3.3.6 + `tri://` + Java Interface Unary JSON | **真实验证（第一期）** | 支持 HTTP/1.1、`application/json`、version/group/timeout 头和 attachments |
 | Triple Protobuf/IDL、流式调用、gRPC framing | **未实现** | 第一期仅覆盖 Java Interface Unary HTTP/JSON，不宣称完整 Triple/gRPC 能力 |
@@ -514,7 +565,7 @@ Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/Triple
 
 ## 使用建议 / Recommendations
 
-1. **复用 `DubboClient`。** 长生命周期实例才能充分复用 ZooKeeper、Provider TCP 连接、服务驱动和元数据缓存。
+1. **复用 `DubboClient`。** 长生命周期实例才能充分复用 ZooKeeper/Nacos、Provider TCP 连接、服务驱动和元数据缓存。
 2. **统一使用 `QueryAsync`。** 普通调用让客户端自动推断签名；类型有歧义时使用显式 Java 类型重载。
 3. **关键接口显式传类型。** 对重载、包装类型、`null`、集合和 POJO，显式 Java 类型比运行时推断更稳定。
 4. **优先建设元数据中心。** Telnet 是可选的兜底能力，不应成为生产调用的唯一元数据来源；不要把诊断端口暴露到不可信网络。
@@ -532,7 +583,7 @@ Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/Triple
 检查：
 
 - `DubboRootPath` 是否与注册中心一致。
-- `/dubbo/{完整接口名}/providers` 是否存在有效子节点。
+- ZooKeeper 的 `/dubbo/{完整接口名}/providers` 是否存在有效子节点，或 Nacos 对应 Naming 分组中是否存在 `providers:{interface}:...` 服务。
 - Provider URL 是否以 `dubbo://` 或 `tri://` 开头。
 - Provider host 是否为 IP 地址，而不是域名。
 - 接口名、服务 `version` 和 `group` 是否正确。
@@ -545,10 +596,16 @@ Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/Triple
 
 1. Provider URL 的 `release`、`application`、`version` 和 `group`。
 2. `MetadataCenterAddress` 和 `MetadataRootPath` 是否指向实际元数据中心。
-3. 预期 FullServiceDefinition 节点是否存在：
+3. 预期 FullServiceDefinition 位置是否存在。ZooKeeper 路径为：
 
    ```text
    {root}/metadata/{interface}/{version?}/{group?}/provider/{application}
+   ```
+
+   Nacos 中检查 `{MetadataRootPath}` Config 分组及 DataId：
+
+   ```text
+   {interface}:{version}:{group}:provider:{application}
    ```
 
 4. Provider 是否配置并成功上报 metadata-report。只有 consumer 节点不代表存在 provider 方法定义。
@@ -614,8 +671,7 @@ dotnet build DubboNet.csproj --no-restore
 dotnet test Tests/UnitTestForDubboNet/UnitTestForDubboNet.csproj --no-restore
 ```
 
-`DubboClientIntegrationTests` 默认连接公开测试注册中心 `110.40.136.183:2181`，也可以把其他
-ZooKeeper 地址作为第一个参数传入：
+`DubboClientIntegrationTests` 默认连接公开 ZooKeeper 测试注册中心 `110.40.136.183:2181`，也可以把其他注册中心地址作为第一个参数传入：
 
 ```bash
 dotnet run \
@@ -623,11 +679,22 @@ dotnet run \
   -- 110.40.136.183:2181
 ```
 
-测试矩阵覆盖 Dubbo 2.7.23、3.1.11、3.2.20 和 3.3.6，并验证元数据缓存、
+Nacos 测试环境可直接使用简写 `nacos`，或传入完整地址：
+
+```bash
+dotnet run \
+  --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
+  -- nacos
+
+dotnet run \
+  --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
+  -- nacos://110.40.136.183:8848
+```
+
+ZooKeeper 测试矩阵覆盖 Dubbo 2.7.23、3.1.11、3.2.20 和 3.3.6；Nacos 测试矩阵覆盖 3.2.20 和 3.3.6。两者均验证元数据缓存、
 自动签名推断、显式 Java 类型、强类型返回、`DubboInvocation`、Provider 异常，
 以及 Dubbo TCP/Hessian2 和 Triple HTTP/JSON 的明确直连。
-测试使用专门准备的 `com.example.dubbonet` 服务；如传入其他 ZooKeeper 地址，需确保
-存在相同的根路径和测试服务。程序以非零退出码报告失败，可直接用于手工验收或 CI。
+测试使用专门准备的 `com.example.dubbonet` 服务；如传入其他注册中心地址，需确保存在相同分组、根路径和测试服务。程序以非零退出码报告失败，可直接用于手工验收或 CI。
 
 `QueryDemo` 使用顺序代码展示 `DubboClient.QueryAsync` 的全部重载，以及已知 Provider
 IP、端口和协议时如何绕过注册中心直接调用：

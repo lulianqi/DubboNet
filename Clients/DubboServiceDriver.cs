@@ -73,7 +73,7 @@ namespace DubboNet.Clients
         /// <param name="dbEpList">当前服务的 Provider 节点列表。EN: Provider endpoints currently registered for the service.</param>
         /// <param name="dubboActuatorSuiteCollection">用于跨服务复用连接的共享执行器集合。EN: Shared actuator-suite collection used to reuse connections across services.</param>
         /// <param name="dubboServiceDriverConf">可选的连接与超时配置。EN: Optional connection and timeout configuration.</param>
-        /// <exception cref="ArgumentException"><paramref name="dbEpList"/> 为空或不包含节点。EN: <paramref name="dbEpList"/> is null or contains no endpoints.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="dbEpList"/> 为 null；允许空列表。EN: <paramref name="dbEpList"/> is null; empty lists are allowed.</exception>
         /// <exception cref="ArgumentNullException"><paramref name="dubboActuatorSuiteCollection"/> 为空。EN: <paramref name="dubboActuatorSuiteCollection"/> is null.</exception>
         public DubboServiceDriver(string serviceName, List<DubboServiceEndPointInfo> dbEpList, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection , DubboServiceDriverConf dubboServiceDriverConf = null)
         {
@@ -82,9 +82,9 @@ namespace DubboNet.Clients
             _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
             _innerDubboServiceDriverConf = dubboServiceDriverConf ?? new DubboServiceDriverConf();
             InnerActuatorSuites = new Dictionary<IPEndPoint, DubboServiceEndPointInfo>();
-            if (!(dbEpList?.Count > 0))
+            if (dbEpList == null)
             {
-                throw new ArgumentException("dbEpList can not be empty", nameof(dbEpList));
+                throw new ArgumentNullException(nameof(dbEpList));
             }
             if (dubboActuatorSuiteCollection == null)
             {
@@ -206,17 +206,18 @@ namespace DubboNet.Clients
         /// EN: Reconciles the service driver's provider endpoints with the latest registry snapshot.
         /// </summary>
         /// <param name="dbEpList">最新的 Provider 节点列表。EN: Latest provider endpoint list.</param>
-        /// <returns>新增和移除的节点总数。EN: Total number of endpoints added or removed.</returns>
-        /// <exception cref="ArgumentException"><paramref name="dbEpList"/> 为空或不包含节点。EN: <paramref name="dbEpList"/> is null or contains no endpoints.</exception>
+        /// <returns>新增、移除或更新的节点总数；空列表表示全部下线。EN: Number of added, removed, or updated endpoints; an empty list removes all providers.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="dbEpList"/> 为 null。EN: <paramref name="dbEpList"/> is null.</exception>
         public int UpdateActuatorSuiteEndPoints(List<DubboServiceEndPointInfo> dbEpList)
         {
-            if (!(dbEpList?.Count > 0))
+            if (dbEpList == null)
             {
-                throw new ArgumentException("dbEpList can not be empty", nameof(dbEpList));
+                throw new ArgumentNullException(nameof(dbEpList));
             }
+            dbEpList = dbEpList.Where(endpoint => endpoint.Disabled != true).ToList();
             int changeCount=0;
             //移出多余节点
-            foreach(var insItem in InnerActuatorSuites)
+            foreach(var insItem in InnerActuatorSuites.ToArray())
             {
                 
                 //if (!dbEpList.Contains(insItem.Key))
@@ -246,6 +247,18 @@ namespace DubboNet.Clients
                 {
                     if(AddActuatorSuite(epItem)) changeCount++;
                 }
+                else
+                {
+                    // 同一节点也可能更新权重、版本或分组；保留连接但替换端点元数据。
+                    // EN: Refresh routing metadata for existing endpoints while retaining their connection.
+                    epItem.InnerDubboActuatorSuite = InnerActuatorSuites[epItem.EndPoint].InnerDubboActuatorSuite;
+                    InnerActuatorSuites[epItem.EndPoint] = epItem;
+                    if (epItem.InnerDubboActuatorSuite is NativeDubboActuatorSuite native)
+                        native.RegisterService(epItem);
+                    else if (epItem.InnerDubboActuatorSuite is TripleDubboActuatorSuite triple)
+                        triple.RegisterService(epItem);
+                    changeCount++;
+                }
             }
             if(changeCount!=0)
             {
@@ -271,8 +284,9 @@ namespace DubboNet.Clients
             LastActivateTime = DateTime.Now;
             List<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>> candidates =
                 InnerActuatorSuites
-                    .Where(item => requiredProtocol == null
-                        || item.Value.InnerDubboActuatorSuite.ProtocolType == requiredProtocol.Value)
+                    .Where(item => item.Value.Disabled != true && item.Value.Weight > 0
+                        && (requiredProtocol == null
+                        || item.Value.InnerDubboActuatorSuite.ProtocolType == requiredProtocol.Value))
                     .ToList();
             if (candidates.Count == 0)
             {
@@ -333,7 +347,7 @@ namespace DubboNet.Clients
                             requiredProtocol);
                     }
                     DubboSuiteConsistentHash consistentHash = _dubboSuiteConsistentHash;
-                    if (requiredProtocol != null)
+                    if (requiredProtocol != null || candidates.Count != InnerActuatorSuites.Count)
                     {
                         consistentHash = new DubboSuiteConsistentHash(16);
                         consistentHash.Init(candidates.Select(item => item.Key));
