@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http;
 using System.Reflection;
 using System.Text;
 using DubboNet.Clients;
@@ -17,6 +18,104 @@ public class MyNacosTest
     private const string Service = "com.example.Service";
     private const string Group = "DEFAULT_GROUP";
     private const string Address = "nacos://localhost:8848";
+
+    [Fact]
+    public void PublicApi_DoesNotExposeNacosSdkTypes()
+    {
+        Assert.True(typeof(MyNacos).IsPublic);
+        IEnumerable<Type> publicTypes = typeof(MyNacos)
+            .GetConstructors()
+            .SelectMany(constructor => constructor.GetParameters().Select(parameter => parameter.ParameterType))
+            .Concat(typeof(MyNacos).GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public)
+                .Where(method => method.DeclaringType == typeof(MyNacos))
+                .SelectMany(method => method.GetParameters().Select(parameter => parameter.ParameterType)
+                    .Append(method.ReturnType)))
+            .Concat(typeof(MyNacos).GetProperties().Select(property => property.PropertyType));
+
+        Assert.DoesNotContain(publicTypes.SelectMany(FlattenType), type =>
+            string.Equals(type.Assembly.GetName().Name, "Nacos", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PublicCatalogApi_CoversGroupsServicesInstancesProvidersAndConfig()
+    {
+        var server = new FakeNacos { ConfigContent = "config-value" };
+        server.Add("1", 20880);
+        using MyNacos nacos = server.CreateClient(catalogHandler: new FakeCatalogHandler(
+            """
+            {
+              "count": 3,
+              "serviceList": [
+                { "name": "providers:com.example.Service:1:g", "groupName": "DEFAULT_GROUP", "clusterCount": 1, "ipCount": 1, "healthyInstanceCount": 1 },
+                { "name": "providers:com.example.OtherService:1:g", "groupName": "dubbo-prod", "clusterCount": 1, "ipCount": 2, "healthyInstanceCount": 1 },
+                { "name": "ordinary-web-service", "groupName": "other" }
+              ]
+            }
+            """));
+
+        Assert.Equal([Group, "dubbo-prod"], await nacos.ListRegistryRootsAsync());
+        Assert.Equal([Service], await nacos.ListServicesAsync(Group));
+        Assert.Equal(["providers:com.example.Service:1:g"], await nacos.ListNacosServicesAsync(Group));
+
+        NacosServiceInstanceInfo instance = Assert.Single(await nacos.GetServiceInstancesAsync(
+            "providers:com.example.Service:1:g", Group));
+        Assert.Equal("127.0.0.1", instance.Ip);
+        Assert.Equal(20880, instance.Port);
+        Assert.Equal("dubbo", instance.Metadata["protocol"]);
+
+        DubboServiceEndPointInfo provider = Assert.Single(await nacos.GetProvidersAsync(Service, Group));
+        Assert.Equal("127.0.0.1:20880", provider.EndPoint.ToString());
+        Assert.Equal(Service, provider.Interface);
+        Assert.False(provider.Disabled);
+        Assert.Contains("interface=com.example.Service", provider.RegistryUrl);
+
+        await nacos.TestConnectionAsync(Group);
+        Assert.Equal("UP", await nacos.GetServerStatusAsync());
+        Assert.True(await nacos.ConfigExistsAsync("data-id", "dubbo"));
+        Assert.Equal("config-value", await nacos.GetConfigAsync("data-id", "dubbo"));
+    }
+
+    [Fact]
+    public async Task PublicSubscriptions_ShareLifecycleAndReturnSdkIndependentSnapshots()
+    {
+        var server = new FakeNacos { ConfigContent = "initial" };
+        server.Add("1", 20880);
+        using MyNacos nacos = server.CreateClient();
+        var owner = new object();
+        int namingChanges = 0, configChanges = 0;
+        string rawService = Assert.Single(server.Services);
+
+        NacosServiceInstanceInfo instance = Assert.Single(await nacos.SubscribeServiceAsync(
+            rawService, Group, owner, () => { namingChanges++; return Task.CompletedTask; }));
+        Assert.Equal(Service, instance.Metadata["interface"]);
+        Assert.Equal("initial", await nacos.SubscribeConfigAsync(
+            "data-id", "dubbo", owner, () => { configChanges++; return Task.CompletedTask; }));
+
+        await server.PushNaming();
+        server.PushConfig("changed");
+        Assert.Equal(1, namingChanges);
+        Assert.Equal(1, configChanges);
+
+        nacos.RemoveSubscriber(owner);
+        Assert.Empty(server.NamingListeners);
+        Assert.Equal(1, server.ConfigRemoves);
+    }
+
+    [Fact]
+    public async Task CatalogAuthentication_RefreshesRejectedTokenAndCachesReplacement()
+    {
+        var server = new FakeNacos();
+        var handler = new FakeAuthenticatedCatalogHandler();
+        using MyNacos nacos = server.CreateClient(
+            Address + "?username=tester&password=secret",
+            handler);
+
+        Assert.Equal([Group], await nacos.ListRegistryRootsAsync());
+        Assert.Equal([Group], await nacos.ListRegistryRootsAsync());
+        Assert.Equal(2, handler.LoginCalls);
+        Assert.Equal(3, handler.CatalogCalls);
+        Assert.EndsWith("accessToken=token-2", handler.LastCatalogQuery);
+    }
 
     [Fact]
     public void ConnectionIdentity_NormalizesServersAndKeysButPreservesSensitiveValues()
@@ -218,6 +317,19 @@ public class MyNacosTest
         $$"""{"canonicalName":"{{Service}}","methods":[{"name":"{{method}}","parameterTypes":["{{type}}"],"returnType":"{{type}}"}],"types":[{"type":"{{type}}"}]}""";
     private static string Location() => MyNacos.BuildMetadataLocation("dubbo", Service, "1", "g", "app");
 
+    private static IEnumerable<Type> FlattenType(Type type)
+    {
+        yield return type;
+        if (type.HasElementType && type.GetElementType() is Type element)
+        {
+            foreach (Type nested in FlattenType(element)) yield return nested;
+        }
+        foreach (Type argument in type.GetGenericArguments())
+        {
+            foreach (Type nested in FlattenType(argument)) yield return nested;
+        }
+    }
+
     private sealed class FakeNacos
     {
         public List<string> Services { get; } = new();
@@ -229,13 +341,16 @@ public class MyNacosTest
         public bool FailCatalog, FailConfigRead;
         public int CatalogReads, NamingSubscribes, ConfigReads, ConfigRemoves;
 
-        public MyNacos CreateClient(string address = Address)
+        public MyNacos CreateClient(
+            string address = Address,
+            HttpMessageHandler? catalogHandler = null)
         {
             var naming = DispatchProxy.Create<INacosNamingService, SdkProxy>();
             ((SdkProxy)(object)naming).Handler = (method, args) => method.Name switch
             {
                 "GetServicesOfServer" => Catalog(),
                 "GetAllInstances" => Task.FromResult(Instances.GetValueOrDefault((string)args[0]!) ?? new List<Instance>()),
+                "GetServerStatus" => Task.FromResult("UP"),
                 "Subscribe" => Subscribe((string)args[0]!, (IEventListener)args[2]!),
                 "Unsubscribe" => Unsubscribe((string)args[0]!),
                 "ShutDown" => Task.CompletedTask,
@@ -250,7 +365,12 @@ public class MyNacosTest
                 "ShutDown" => Task.CompletedTask,
                 _ => throw new NotSupportedException(method.Name)
             };
-            return new MyNacos(address, naming, config, Timeout.InfiniteTimeSpan);
+            return new MyNacos(
+                address,
+                naming,
+                config,
+                Timeout.InfiniteTimeSpan,
+                catalogHandler);
         }
 
         public void Add(string version, int port)
@@ -300,5 +420,53 @@ public class MyNacosTest
     {
         public Func<MethodInfo, object?[], object?> Handler = null!;
         protected override object? Invoke(MethodInfo? method, object?[]? args) => Handler(method!, args!);
+    }
+
+    private sealed class FakeCatalogHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        });
+    }
+
+    private sealed class FakeAuthenticatedCatalogHandler : HttpMessageHandler
+    {
+        public int LoginCalls { get; private set; }
+        public int CatalogCalls { get; private set; }
+        public string? LastCatalogQuery { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                LoginCalls++;
+                return Json(HttpStatusCode.OK,
+                    $$"""{"accessToken":"token-{{LoginCalls}}","tokenTtl":18000}""");
+            }
+
+            CatalogCalls++;
+            LastCatalogQuery = request.RequestUri?.Query.TrimStart('?');
+            if (CatalogCalls == 1)
+            {
+                return Json(HttpStatusCode.Unauthorized, "unauthorized");
+            }
+            return Json(HttpStatusCode.OK,
+                """
+                {"count":1,"serviceList":[
+                  {"name":"providers:com.example.Service:1:g","groupName":"DEFAULT_GROUP"}
+                ]}
+                """);
+        }
+
+        private static Task<HttpResponseMessage> Json(HttpStatusCode status, string content) =>
+            Task.FromResult(new HttpResponseMessage(status)
+            {
+                Content = new StringContent(content, Encoding.UTF8, "application/json")
+            });
     }
 }

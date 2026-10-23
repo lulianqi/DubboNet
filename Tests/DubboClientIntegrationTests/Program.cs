@@ -1,5 +1,6 @@
 using DubboNet.Clients;
 using DubboNet.Clients.DataModle;
+using DubboNet.Clients.RegistryClient;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
 using System.Text.Json;
@@ -37,6 +38,11 @@ Console.WriteLine($"Registry: {registryAddress} ({(useNacos ? "Nacos" : "ZooKeep
 Console.WriteLine("Dubbo versions: " + string.Join(", ", versions.Select(version => version.Version)));
 Console.WriteLine();
 
+if (useNacos)
+{
+    await RunNacosDirectoryCasesAsync(registryAddress, summary);
+}
+
 foreach (VersionScenario version in versions)
 {
     await RunVersionAsync(version, registryAddress, summary);
@@ -57,6 +63,48 @@ if (summary.Failed > 0)
         Console.WriteLine($"  - {failure}");
     }
     Environment.ExitCode = 1;
+}
+
+static async Task RunNacosDirectoryCasesAsync(string registryAddress, TestSummary summary)
+{
+    Console.WriteLine("=== Nacos public directory API ===");
+    try
+    {
+        using var nacos = new MyNacos(registryAddress);
+        IReadOnlyList<string> roots = await nacos.ListRegistryRootsAsync();
+        Record("Nacos", "directory/registry-roots",
+            roots.Contains("dubbo-3.2.20") && roots.Contains("dubbo-3.3.6"),
+            string.Join(", ", roots), summary);
+
+        IReadOnlyList<string> services = await nacos.ListServicesAsync("dubbo-3.3.6");
+        Record("Nacos", "directory/dubbo-services",
+            services.Contains(EchoService) && services.Contains(DataTypeService),
+            $"{services.Count} services", summary);
+
+        IReadOnlyList<DubboServiceEndPointInfo> providers = await nacos.GetProvidersAsync(
+            EchoService,
+            "dubbo-3.3.6");
+        Record("Nacos", "directory/providers",
+            providers.Any(provider => provider.EndPoint?.Address.ToString() == ProviderHost),
+            string.Join(", ", providers.Select(provider => $"{provider.Scheme}://{provider.EndPoint}")),
+            summary);
+
+        string rawService = (await nacos.ListNacosServicesAsync("dubbo-3.3.6"))
+            .First(name => name.StartsWith("providers:" + EchoService, StringComparison.Ordinal));
+        IReadOnlyList<NacosServiceInstanceInfo> instances = await nacos.GetServiceInstancesAsync(
+            rawService,
+            "dubbo-3.3.6");
+        Record("Nacos", "directory/raw-instances",
+            instances.Any(instance => instance.Ip == ProviderHost
+                && instance.Metadata.ContainsKey("protocol")),
+            $"{instances.Count} instances", summary);
+    }
+    catch (Exception exception)
+    {
+        Record("Nacos", "directory/public-api", false, exception.Message, summary);
+    }
+
+    Console.WriteLine();
 }
 
 static async Task RunVersionAsync(

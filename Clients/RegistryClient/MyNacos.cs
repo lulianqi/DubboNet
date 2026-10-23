@@ -8,10 +8,13 @@ using Nacos.V2.Remote;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
@@ -22,7 +25,7 @@ namespace DubboNet.Clients.RegistryClient
     /// 封装 DubboNet 使用的 Nacos Naming 与 Config 操作，包括服务发现、订阅和远程元数据读取。
     /// <para>EN: Wraps the Nacos Naming and Config operations used by DubboNet, including discovery, subscriptions, and remote metadata reads.</para>
     /// </summary>
-    internal sealed class MyNacos : IDisposable
+    public sealed class MyNacos : IDisposable
     {
         private sealed class NamingListener : IEventListener
         {
@@ -212,6 +215,13 @@ namespace DubboNet.Clients.RegistryClient
             public string SecretKey { get; init; }
         }
 
+        private sealed class CatalogPage
+        {
+            public int Count { get; init; }
+            public IReadOnlyList<NacosServiceInfo> Services { get; init; } =
+                Array.Empty<NacosServiceInfo>();
+        }
+
         private const string NacosPrefix = "nacos://";
         private const string MetadataLocationPrefix = "nacos-config://";
         private const int NacosPageSize = 500;
@@ -220,6 +230,9 @@ namespace DubboNet.Clients.RegistryClient
         private readonly IServiceProvider _serviceProvider;
         private readonly INacosNamingService _namingService;
         private readonly INacosConfigService _configService;
+        private readonly NacosConnectionOptions _connectionOptions;
+        private readonly HttpClient _catalogHttpClient;
+        private readonly SemaphoreSlim _authenticationLock = new SemaphoreSlim(1, 1);
         private readonly ConcurrentDictionary<string, NamingSubscription> _namingSubscriptions =
             new ConcurrentDictionary<string, NamingSubscription>(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, ConfigSubscription> _configSubscriptions =
@@ -230,6 +243,8 @@ namespace DubboNet.Clients.RegistryClient
         private readonly ConditionalWeakTable<object, object> _removedSubscribers = new();
         private readonly Timer _catalogTimer;
         private readonly TimeSpan _catalogRefreshInterval;
+        private string _accessToken;
+        private DateTimeOffset _accessTokenExpiresAt;
         private volatile bool _disposed;
 
         /// <summary>
@@ -240,6 +255,8 @@ namespace DubboNet.Clients.RegistryClient
         {
             ConnectionString = NormalizeConnectionString(connectionString);
             NacosConnectionOptions parsed = ParseConnectionString(ConnectionString);
+            _connectionOptions = parsed;
+            _catalogHttpClient = new HttpClient();
             ServiceCollection services = new ServiceCollection();
             services.AddLogging();
             services.AddNacosV2Naming(options => ApplyOptions(options, parsed));
@@ -255,9 +272,14 @@ namespace DubboNet.Clients.RegistryClient
         // 注入 SDK 接口用于离线验证订阅竞争及多调用方隔离。
         // EN: Inject SDK interfaces for deterministic subscription and ownership tests.
         internal MyNacos(string connectionString, INacosNamingService namingService,
-            INacosConfigService configService, TimeSpan refreshInterval)
+            INacosConfigService configService, TimeSpan refreshInterval,
+            HttpMessageHandler catalogHandler = null)
         {
             ConnectionString = NormalizeConnectionString(connectionString);
+            _connectionOptions = ParseConnectionString(ConnectionString);
+            _catalogHttpClient = catalogHandler == null
+                ? new HttpClient()
+                : new HttpClient(catalogHandler, true);
             _namingService = namingService;
             _configService = configService;
             _catalogRefreshInterval = refreshInterval;
@@ -318,6 +340,346 @@ namespace DubboNet.Clients.RegistryClient
                 Uri.EscapeDataString(item.Key) + "=" + Uri.EscapeDataString(item.Value ?? string.Empty)));
             return NacosPrefix + canonicalServers
                 + (string.IsNullOrEmpty(query) ? string.Empty : "?" + query);
+        }
+
+        /// <summary>
+        /// 枚举当前命名空间中包含 Dubbo Provider 的 Naming 分组，可用于构建与 ZooKeeper 根路径等价的注册目录。
+        /// <para>EN: Lists Naming groups containing Dubbo providers in the current namespace, suitable for building registry roots equivalent to ZooKeeper paths.</para>
+        /// </summary>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>按名称排序且去重的 Naming 分组。<para>EN: Distinct Naming groups ordered by name.</para></returns>
+        public async Task<IReadOnlyList<string>> ListRegistryRootsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<NacosServiceInfo> services = await ListCatalogServicesAsync(
+                cancellationToken).ConfigureAwait(false);
+            return services
+                .Where(service => ExtractDubboInterfaceName(service.Name) != null)
+                .Select(service => NormalizeGroup(service.GroupName, "DEFAULT_GROUP"))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(group => group, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// 枚举指定 Naming 分组中的 Dubbo Java 接口名；普通非 Dubbo 服务会被忽略。
+        /// <para>EN: Lists Dubbo Java interface names in a Naming group; unrelated non-Dubbo services are ignored.</para>
+        /// </summary>
+        /// <param name="registryRoot">Naming 分组；为空时使用 <c>DEFAULT_GROUP</c>。<para>EN: Naming group; <c>DEFAULT_GROUP</c> is used when empty.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>按名称排序且去重的接口名。<para>EN: Distinct interface names ordered by name.</para></returns>
+        public async Task<IReadOnlyList<string>> ListServicesAsync(
+            string registryRoot = "DEFAULT_GROUP",
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<string> names = await ListNacosServicesAsync(
+                registryRoot,
+                cancellationToken).ConfigureAwait(false);
+            return names
+                .Select(ExtractDubboInterfaceName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// 枚举当前命名空间的原始 Nacos Naming 服务目录，结果包含服务所属分组和实例统计。
+        /// <para>EN: Lists the raw Nacos Naming catalog in the current namespace, including group and instance statistics.</para>
+        /// </summary>
+        /// <remarks>
+        /// Nacos Naming SDK 只能枚举已知分组，本方法使用 Catalog HTTP API 发现全部分组，并自动复用连接字符串中的用户名和密码获取访问令牌。
+        /// <para>EN: The Naming SDK can only list a known group. This method uses the Catalog HTTP API to discover all groups and automatically obtains an access token from connection-string credentials.</para>
+        /// </remarks>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>目录中的服务摘要。<para>EN: Service summaries in the catalog.</para></returns>
+        public async Task<IReadOnlyList<NacosServiceInfo>> ListCatalogServicesAsync(
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            var services = new List<NacosServiceInfo>();
+            int pageNumber = 1;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                CatalogPage page = await GetCatalogPageAsync(
+                    pageNumber,
+                    cancellationToken).ConfigureAwait(false);
+                if (page.Services.Count == 0)
+                {
+                    break;
+                }
+                services.AddRange(page.Services);
+                if (pageNumber * NacosPageSize >= page.Count)
+                {
+                    break;
+                }
+                pageNumber++;
+            }
+            return services
+                .GroupBy(service => service.GroupName + "\n" + service.Name, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .OrderBy(service => service.GroupName, StringComparer.Ordinal)
+                .ThenBy(service => service.Name, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// 枚举指定 Naming 分组中的原始 Nacos 服务名，不过滤服务类型。
+        /// <para>EN: Lists raw Nacos service names in a Naming group without filtering by service type.</para>
+        /// </summary>
+        /// <param name="registryRoot">Naming 分组；为空时使用 <c>DEFAULT_GROUP</c>。<para>EN: Naming group; <c>DEFAULT_GROUP</c> is used when empty.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>原始 Nacos 服务名。<para>EN: Raw Nacos service names.</para></returns>
+        public async Task<IReadOnlyList<string>> ListNacosServicesAsync(
+            string registryRoot = "DEFAULT_GROUP",
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            string group = NormalizeGroup(registryRoot, "DEFAULT_GROUP");
+            return await GetRawServiceNamesAsync(group, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 读取一个原始 Nacos 服务的全部实例及元数据，不向调用方暴露 Nacos SDK 类型。
+        /// <para>EN: Reads all instances and metadata of a raw Nacos service without exposing Nacos SDK types.</para>
+        /// </summary>
+        /// <param name="nacosServiceName">原始 Nacos 服务名，例如 <c>providers:com.example.DemoService:1.0.0:demo</c>。<para>EN: Raw Nacos service name.</para></param>
+        /// <param name="registryRoot">Naming 分组；为空时使用 <c>DEFAULT_GROUP</c>。<para>EN: Naming group; <c>DEFAULT_GROUP</c> is used when empty.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>实例快照。<para>EN: Instance snapshots.</para></returns>
+        public async Task<IReadOnlyList<NacosServiceInstanceInfo>> GetServiceInstancesAsync(
+            string nacosServiceName,
+            string registryRoot = "DEFAULT_GROUP",
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(nacosServiceName))
+            {
+                throw new ArgumentException("Nacos service name cannot be empty.", nameof(nacosServiceName));
+            }
+            string group = NormalizeGroup(registryRoot, "DEFAULT_GROUP");
+            List<Instance> instances = await _namingService.GetAllInstances(
+                    nacosServiceName.Trim(),
+                    group,
+                    false)
+                .WaitAsync(cancellationToken).ConfigureAwait(false);
+            return (instances ?? new List<Instance>())
+                .Where(instance => instance != null)
+                .Select(instance => ConvertInstanceSnapshot(instance, nacosServiceName.Trim(), group))
+                .ToArray();
+        }
+
+        /// <summary>
+        /// 获取指定 Dubbo 接口的全部可解析 Provider，包括不健康或已禁用实例，便于测试工具完整展示服务目录。
+        /// <para>EN: Gets every parseable provider for a Dubbo interface, including unhealthy or disabled instances, so diagnostic tools can present the complete service tree.</para>
+        /// </summary>
+        /// <param name="interfaceName">完整 Java 接口名。<para>EN: Fully qualified Java interface name.</para></param>
+        /// <param name="registryRoot">Naming 分组；为空时使用 <c>DEFAULT_GROUP</c>。<para>EN: Naming group; <c>DEFAULT_GROUP</c> is used when empty.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>可解析的 Provider 端点。<para>EN: Parseable provider endpoints.</para></returns>
+        public async Task<IReadOnlyList<DubboServiceEndPointInfo>> GetProvidersAsync(
+            string interfaceName,
+            string registryRoot = "DEFAULT_GROUP",
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(interfaceName))
+            {
+                throw new ArgumentException("Dubbo interface name cannot be empty.", nameof(interfaceName));
+            }
+            string group = NormalizeGroup(registryRoot, "DEFAULT_GROUP");
+            IReadOnlyList<string> services = await GetRawServiceNamesAsync(
+                group,
+                cancellationToken).ConfigureAwait(false);
+            var providers = new List<DubboServiceEndPointInfo>();
+            foreach (string serviceName in services.Where(name =>
+                         IsProviderServiceName(name, interfaceName)))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                List<Instance> instances = await _namingService.GetAllInstances(
+                        serviceName,
+                        group,
+                        false)
+                    .WaitAsync(cancellationToken).ConfigureAwait(false);
+                foreach (Instance instance in instances ?? new List<Instance>())
+                {
+                    if (instance == null) continue;
+                    DubboServiceEndPointInfo provider = ConvertInstance(instance, interfaceName);
+                    if (provider != null) providers.Add(provider);
+                }
+            }
+            return providers
+                .GroupBy(item => $"{item.Scheme}://{item.EndPoint}", StringComparer.OrdinalIgnoreCase)
+                .Select(grouping => grouping.First())
+                .OrderBy(item => item.EndPoint?.ToString(), StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// 订阅一个原始 Nacos 服务的实例变化，并返回订阅时的实例快照；可通过 <see cref="RemoveSubscriber"/> 取消调用方的全部订阅。
+        /// <para>EN: Subscribes to changes of a raw Nacos service and returns its initial instance snapshot; use <see cref="RemoveSubscriber"/> to remove all subscriptions owned by the caller.</para>
+        /// </summary>
+        /// <param name="nacosServiceName">原始 Nacos 服务名。<para>EN: Raw Nacos service name.</para></param>
+        /// <param name="registryRoot">Naming 分组。<para>EN: Naming group.</para></param>
+        /// <param name="subscriber">用于管理订阅生命周期的调用方对象。<para>EN: Caller object used to own the subscription lifetime.</para></param>
+        /// <param name="changed">实例发生变化时执行的回调。<para>EN: Callback invoked when instances change.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>订阅时的实例快照。<para>EN: Instance snapshots at subscription time.</para></returns>
+        public async Task<IReadOnlyList<NacosServiceInstanceInfo>> SubscribeServiceAsync(
+            string nacosServiceName,
+            string registryRoot,
+            object subscriber,
+            Func<Task> changed,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(nacosServiceName))
+                throw new ArgumentException("Nacos service name cannot be empty.", nameof(nacosServiceName));
+            if (subscriber == null) throw new ArgumentNullException(nameof(subscriber));
+            if (changed == null) throw new ArgumentNullException(nameof(changed));
+            string serviceName = nacosServiceName.Trim();
+            string group = NormalizeGroup(registryRoot, "DEFAULT_GROUP");
+            string key = group + "\n" + serviceName;
+            await _subscriptionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ThrowIfDisposed();
+                if (_removedSubscribers.TryGetValue(subscriber, out _))
+                    throw new ObjectDisposedException("Nacos naming subscriber");
+                if (!_namingSubscriptions.TryGetValue(key, out NamingSubscription subscription))
+                {
+                    subscription = new NamingSubscription
+                    {
+                        ServiceName = serviceName,
+                        GroupName = group,
+                        InterfaceName = ExtractDubboInterfaceName(serviceName) ?? serviceName
+                    };
+                    subscription.Listener = new NamingListener(subscription);
+                    subscription.Add(subscriber, _ => changed());
+                    try
+                    {
+                        await _namingService.Subscribe(serviceName, group, subscription.Listener)
+                            .WaitAsync(cancellationToken).ConfigureAwait(false);
+                        _namingSubscriptions[key] = subscription;
+                    }
+                    catch
+                    {
+                        subscription.Stop();
+                        TryWait(_namingService.Unsubscribe(serviceName, group, subscription.Listener));
+                        throw;
+                    }
+                }
+                else
+                {
+                    subscription.Add(subscriber, _ => changed());
+                }
+            }
+            finally
+            {
+                _subscriptionLock.Release();
+            }
+            return await GetServiceInstancesAsync(serviceName, group, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 测试指定 Naming 分组是否可以访问。
+        /// <para>EN: Tests whether a Naming group can be accessed.</para>
+        /// </summary>
+        /// <param name="registryRoot">Naming 分组；为空时使用 <c>DEFAULT_GROUP</c>。<para>EN: Naming group; <c>DEFAULT_GROUP</c> is used when empty.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>表示连接测试的任务。<para>EN: A task representing the connectivity test.</para></returns>
+        public async Task TestConnectionAsync(
+            string registryRoot = "DEFAULT_GROUP",
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            await _namingService.GetServicesOfServer(
+                    1,
+                    1,
+                    NormalizeGroup(registryRoot, "DEFAULT_GROUP"))
+                .WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 获取 Nacos Naming 服务端状态。
+        /// <para>EN: Gets the Nacos Naming server status.</para>
+        /// </summary>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>服务端状态文本。<para>EN: Server status text.</para></returns>
+        public Task<string> GetServerStatusAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            return _namingService.GetServerStatus().WaitAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// 读取任意 Nacos Config 配置正文；配置不存在时返回 <see langword="null"/>。
+        /// <para>EN: Reads any Nacos Config content, returning <see langword="null"/> when it does not exist.</para>
+        /// </summary>
+        /// <param name="dataId">配置 DataId。<para>EN: Config DataId.</para></param>
+        /// <param name="groupName">配置分组；为空时使用 <c>DEFAULT_GROUP</c>。<para>EN: Config group; <c>DEFAULT_GROUP</c> is used when empty.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>配置正文；不存在时为 <see langword="null"/>。<para>EN: Config content, or <see langword="null"/> when absent.</para></returns>
+        public Task<string> GetConfigAsync(
+            string dataId,
+            string groupName = "DEFAULT_GROUP",
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(dataId))
+                throw new ArgumentException("Nacos Config dataId cannot be empty.", nameof(dataId));
+            return _configService.GetConfig(
+                    dataId.Trim(),
+                    NormalizeGroup(groupName, "DEFAULT_GROUP"),
+                    ConfigTimeoutMilliseconds)
+                .WaitAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// 检查任意 Nacos Config 配置是否存在。
+        /// <para>EN: Checks whether any Nacos Config entry exists.</para>
+        /// </summary>
+        /// <param name="dataId">配置 DataId。<para>EN: Config DataId.</para></param>
+        /// <param name="groupName">配置分组；为空时使用 <c>DEFAULT_GROUP</c>。<para>EN: Config group; <c>DEFAULT_GROUP</c> is used when empty.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>存在时为 <see langword="true"/>。<para>EN: <see langword="true"/> when the entry exists.</para></returns>
+        public async Task<bool> ConfigExistsAsync(
+            string dataId,
+            string groupName = "DEFAULT_GROUP",
+            CancellationToken cancellationToken = default) =>
+            await GetConfigAsync(dataId, groupName, cancellationToken).ConfigureAwait(false) != null;
+
+        /// <summary>
+        /// 订阅任意 Nacos Config 配置变化，并返回订阅时的配置正文；可通过 <see cref="RemoveSubscriber"/> 取消调用方的全部订阅。
+        /// <para>EN: Subscribes to changes of any Nacos Config entry and returns its initial content; use <see cref="RemoveSubscriber"/> to remove all subscriptions owned by the caller.</para>
+        /// </summary>
+        /// <param name="dataId">配置 DataId。<para>EN: Config DataId.</para></param>
+        /// <param name="groupName">配置分组。<para>EN: Config group.</para></param>
+        /// <param name="subscriber">用于管理订阅生命周期的调用方对象。<para>EN: Caller object used to own the subscription lifetime.</para></param>
+        /// <param name="changed">配置变化时执行的回调。<para>EN: Callback invoked when the configuration changes.</para></param>
+        /// <param name="cancellationToken">取消令牌。<para>EN: Cancellation token.</para></param>
+        /// <returns>订阅时的配置正文；不存在时为 <see langword="null"/>。<para>EN: Initial content, or <see langword="null"/> when absent.</para></returns>
+        public async Task<string> SubscribeConfigAsync(
+            string dataId,
+            string groupName,
+            object subscriber,
+            Func<Task> changed,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(dataId))
+                throw new ArgumentException("Nacos Config dataId cannot be empty.", nameof(dataId));
+            if (subscriber == null) throw new ArgumentNullException(nameof(subscriber));
+            if (changed == null) throw new ArgumentNullException(nameof(changed));
+            ConfigSubscription subscription = await EnsureConfigSubscriptionAsync(
+                dataId.Trim(),
+                NormalizeGroup(groupName, "DEFAULT_GROUP"),
+                subscriber,
+                changed,
+                cancellationToken).ConfigureAwait(false);
+            return subscription.Content;
         }
 
         private static string CanonicalizeServer(string address)
@@ -510,11 +872,13 @@ namespace DubboNet.Clients.RegistryClient
             string interfaceName,
             string groupName)
         {
-            return (await GetServiceNamesAsync(groupName).ConfigureAwait(false))
+            return (await GetRawServiceNamesAsync(groupName, CancellationToken.None).ConfigureAwait(false))
                 .Where(name => IsProviderServiceName(name, interfaceName)).ToList();
         }
 
-        private async Task<List<string>> GetServiceNamesAsync(string groupName)
+        private async Task<List<string>> GetRawServiceNamesAsync(
+            string groupName,
+            CancellationToken cancellationToken)
         {
             List<string> services = new List<string>();
             int pageNumber = 1;
@@ -523,7 +887,7 @@ namespace DubboNet.Clients.RegistryClient
                 ListView<string> page = await _namingService.GetServicesOfServer(
                     pageNumber,
                     NacosPageSize,
-                    groupName).ConfigureAwait(false);
+                    groupName).WaitAsync(cancellationToken).ConfigureAwait(false);
                 if (page?.Data == null || page.Data.Count == 0)
                 {
                     break;
@@ -536,6 +900,35 @@ namespace DubboNet.Clients.RegistryClient
                 pageNumber++;
             }
             return services.Distinct(StringComparer.Ordinal).ToList();
+        }
+
+        /// <summary>
+        /// 从 Nacos 服务名提取 Dubbo Java 接口名；非 Dubbo 服务返回 <see langword="null"/>。
+        /// <para>EN: Extracts a Dubbo Java interface name from a Nacos service name, returning <see langword="null"/> for non-Dubbo services.</para>
+        /// </summary>
+        /// <param name="nacosServiceName">原始 Nacos 服务名。<para>EN: Raw Nacos service name.</para></param>
+        /// <returns>Dubbo 接口名或 <see langword="null"/>。<para>EN: Dubbo interface name or <see langword="null"/>.</para></returns>
+        public static string ExtractDubboInterfaceName(string nacosServiceName)
+        {
+            if (string.IsNullOrWhiteSpace(nacosServiceName)) return null;
+            const string prefix = "providers:";
+            if (nacosServiceName.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                string remainder = nacosServiceName.Substring(prefix.Length);
+                int separator = remainder.IndexOf(':');
+                string interfaceName = separator < 0
+                    ? remainder
+                    : remainder.Substring(0, separator);
+                return string.IsNullOrWhiteSpace(interfaceName) ? null : interfaceName;
+            }
+
+            // 接口名直注册是 DubboNet 支持的兼容形式；要求 Java 风格限定名，避免把普通 Nacos 服务识别为 Dubbo。
+            // EN: Direct interface-name registration is supported for compatibility. Require a Java-style
+            // qualified name so ordinary Nacos services are not mistaken for Dubbo services.
+            return nacosServiceName.Contains('.', StringComparison.Ordinal)
+                && !nacosServiceName.Contains(':', StringComparison.Ordinal)
+                ? nacosServiceName
+                : null;
         }
 
         private static bool IsProviderServiceName(string nacosServiceName, string interfaceName)
@@ -626,7 +1019,9 @@ namespace DubboNet.Clients.RegistryClient
                 {
                     try
                     {
-                        List<string> names = await GetServiceNamesAsync(group.Key).ConfigureAwait(false);
+                        List<string> names = await GetRawServiceNamesAsync(
+                            group.Key,
+                            CancellationToken.None).ConfigureAwait(false);
                         foreach (NamingSubscription interest in group)
                         {
                             List<string> matching = names.Where(name => IsProviderServiceName(name, interest.InterfaceName)).ToList();
@@ -652,8 +1047,23 @@ namespace DubboNet.Clients.RegistryClient
         {
             ThrowIfDisposed();
             ParseMetadataLocation(location, out string group, out string dataId);
+            return await EnsureConfigSubscriptionAsync(
+                dataId,
+                group,
+                subscriber,
+                changed,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+
+        private async Task<ConfigSubscription> EnsureConfigSubscriptionAsync(
+            string dataId,
+            string group,
+            object subscriber,
+            Func<Task> changed,
+            CancellationToken cancellationToken)
+        {
             string key = GetConfigKey(group, dataId);
-            await _subscriptionLock.WaitAsync().ConfigureAwait(false);
+            await _subscriptionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 ThrowIfDisposed();
@@ -672,7 +1082,8 @@ namespace DubboNet.Clients.RegistryClient
                     try
                     {
                         string content = await _configService.GetConfigAndSignListener(
-                            dataId, group, ConfigTimeoutMilliseconds, subscription.Listener).ConfigureAwait(false);
+                                dataId, group, ConfigTimeoutMilliseconds, subscription.Listener)
+                            .WaitAsync(cancellationToken).ConfigureAwait(false);
                         subscription.CompleteInitialization(content);
                     }
                     catch
@@ -699,9 +1110,10 @@ namespace DubboNet.Clients.RegistryClient
             Instance instance,
             string fallbackInterfaceName)
         {
-            if (!IPAddress.TryParse(instance.Ip, out _))
+            if (!IPAddress.TryParse(instance.Ip, out _) || instance.Port is < 1 or > 65_535)
             {
-                MyLogger.LogWarning($"[MyNacos] provider address is not an IP: {instance.Ip}");
+                MyLogger.LogWarning(
+                    $"[MyNacos] provider endpoint is invalid: {instance.Ip}:{instance.Port}");
                 return null;
             }
             Dictionary<string, string> metadata = instance.Metadata
@@ -727,7 +1139,8 @@ namespace DubboNet.Clients.RegistryClient
                 StringComparer.OrdinalIgnoreCase)
             {
                 ["interface"] = interfaceName,
-                ["disabled"] = (!instance.Enabled
+                ["disabled"] = (!instance.Healthy
+                    || !instance.Enabled
                     || (metadata.TryGetValue("disabled", out string disabled)
                         && bool.TryParse(disabled, out bool isDisabled) && isDisabled)).ToString().ToLowerInvariant()
             };
@@ -750,6 +1163,272 @@ namespace DubboNet.Clients.RegistryClient
                 Query = query
             };
             return DubboServiceEndPointInfo.GetDubboServiceEndPointInfo(builder.Uri);
+        }
+
+        private static NacosServiceInstanceInfo ConvertInstanceSnapshot(
+            Instance instance,
+            string serviceName,
+            string groupName)
+        {
+            return new NacosServiceInstanceInfo
+            {
+                InstanceId = instance.InstanceId,
+                ServiceName = serviceName,
+                GroupName = groupName,
+                Ip = instance.Ip,
+                Port = instance.Port,
+                ClusterName = instance.ClusterName,
+                Weight = instance.Weight,
+                Healthy = instance.Healthy,
+                Enabled = instance.Enabled,
+                Ephemeral = instance.Ephemeral,
+                Metadata = new ReadOnlyDictionary<string, string>(
+                    new Dictionary<string, string>(
+                        instance.Metadata ?? new Dictionary<string, string>(),
+                        StringComparer.OrdinalIgnoreCase))
+            };
+        }
+
+        private async Task<CatalogPage> GetCatalogPageAsync(
+            int pageNumber,
+            CancellationToken cancellationToken,
+            bool retryAuthentication = true)
+        {
+            string accessToken = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+            var query = new Dictionary<string, string>
+            {
+                ["hasIpCount"] = "true",
+                ["withInstances"] = "false",
+                ["pageNo"] = pageNumber.ToString(),
+                ["pageSize"] = NacosPageSize.ToString(),
+                ["serviceNameParam"] = string.Empty,
+                ["groupNameParam"] = string.Empty,
+                ["namespaceId"] = _connectionOptions.Namespace ?? string.Empty,
+                ["accessToken"] = accessToken
+            };
+            Exception lastFailure = null;
+            foreach (string serverAddress in _connectionOptions.ServerAddresses)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    Uri uri = BuildApiUri(serverAddress, "v1/ns/catalog/services", query);
+                    using HttpResponseMessage response = await _catalogHttpClient
+                        .GetAsync(uri, cancellationToken).ConfigureAwait(false);
+                    string content = await response.Content.ReadAsStringAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        if (retryAuthentication
+                            && !string.IsNullOrWhiteSpace(_connectionOptions.UserName)
+                            && (response.StatusCode == HttpStatusCode.Unauthorized
+                                || response.StatusCode == HttpStatusCode.Forbidden))
+                        {
+                            await InvalidateAccessTokenAsync(accessToken, cancellationToken)
+                                .ConfigureAwait(false);
+                            return await GetCatalogPageAsync(
+                                pageNumber,
+                                cancellationToken,
+                                false).ConfigureAwait(false);
+                        }
+                        throw new HttpRequestException(
+                            $"Nacos catalog returned HTTP {(int)response.StatusCode}: {TrimError(content)}");
+                    }
+                    return ParseCatalogPage(content);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    lastFailure = exception;
+                }
+            }
+            throw new InvalidOperationException(
+                "Unable to enumerate Nacos Naming groups. Verify that the configured account can access the service catalog.",
+                lastFailure);
+        }
+
+        private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(_connectionOptions.UserName)) return null;
+            if (!string.IsNullOrWhiteSpace(_accessToken)
+                && _accessTokenExpiresAt > DateTimeOffset.UtcNow.AddMinutes(1))
+            {
+                return _accessToken;
+            }
+
+            await _authenticationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_accessToken)
+                    && _accessTokenExpiresAt > DateTimeOffset.UtcNow.AddMinutes(1))
+                {
+                    return _accessToken;
+                }
+
+                Exception lastFailure = null;
+                foreach (string serverAddress in _connectionOptions.ServerAddresses)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    foreach (string loginPath in new[] { "v1/auth/login", "v1/auth/users/login" })
+                    {
+                        try
+                        {
+                            Uri uri = BuildApiUri(serverAddress, loginPath);
+                            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                            {
+                                ["username"] = _connectionOptions.UserName,
+                                ["password"] = _connectionOptions.Password ?? string.Empty
+                            });
+                            using HttpResponseMessage response = await _catalogHttpClient
+                                .PostAsync(uri, content, cancellationToken).ConfigureAwait(false);
+                            string json = await response.Content.ReadAsStringAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                            if (!response.IsSuccessStatusCode)
+                            {
+                                throw new HttpRequestException(
+                                    $"Nacos login returned HTTP {(int)response.StatusCode}: {TrimError(json)}");
+                            }
+                            using JsonDocument document = JsonDocument.Parse(json);
+                            JsonElement root = document.RootElement;
+                            if (!root.TryGetProperty("accessToken", out JsonElement tokenElement)
+                                || string.IsNullOrWhiteSpace(tokenElement.GetString()))
+                            {
+                                throw new InvalidOperationException(
+                                    "Nacos login response does not contain accessToken.");
+                            }
+                            long lifetime = root.TryGetProperty("tokenTtl", out JsonElement ttlElement)
+                                && ttlElement.TryGetInt64(out long parsedLifetime)
+                                ? parsedLifetime
+                                : 18_000;
+                            _accessToken = tokenElement.GetString();
+                            _accessTokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(
+                                Math.Max(60, lifetime * 4 / 5));
+                            return _accessToken;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception exception)
+                        {
+                            lastFailure = exception;
+                        }
+                    }
+                }
+                throw new InvalidOperationException("Unable to authenticate with Nacos.", lastFailure);
+            }
+            finally
+            {
+                _authenticationLock.Release();
+            }
+        }
+
+        private async Task InvalidateAccessTokenAsync(
+            string rejectedToken,
+            CancellationToken cancellationToken)
+        {
+            await _authenticationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (string.Equals(_accessToken, rejectedToken, StringComparison.Ordinal))
+                {
+                    _accessToken = null;
+                    _accessTokenExpiresAt = default;
+                }
+            }
+            finally
+            {
+                _authenticationLock.Release();
+            }
+        }
+
+        private static CatalogPage ParseCatalogPage(string json)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement root = document.RootElement;
+            JsonElement container = root.TryGetProperty("data", out JsonElement data)
+                && data.ValueKind == JsonValueKind.Object
+                ? data
+                : root;
+            JsonElement list = container.TryGetProperty("serviceList", out JsonElement serviceList)
+                ? serviceList
+                : container.TryGetProperty("pageItems", out JsonElement pageItems)
+                    ? pageItems
+                    : default;
+            var services = new List<NacosServiceInfo>();
+            if (list.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in list.EnumerateArray())
+                {
+                    string name = GetJsonString(item, "name")
+                        ?? GetJsonString(item, "serviceName");
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    services.Add(new NacosServiceInfo
+                    {
+                        Name = name,
+                        GroupName = NormalizeGroup(
+                            GetJsonString(item, "groupName"),
+                            "DEFAULT_GROUP"),
+                        ClusterCount = GetJsonInt32(item, "clusterCount") ?? 0,
+                        InstanceCount = GetJsonInt32(item, "ipCount") ?? 0,
+                        HealthyInstanceCount = GetJsonInt32(item, "healthyInstanceCount") ?? 0
+                    });
+                }
+            }
+            return new CatalogPage
+            {
+                Count = GetJsonInt32(container, "count")
+                    ?? GetJsonInt32(container, "totalCount")
+                    ?? GetJsonInt32(container, "total")
+                    ?? services.Count,
+                Services = services
+            };
+        }
+
+        private static Uri BuildApiUri(
+            string serverAddress,
+            string apiPath,
+            IReadOnlyDictionary<string, string> query = null)
+        {
+            var builder = new UriBuilder(serverAddress);
+            string contextPath = builder.Path.TrimEnd('/');
+            if (contextPath.Length == 0) contextPath = "/nacos";
+            builder.Path = contextPath + "/" + apiPath.TrimStart('/');
+            builder.Query = query == null
+                ? string.Empty
+                : string.Join("&", query
+                    .Where(item => item.Value != null)
+                    .Select(item => Uri.EscapeDataString(item.Key) + "="
+                        + Uri.EscapeDataString(item.Value)));
+            return builder.Uri;
+        }
+
+        private static string GetJsonString(JsonElement item, string propertyName) =>
+            item.ValueKind == JsonValueKind.Object
+            && item.TryGetProperty(propertyName, out JsonElement value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+
+        private static int? GetJsonInt32(JsonElement item, string propertyName) =>
+            item.ValueKind == JsonValueKind.Object
+            && item.TryGetProperty(propertyName, out JsonElement value)
+            && value.TryGetInt32(out int parsed)
+                ? parsed
+                : null;
+
+        private static string TrimError(string content)
+        {
+            string normalized = (content ?? string.Empty)
+                .Replace('\r', ' ')
+                .Replace('\n', ' ')
+                .Trim();
+            return normalized.Length <= 300
+                ? normalized
+                : normalized.Substring(0, 300) + "…";
         }
 
         private static NacosConnectionOptions ParseConnectionString(string connectionString)
@@ -867,6 +1546,7 @@ namespace DubboNet.Clients.RegistryClient
                 TryWait(_namingService.ShutDown());
                 TryWait(_configService.ShutDown());
                 (_serviceProvider as IDisposable)?.Dispose();
+                _catalogHttpClient.Dispose();
             }
             finally { _subscriptionLock.Release(); }
         }

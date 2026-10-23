@@ -449,6 +449,52 @@ Naming/Config 订阅按调用方隔离，最后一个订阅者释放时注销监
 不代表 SDK 的后台连接已退出。需要使用超过 32 个不同地址/namespace/认证组合的应用，应分进程管理或重启进程；
 当前不通过驱逐空闲实例再创建来掩盖 SDK 线程泄漏。
 
+### 直接读取 Nacos 服务目录
+
+`MyNacos` 是公开的 Nacos 包装器。它的公共签名只包含 .NET 和 DubboNet 自有类型，应用（例如 DubboTester）
+无需直接引用或调用 `nacos-sdk-csharp`。除 DubboClient 内部的服务发现和元数据读取外，它还提供与
+`MyZookeeper` 目录读取能力对应的 Naming/Config API：
+
+```csharp
+using DubboNet.Clients.DataModle;
+using DubboNet.Clients.RegistryClient;
+
+using var nacos = new MyNacos("nacos://127.0.0.1:8848");
+
+// 枚举当前 namespace 中包含 Dubbo Provider 的所有 Naming 分组。
+IReadOnlyList<string> roots = await nacos.ListRegistryRootsAsync();
+
+// 枚举指定分组中的 Java 接口名（已去除 providers:、version、service group 等 Nacos 编码信息）。
+IReadOnlyList<string> services = await nacos.ListServicesAsync("dubbo-3.3.6");
+
+// 获取接口下的全部 Provider；包含禁用/不健康节点，方便测试或管理工具完整展示目录。
+IReadOnlyList<DubboServiceEndPointInfo> providers = await nacos.GetProvidersAsync(
+    "com.example.dubbonet.api.EchoService",
+    "dubbo-3.3.6");
+
+// 需要保留 Nacos 原始实例元数据时，先枚举原始服务名，再读取 DubboNet 自有实例 DTO。
+IReadOnlyList<string> rawServices = await nacos.ListNacosServicesAsync("dubbo-3.3.6");
+IReadOnlyList<NacosServiceInstanceInfo> instances = await nacos.GetServiceInstancesAsync(
+    rawServices[0],
+    "dubbo-3.3.6");
+```
+
+常用公开能力：
+
+- `ListCatalogServicesAsync`：读取当前 namespace 的原始 Naming 目录及分组、实例统计。
+- `ListRegistryRootsAsync`：返回含 Dubbo Provider 的 Naming 分组。
+- `ListServicesAsync`：返回指定分组中的 Dubbo Java 接口名。
+- `ListNacosServicesAsync` / `GetServiceInstancesAsync`：读取原始服务与实例元数据，返回值不含 Nacos SDK 类型。
+- `GetProvidersAsync`：返回可直接映射到服务树的 `DubboServiceEndPointInfo`。
+- `SubscribeServiceAsync` / `SubscribeConfigAsync`：监听实例或配置变化；通过 `RemoveSubscriber` 统一取消。
+- `GetConfigAsync` / `ConfigExistsAsync`：读取任意 Nacos Config 配置。
+- `TestConnectionAsync` / `GetServerStatusAsync`：连接检测和 Naming 服务状态。
+
+分组自动发现使用 Nacos Catalog API，因为 Naming SDK 只能枚举一个已知分组；已知分组内的服务、实例和订阅
+仍由 Naming SDK 处理。连接字符串中的 `username`/`password` 会用于 Catalog API 登录并缓存访问令牌，
+多节点地址会按顺序容错。`accessKey`/`secretKey` 继续用于 Naming/Config SDK 请求；不同 Nacos 认证插件若不支持
+标准 Token 登录，应直接调用 `ListServicesAsync(已知分组)`，或改用兼容标准 Catalog API 的账号。
+
 EN: Nacos Naming defaults to `DEFAULT_GROUP`, while Config metadata independently defaults to `dubbo`.
 Equivalent addresses share clients, but namespaces and credentials are case sensitive. Catalogs refresh every 30 seconds.
 The SDK cannot shut down RPC workers, so a bounded process-wide pool retains at most 32 distinct configurations;

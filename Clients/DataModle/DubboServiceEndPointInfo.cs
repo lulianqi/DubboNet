@@ -23,6 +23,8 @@ namespace DubboNet.Clients.DataModle
         public int NowDispatchWeight { get;internal set; } = 0;
         /// <summary>注册 URL 的协议，例如 <c>dubbo</c> 或 <c>tri</c>。EN: Registry URL scheme, such as <c>dubbo</c> or <c>tri</c>.</summary>
         public string Scheme { get; set; } = null;
+        /// <summary>用于创建当前端点的完整注册 URL，包含 Provider 元数据查询参数。EN: Complete registry URL used to create this endpoint, including provider metadata query parameters.</summary>
+        public string RegistryUrl { get; internal set; } = null;
 
         /// <summary>是否接受任意主机地址。EN: Whether the provider accepts any host address.</summary>
         public bool? Anyhost { get; set; } = null;
@@ -89,6 +91,7 @@ namespace DubboNet.Clients.DataModle
                 throw new ArgumentNullException(nameof(dubboUri));
             }
             DubboServiceEndPointInfo dubboServiceEndPointInfo = new DubboServiceEndPointInfo();
+            dubboServiceEndPointInfo.RegistryUrl = dubboUri.ToString();
             dubboServiceEndPointInfo.EndPoint = new IPEndPoint(IPAddress.Parse(dubboUri.Host), dubboUri.Port);
             dubboServiceEndPointInfo.Scheme = dubboUri.Scheme;
             NameValueCollection queryParameters = System.Web.HttpUtility.ParseQueryString(dubboUri.Query);
