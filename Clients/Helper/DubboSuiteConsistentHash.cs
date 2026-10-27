@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -14,7 +15,9 @@ namespace DubboNet.Clients.Helper
 
         public override int AddNodeHash(IPEndPoint node, int replicateIndex)
         {
-            return HashCode.Combine(node, replicateIndex);
+            // HashCode.Combine uses a process-random seed; a routing ring must not.
+            return BetterHash("[" + node.Address + "]:" + node.Port.ToString(CultureInfo.InvariantCulture)
+                + "#" + replicateIndex.ToString(CultureInfo.InvariantCulture));
         }
 
     }

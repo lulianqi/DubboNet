@@ -1,5 +1,6 @@
 ﻿using DubboNet.DubboService;
 using System;
+using DubboNet.Clients.LoadBalancing;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -41,6 +42,7 @@ namespace DubboNet.Clients.DataModle
         public DubboServiceDriver NowDubboServiceDriver { get;internal set; }
         /// <summary>选中的可用执行器套件。EN: Selected available actuator suite.</summary>
         public IDubboActuatorSuite AvailableDubboActuatorSuite { get;internal set; }
+        internal LoadBalancedInvocation Invocation { get; set; }
     }
 
 }

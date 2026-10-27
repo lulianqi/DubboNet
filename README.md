@@ -46,10 +46,10 @@ DubboClient
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `3.3.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `3.6.2`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 3.3.0
+dotnet add package DubboNet --version 3.6.2
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
@@ -595,12 +595,23 @@ disposing a DubboClient removes its subscriptions and business connections, not 
 
 负载策略说明：
 
-- `Random`：加权随机。
-- `RoundRobin`：平滑加权轮询。
-- `ShortestResponse`：优先选择近期响应较快的节点。
-- `ConsistentHash`：根据请求内容计算一致性 Hash。
-- `P2CLoadBalance`：比较两次随机候选的负载；无法获取 Provider load 时退化为随机候选。
-- `LeastActive`：当前尚未实现，会退化为 `Random`。
+- `Random`：加权随机，使用共享随机源及 64 位权重累计。
+- `RoundRobin`：并发安全的平滑加权轮询，状态按方法隔离，支持 Provider 权重更新。
+- `LeastActive`：选择当前消费者在途请求数最少的节点；活跃数相同时加权随机。
+- `P2CLoadBalance`：按权重抽取两个不同节点，比较本地在途请求数，同分加权随机；不依赖 Telnet 的 Provider load，Native/Triple 同样有效。这里的权重影响候选抽样和平局选择，不保证最终流量严格按权重分配。
+- `ShortestResponse`：基于最近 30 秒成功请求的平均耗时与在途请求数计算估算响应时间，同分加权随机。失败调用单独计数并加入超时量级的评分惩罚，不会把快速失败视为快速成功响应。返回正常业务数据但业务 `code` 失败的结果不会被当作协议失败。
+- `ConsistentHash`：使用稳定 MurmurHash2、UTF-8 请求内容和每节点 160 个虚拟节点；相同候选集和相同请求内容在不同进程中映射一致，不保证与 Java Dubbo 的 Hash 实现互通。未提供 Hash key 时使用加权随机。
+
+活跃数是本 `DubboClient` 观察到的在途请求数，不是服务端全局负载或 TCP 连接数；连接可以多路复用。
+统计按 Provider、服务、方法签名及调用指定的 version/group 隔离，不混用同节点上的快慢方法。
+在统一发送入口中仅登记一次，成功、失败、超时、取消或异常均释放预占计数；节点移除或服务缓存淘汰不会提前关闭仍被在途请求持有的连接。显式释放整个 client 仍会关闭它持有的连接。
+旧统计窗口到期后不把节点直接当作 `0ms` 最快；无样本节点按 5 秒探测间隔、最多一个冷启动探测在途调用进行探测。
+如果全部节点都没有可用样本且均忙碌，则回退到最少活跃选择；该机制不是限流器。统计从空窗口开始，适合长生命周期 client，不能代表其他进程的负载。
+方法状态会随节点移除清理，并限制空闲签名缓存；计时使用单调时钟。选择节点、轮询状态及预占计数的更新在短临界区内完成，不在其中等待网络响应。
+本次优化不增加 RPC 自动重试或熔断，不改变默认 `Random` 和公开接口。
+
+**一致性 Hash 升级注意：** 旧实现使用进程随机化的 `HashCode.Combine` 和 ASCII 请求编码；
+切换为稳定 Hash、UTF-8 及新虚拟节点数后，已有 key 的节点映射会改变。依赖会话亲和或本地缓存的应用应协调升级，不能假定新旧版本混用期间路由一致。
 
 ## 返回结果 / Result Semantics
 
@@ -698,7 +709,7 @@ Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/Triple
 6. **分别判断调用成功和业务成功。** 先检查 `QuerySuccess`，再检查业务响应中的 `code`、`success` 等字段。
 7. **谨慎重试非幂等请求。** 超时或连接中断不代表 Provider 一定没有执行，请由业务幂等键和重试策略兜底。
 8. **根据服务数量配置缓存。** 大量调用不同接口时提高 `MaintainServiceNum`，或设为 `0`；同时关注连接和内存占用。
-9. **原生调用优先使用 `Random`、`RoundRobin` 或 `ConsistentHash`。** `LeastActive` 尚未实现，P2C 在没有 Provider load 时会退化。
+9. **按业务选择负载模式。** 默认 `Random` 适合通用场景；`LeastActive`、P2C 和 `ShortestResponse` 基于消费者本地统计，不需要开放 Telnet 诊断端口；`ConsistentHash` 适合需要请求亲和的场景，升级时注意映射变化。
 10. **部署前用真实 Provider 做兼容测试。** 尤其是未在兼容矩阵中标记为“真实验证”的 Dubbo 版本、复杂 POJO 和自定义 Hessian 类型。
 
 ## 异常与排障 / Troubleshooting
@@ -831,7 +842,7 @@ dotnet run --project Tests/QueryDemo/QueryDemo.csproj
 ### 自动发布 NuGet 包 / Automated NuGet publishing
 
 仓库通过 `.github/workflows/publish-nuget.yml` 自动发布正式版本。创建并发布 GitHub
-Release 后，工作流会把 Release Tag（支持 `3.3.0` 或 `v3.3.0`）作为包版本，依次运行
+Release 后，工作流会把 Release Tag（支持 `3.6.2` 或 `v3.6.2`）作为包版本，依次运行
 单元测试、打包，并将同一个 `.nupkg` 发布到 GitHub Packages 和 nuget.org。
 
 nuget.org 使用 Trusted Publishing/OIDC 颁发的临时密钥，不在仓库中保存长期 API Key。

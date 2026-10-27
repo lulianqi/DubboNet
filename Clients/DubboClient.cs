@@ -37,8 +37,8 @@ namespace DubboNet.Clients
             /// </summary>
             Random,
             /// <summary>
-            /// 加权最短响应优先，在最近一个滑动窗口中，响应时间越短，越优先调用。相同响应时间的进行加权随机。
-            /// EN: Prefer the shortest recent response time, using weighted random selection for ties.
+            /// 优先选择近期平均耗时与在途请求数估算响应较短的节点，同分加权随机，并有限探测无样本节点。
+            /// EN: Prefer the lowest estimated response from recent latency and in-flight calls, with weighted ties and bounded cold-node probes.
             /// </summary>
             ShortestResponse,
             /// <summary>
@@ -47,9 +47,8 @@ namespace DubboNet.Clients
             /// </summary>
             RoundRobin,
             /// <summary>
-            /// 未实现
-            /// 加权最少活跃调用优先，活跃数越低，越优先调用，相同活跃数的进行加权随机。活跃数指调用前后计数差（针对特定提供者：请求发送数 - 响应返回数），表示特定提供者的任务堆积量，活跃数越低，代表该提供者处理能力越强。
-            /// EN: Reserved for least-active selection; this mode is not currently implemented.
+            /// 优先选择当前消费者在途调用数最少的节点，相同活跃数加权随机。
+            /// EN: Prefer the fewest consumer-local in-flight calls, using weighted random selection for ties.
             /// </summary>
             LeastActive,
             /// <summary>
@@ -58,8 +57,8 @@ namespace DubboNet.Clients
             /// </summary>
             ConsistentHash,
             /// <summary>
-            /// 从可用的provider列表中做两次随机选择，选出两个节点providerA和providerB,比较providerA和providerB两个节点，选择其“当前正在处理的连接数”较小的那个节点。
-            /// EN: Power-of-two-choices selection using the less busy of two random providers.
+            /// 加权抽取两个不同节点，选择当前消费者在途调用数较小的节点，相同活跃数加权随机。
+            /// EN: Weighted sampling of two distinct providers, comparing consumer-local in-flight calls with weighted ties.
             /// </summary>
             P2CLoadBalance
         }
@@ -217,7 +216,8 @@ namespace DubboNet.Clients
 
         private volatile bool _isInReLoadDubboDriverCollectionTask = false;
 
-        internal bool IsDisposed { get;private set;}= false;
+        internal bool IsDisposed => Volatile.Read(ref _disposeStarted) != 0;
+        private int _disposeStarted;
 
         /// <summary>
         /// 注册中心的状态（内部状态，对调用方隐藏。实际上DubboClient网络状态是自动维护的，对外接口使用上是无状态的）
@@ -871,25 +871,20 @@ namespace DubboNet.Clients
                     nowServiceName,
                     NowLoadBalanceMode,
                     req,
-                    requiredProtocol);
+                    requiredProtocol,
+                    invocation,
+                    reserve: true);
             //获取到可用的DubboActuatorSuite
             if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite)
             {
-                if (availableDubboActuatorInfo.AvailableDubboActuatorSuite
-                    is IDubboGenericInvocationActuator genericInvocationSuite)
+                return await availableDubboActuatorInfo.Invocation.InvokeAsync(() =>
                 {
-                    return await genericInvocationSuite.SendQuery(invocation)
-                        .ConfigureAwait(false);
-                }
-
-                return await availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery(
-                    $"{nowServiceName}" +
-                    $"{availableDubboActuatorInfo.AvailableDubboActuatorSuite.ServiceFuncSpit}" +
-                    nowFuncName,
-                    SerializeLegacyArguments(
-                        invocation.Arguments,
-                        availableDubboActuatorInfo.AvailableDubboActuatorSuite.ProtocolType))
-                    .ConfigureAwait(false);
+                    if (availableDubboActuatorInfo.AvailableDubboActuatorSuite is IDubboGenericInvocationActuator genericInvocationSuite)
+                        return genericInvocationSuite.SendQuery(invocation);
+                    return availableDubboActuatorInfo.AvailableDubboActuatorSuite.SendQuery(
+                        nowServiceName + availableDubboActuatorInfo.AvailableDubboActuatorSuite.ServiceFuncSpit + nowFuncName,
+                        SerializeLegacyArguments(invocation.Arguments, availableDubboActuatorInfo.AvailableDubboActuatorSuite.ProtocolType));
+                }).ConfigureAwait(false);
             }
             //没有_dubboDriverCollection没有目标服务，尝试添加服务节点 （新的ServiceName都会通过这里将节点添加进来）
             else if (availableDubboActuatorInfo.ResultType == AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoDubboServiceDriver)
@@ -1504,7 +1499,7 @@ namespace DubboNet.Clients
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!IsDisposed)
+            if (Interlocked.Exchange(ref _disposeStarted, 1) == 0)
             {
                 if (disposing)
                 {
@@ -1512,7 +1507,6 @@ namespace DubboNet.Clients
                 }
                 // TODO: 释放未托管的资源(未托管的对象)并重写终结器
                 // TODO: 将大型字段设置为 null
-                IsDisposed = true;
                 if (disposing) _consumerRegistration?.Dispose();
                 else _ = _consumerRegistration?.ReleaseAsync();
                 _consumerRegistration = null;
@@ -1546,11 +1540,13 @@ namespace DubboNet.Clients
                 _dubboClientZookeeperWatcher = null;
                 _dubboDriverCollection?.Dispose();
                 _dubboDriverCollection = null;
-                foreach(var item in _retainDubboActuatorSuiteCollection)
+                IDubboActuatorSuite[] remaining;
+                lock (_retainDubboActuatorSuiteCollection)
                 {
-                    item.Value?.ActuatorSuite.Dispose();
+                    remaining = _retainDubboActuatorSuiteCollection.Values.Select(item => item.ActuatorSuite).ToArray();
+                    _retainDubboActuatorSuiteCollection.Clear();
                 }
-                _retainDubboActuatorSuiteCollection.Clear();
+                foreach (IDubboActuatorSuite suite in remaining) suite?.Dispose();
                 _retainDubboActuatorSuiteCollection = null;
             }
         }

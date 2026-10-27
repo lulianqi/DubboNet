@@ -1,168 +1,107 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace DubboNet.Clients.Helper
 {
+    /// <summary>一致性 Hash 环；更新原子发布，读取使用不可变快照。EN: Consistent hash ring with atomically published immutable snapshots.</summary>
     public class ConsistentHash<T>
     {
-        SortedDictionary<int, T> circle = new SortedDictionary<int, T>();
-        int _replicate = 100;   //default _replicate count
-        int[] ayKeys = null;    //cache the ordered keys for better performance
+        private sealed class Ring
+        {
+            internal readonly int[] Keys;
+            internal readonly T[] Values;
+            internal Ring(SortedDictionary<int, T> points)
+            { Keys = points.Keys.ToArray(); Values = points.Values.ToArray(); }
+        }
 
-        //it's better you override the GetHashCode() of T.
-        //we will use GetHashCode() to identify different node.
+        private readonly object _sync = new();
+        private List<T> _nodes = new();
+        private int _replicate;
+        private Ring _ring = new(new SortedDictionary<int, T>());
 
         public ConsistentHash(int replicate = 100)
         {
+            if (replicate <= 0) throw new ArgumentOutOfRangeException(nameof(replicate));
             _replicate = replicate;
         }
 
         public void Init(IEnumerable<T> nodes = null)
         {
-            Init(nodes, _replicate);
+            lock (_sync) Init(nodes, _replicate);
         }
 
-        public void Init(IEnumerable<T> nodes , int replicate)
+        public void Init(IEnumerable<T> nodes, int replicate)
         {
-            _replicate = replicate;
-
-            circle.Clear();
-            ayKeys = null;
-            if(nodes==null)
+            if (replicate <= 0) throw new ArgumentOutOfRangeException(nameof(replicate));
+            lock (_sync)
             {
-                return;
+                var snapshot = nodes?.Distinct().ToList() ?? new List<T>();
+                Publish(snapshot, replicate);
             }
-            foreach (T node in nodes)
-            {
-                this.Add(node, false);
-            }
-            ayKeys = circle.Keys.ToArray();
         }
 
         public void Add(T node)
         {
-            Add(node, true);
-        }
-
-        private void Add(T node, bool updateKeyArray)
-        {
-            for (int i = 0; i < _replicate; i++)
+            if (node is null) throw new ArgumentNullException(nameof(node));
+            lock (_sync)
             {
-                //int hash = BetterHash(node.GetHashCode().ToString() + i);
-                int hash = AddNodeHash(node,i);
-                circle[hash] = node;
-            }
-
-            if (updateKeyArray)
-            {
-                ayKeys = circle.Keys.ToArray();
+                if (_nodes.Contains(node)) return;
+                var nodes = new List<T>(_nodes) { node };
+                Publish(nodes, _replicate);
             }
         }
 
         public void Remove(T node)
         {
-            for (int i = 0; i < _replicate; i++)
+            lock (_sync)
             {
-                //int hash = BetterHash(node.GetHashCode().ToString() + i);
-                int hash = AddNodeHash(node, i);
-                if (!circle.Remove(hash))
-                {
-                    throw new Exception("can not remove a node that not added");
-                }
+                var nodes = new List<T>(_nodes);
+                if (!nodes.Remove(node)) throw new InvalidOperationException("Cannot remove a node that was not added.");
+                // Rebuild from logical nodes: hash collisions must not remove another node's points.
+                Publish(nodes, _replicate);
             }
-            ayKeys = circle.Keys.ToArray();
         }
 
-        //we keep this function just for performance compare
-        private T GetNode_slow(String key)
+        private void Publish(List<T> nodes, int replicate)
         {
-            int hash = GetNodeHash(key);
-            if (circle.ContainsKey(hash))
+            var points = new SortedDictionary<int, T>();
+            foreach (T node in nodes)
             {
-                return circle[hash];
+                if (node is null) throw new ArgumentException("Hash nodes cannot contain null.", nameof(nodes));
+                for (int i = 0; i < replicate; i++) points[AddNodeHash(node, i)] = node;
             }
-
-            int first = circle.Keys.FirstOrDefault(h => h >= hash);
-            if (first == new int())
-            {
-                first = ayKeys[0];
-            }
-            T node = circle[first];
-            return node;
+            var ring = new Ring(points);
+            _nodes = nodes;
+            _replicate = replicate;
+            Volatile.Write(ref _ring, ring);
         }
 
-        //return the index of first item that >= val.
-        //if not exist, return 0;
-        //ay should be ordered array.
-        int First_ge(int[] ay, int val)
+        /// <summary>获取 key 对应的节点。EN: Resolves the node owning a key.</summary>
+        public T GetNode(string key)
         {
-            int begin = 0;
-            int end = ay.Length - 1;
-
-            if (ay[end] < val || ay[0] > val)
-            {
-                return 0;
-            }
-
-            int mid = begin;
-            while (end - begin > 1)
-            {
-                mid = (end + begin) / 2;
-                if (ay[mid] >= val)
-                {
-                    end = mid;
-                }
-                else
-                {
-                    begin = mid;
-                }
-            }
-
-            if (ay[begin] > val || ay[end] < val)
-            {
-                throw new Exception("should not happen");
-            }
-
-            return end;
+            ArgumentNullException.ThrowIfNull(key);
+            Ring ring = Volatile.Read(ref _ring);
+            if (ring.Keys.Length == 0) throw new InvalidOperationException("The consistent hash ring is empty.");
+            int index = Array.BinarySearch(ring.Keys, GetNodeHash(key));
+            if (index < 0) index = ~index;
+            if (index == ring.Keys.Length) index = 0;
+            return ring.Values[index];
         }
 
-        /// <summary>
-        /// 获取目标节点
-        /// EN: Resolves the target node for a hash key.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
-        public T GetNode(String key)
+        // Override with a stable node identity when cross-process determinism is required.
+        public virtual int AddNodeHash(T node, int replicateIndex) => BetterHash(
+            node.GetHashCode().ToString(CultureInfo.InvariantCulture) + "#" + replicateIndex.ToString(CultureInfo.InvariantCulture));
+
+        public virtual int GetNodeHash(string key) => BetterHash(key);
+
+        public static int BetterHash(string key)
         {
-            //return GetNode_slow(key);
-
-            int hash = GetNodeHash(key);
-
-            int first = First_ge(ayKeys, hash);
-
-            //int diff = circle.Keys[first] - hash;
-
-            return circle[ayKeys[first]];
-        }
-
-        public virtual int AddNodeHash(T node , int replicateIndex)
-        {
-            return BetterHash(node.GetHashCode().ToString() + replicateIndex);
-        }
-
-        public virtual int GetNodeHash(String key)
-        {
-            return BetterHash(key);
-        }
-
-        //default String.GetHashCode() can't well spread strings like "1", "2", "3"
-        public static int BetterHash(String key)
-        {
-            uint hash = MyCommonHelper.EncryptionHelper.MyHash.GetMurmurHash2(Encoding.ASCII.GetBytes(key));
-            return (int)hash;
+            ArgumentNullException.ThrowIfNull(key);
+            return unchecked((int)MyCommonHelper.EncryptionHelper.MyHash.GetMurmurHash2(Encoding.UTF8.GetBytes(key)));
         }
     }
 }
