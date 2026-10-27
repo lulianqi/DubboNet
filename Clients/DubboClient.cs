@@ -12,6 +12,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 
@@ -173,6 +174,22 @@ namespace DubboNet.Clients
         private static MultiMyZookeeperStorage DubboClientMultiMyZookeeperStorage = new MultiMyZookeeperStorage();
 
         private static MultiMyNacosStorage DubboClientMultiMyNacosStorage = new MultiMyNacosStorage();
+
+        /// <summary>
+        /// 配置进程级消费者注册；必须在创建第一个客户端之前调用。配置会被复制并冻结，默认关闭。
+        /// EN: Configures process-wide consumer registration before the first client is created. Options are copied and frozen; disabled by default.
+        /// </summary>
+        public static void ConfigureConsumerRegistration(ConsumerRegistrationOptions options) =>
+            ConsumerRegistrationConfiguration.Configure(options);
+
+        /// <summary>
+        /// 等待当前消费者注册/注销尝试完成；失败仅记录告警并由后台重试，不表示服务端已确认成功。
+        /// EN: Waits for current consumer registration/deregistration attempts. Failures are logged and retried; completion does not guarantee server acknowledgement.
+        /// </summary>
+        public static Task FlushConsumerRegistrationsAsync(CancellationToken cancellationToken = default) =>
+            ConsumerRegistrationConfiguration.FlushAsync(cancellationToken);
+
+        private ConsumerRegistrationLease _consumerRegistration;
 
         private MyZookeeper _innerMyZookeeper;
 
@@ -387,6 +404,9 @@ namespace DubboNet.Clients
                 MaintainServiceNum = MaintainServiceNum,
                 NowLoadBalanceMode = NowLoadBalanceMode
             });
+
+            _consumerRegistration = ConsumerRegistrationConfiguration.CreateLease(
+                _innerMyZookeeper, _innerMyNacos, DubboRootPath);
 
         }
 
@@ -840,6 +860,7 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentException("can not find the ServiceName or FuncName");
             }
+            _consumerRegistration?.Record(nowServiceName, invocation.Version, invocation.Group);
             DubboActuatorProtocolType? requiredProtocol =
                 await GetRequiredProtocolAsync(
                     nowServiceName,
@@ -1492,6 +1513,9 @@ namespace DubboNet.Clients
                 // TODO: 释放未托管的资源(未托管的对象)并重写终结器
                 // TODO: 将大型字段设置为 null
                 IsDisposed = true;
+                if (disposing) _consumerRegistration?.Dispose();
+                else _ = _consumerRegistration?.ReleaseAsync();
+                _consumerRegistration = null;
                 _metadataManager?.Dispose();
                 _metadataManager = null;
                 _innerMyNacos?.RemoveSubscriber(this);

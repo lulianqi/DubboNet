@@ -289,6 +289,14 @@ namespace DubboNet.Clients.RegistryClient
 
         public string ConnectionString { get; }
 
+        internal Task UpdateConsumerAsync(ConsumerRegistration registration, bool unregister)
+        {
+            Instance instance = NacosConsumerRegistry.CreateInstance(registration);
+            return unregister
+                ? _namingService.DeregisterInstance(registration.NacosServiceName, registration.Root, instance)
+                : _namingService.RegisterInstance(registration.NacosServiceName, registration.Root, instance);
+        }
+
         /// <summary>
         /// 判断连接字符串是否选择 Nacos 注册中心。
         /// <para>EN: Determines whether a connection string selects the Nacos registry.</para>
@@ -1523,6 +1531,7 @@ namespace DubboNet.Clients.RegistryClient
         /// </summary>
         public void Dispose()
         {
+            ConsumerRegistrationConfiguration.StopRegistry(this);
             _subscriptionLock.Wait();
             try
             {

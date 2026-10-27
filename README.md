@@ -17,6 +17,7 @@ DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper �
 - 支持服务版本、分组、自定义 attachments、POJO、集合和 Map 参数。
 - 暴露 Request ID、Dubbo response status、serialization id、响应 attachments 和动态原始结果。
 - 同地址的 ZooKeeper/Nacos 客户端、Provider 连接和服务驱动在多个请求之间复用。
+- 可选的进程级消费者注册：按实际调用登记接口，跨客户端引用计数，并使用 ZooKeeper 临时节点或 Nacos 临时实例。
 - 主要公共 API 提供中英文 XML documentation，并随程序集/NuGet 包生成 `DubboNet.xml`。
 
 ## 调用架构 / Architecture
@@ -448,6 +449,68 @@ Naming/Config 订阅按调用方隔离，最后一个订阅者释放时注销监
 达到上限时，新配置会明确抛出异常；已有配置仍可继续复用。`Dispose()` 释放本客户端的订阅和业务连接，
 不代表 SDK 的后台连接已退出。需要使用超过 32 个不同地址/namespace/认证组合的应用，应分进程管理或重启进程；
 当前不通过驱逐空闲实例再创建来掩盖 SDK 线程泄漏。
+
+### 可选消费者注册 / Optional Consumer Registration
+
+消费者注册默认关闭。启用后，可让注册中心和兼容的管理平台看到本应用引用的接口。
+它独立于 Provider 订阅及 RPC 调用，不会自动提供动态路由、配置覆盖等治理能力。
+
+配置作用于整个进程中的 `DubboClient`，不属于 `DubboClientConf`。必须在创建第一个
+`DubboClient` 之前调用；配置会复制并冻结，后续修改原配置对象不会影响共享注册中心，
+运行期间再次配置会抛出 `InvalidOperationException`。同一进程使用同一应用身份；
+独立进程自动生成不同的实例标识。
+
+```csharp
+using DubboNet.Clients;
+using DubboNet.Clients.DataModle;
+
+DubboClient.ConfigureConsumerRegistration(new ConsumerRegistrationOptions
+{
+    Enabled = true,
+    ApplicationName = "orders-dotnet",
+    // 可选：容器、多网卡或 NAT 环境建议明确指定上报的本机 IP。
+    // Host = "10.0.0.12",
+    RetryInterval = TimeSpan.FromSeconds(10),
+    ShutdownTimeout = TimeSpan.FromSeconds(3)
+});
+
+using (var first = new DubboClient("127.0.0.1:2181"))
+using (var second = new DubboClient("127.0.0.1:2181"))
+{
+    await first.QueryAsync("com.foo.EchoService#echo", "hello");
+    await second.QueryAsync("com.foo.EchoService#echo", "world");
+    // 两个 client 的同一服务引用只产生一条共享消费者记录。
+}
+
+// 可选：在宿主关闭过程中等待当前后台注册/注销尝试；网络失败仍会告警并重试。
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+await DubboClient.FlushConsumerRegistrationsAsync(timeout.Token);
+```
+
+注册与释放规则：
+
+- 仅在 `QueryAsync` 准备调用服务时异步登记。构造 client、读取服务目录或单独查询元数据不会注册。
+- 按共享注册中心连接、根路径/Nacos Naming 分组、接口、服务 version/group 去重；不同应用实例不会互相覆盖。
+- 不会针对每次请求重复创建记录。服务引用保留到对应 client 释放；Provider 缓存的淘汰不表示应用不再引用该服务。
+- 一个 client 释放时，仅移除它的引用。该服务的最后一个引用释放时注销；同一连接上的其他服务及 client 不受影响。
+- `DubboInvocation.Version/Group` 指定的是引用服务的版本与分组；未指定时消费者记录保留为空，不臆测某个 Provider 的版本。
+- 注册/注销失败不会阻断 RPC。失败结果和可能已写入的记录保留在后台重试队列；日志不输出注册中心凭据。
+- 启用时需要消费者目录/实例的写权限；ZooKeeper 使用认证连接时，新建节点采用创建者 ACL，已有目录 ACL 不会被修改。
+- `Dispose()` 至多等待 `ShutdownTimeout`；超时后的清理继续在共享连接上重试。正常进程退出也会尽力注销。
+
+ZooKeeper 使用 `/{root}/{interface}/consumers/{URL编码的consumer://URL}` 下的临时节点，
+复用现有会话心跳；会话过期时由服务端删除，新会话建立后恢复仍被引用的记录。
+Nacos 使用 `consumers:{interface}:{version}:{group}` 临时实例，通过现有 Naming SDK
+的连接检查及重连重注册维护；消费者实例使用独立的 cluster 标识，避免同机多进程覆盖。
+`RetryInterval` 用于失败重试及会话恢复检查，不是额外的心跳。
+
+Nacos 的空闲连接仍保留在进程级池中，因此最后一个服务引用释放后会显式注销，不能依赖
+SDK 连接断开。进程崩溃或被强制终止时，ZooKeeper/Nacos 的会话或连接失效机制最终清理
+临时记录；网络断开后的清理不是瞬时发生，时间由服务端超时配置决定。
+
+如果进程仍在运行、共享连接也健康，但业务忘记 `Dispose`，心跳无法判断该 client
+已经不再使用；消费者记录可能继续存在。应使用 `using` 或由 DI 容器管理生命周期，
+在宿主关闭时释放 client。GC/finalizer 和进程退出回调都不能替代确定性的释放。
 
 ### 直接读取 Nacos 服务目录
 
