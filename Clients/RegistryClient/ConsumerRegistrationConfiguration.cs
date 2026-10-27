@@ -10,69 +10,99 @@ namespace DubboNet.Clients.RegistryClient
 {
     internal static class ConsumerRegistrationConfiguration
     {
-        private static readonly object Sync = new object();
-        private static readonly ConditionalWeakTable<object, ConsumerRegistrationTracker> Trackers = new();
-        private static readonly List<WeakReference<ConsumerRegistrationTracker>> Active = new();
-        private static ConsumerRegistrationOptions _options = new ConsumerRegistrationOptions();
-        private static bool _frozen;
+        private static readonly ConsumerRegistrationManager Manager = new();
 
-        internal static void Configure(ConsumerRegistrationOptions options)
+        static ConsumerRegistrationConfiguration() => AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+
+        internal static void Configure(ConsumerRegistrationOptions options) => Manager.Configure(options);
+
+        internal static ConsumerRegistrationLease CreateLease(MyZookeeper zooKeeper, MyNacos nacos, string root) =>
+            Manager.CreateLease((object)zooKeeper ?? nacos,
+                () => zooKeeper != null ? new ZooKeeperConsumerRegistry(zooKeeper) : new NacosConsumerRegistry(nacos), root);
+
+        internal static Task FlushAsync(CancellationToken cancellationToken = default) => Manager.FlushAsync(cancellationToken);
+
+        internal static void StopRegistry(object registry, bool drain = false) => Manager.StopRegistry(registry, drain);
+
+        private static void OnProcessExit(object sender, EventArgs args)
+        {
+            try { Manager.ShutdownAsync().Wait(Manager.ShutdownTimeout); }
+            catch { /* Ephemeral registrations are ultimately cleaned up by the registry server. */ }
+        }
+    }
+
+    // Testable without mutating process-wide state. Never holds its lock while waiting for I/O.
+    internal sealed class ConsumerRegistrationManager
+    {
+        private readonly object _sync = new();
+        private readonly ConditionalWeakTable<object, ConsumerRegistrationTracker> _trackers = new();
+        private readonly List<WeakReference<ConsumerRegistrationTracker>> _active = new();
+        private ConsumerRegistrationOptions _options = new ConsumerRegistrationOptions().Snapshot();
+        private bool _shutdown;
+
+        internal TimeSpan ShutdownTimeout { get { lock (_sync) return _options.ShutdownTimeout; } }
+
+        internal void Configure(ConsumerRegistrationOptions options)
         {
             ArgumentNullException.ThrowIfNull(options);
-            lock (Sync)
+            lock (_sync)
             {
-                if (_frozen) throw new InvalidOperationException("Configure consumer registration before creating the first DubboClient.");
-                _options = options.Snapshot();
+                if (_shutdown) throw new InvalidOperationException("Consumer registration is shutting down.");
+                // Validate before changing any tracker; omitted identity fields inherit prior values.
+                ConsumerRegistrationOptions snapshot = options.Snapshot(_options);
+                _options = snapshot;
+                foreach (ConsumerRegistrationTracker tracker in Snapshot()) tracker.Configure(snapshot);
             }
         }
 
-        internal static ConsumerRegistrationLease CreateLease(MyZookeeper zooKeeper, MyNacos nacos, string root)
+        internal ConsumerRegistrationLease CreateLease(object registryKey, Func<IConsumerRegistrationRegistry> factory, string root)
         {
-            lock (Sync)
+            lock (_sync)
             {
-                if (!_frozen)
+                if (_shutdown) return null;
+                ConsumerRegistrationTracker tracker = _trackers.GetValue(registryKey, key =>
                 {
-                    _frozen = true;
-                    if (_options.Enabled) AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
-                }
-                if (!_options.Enabled) return null;
-                object key = (object)zooKeeper ?? nacos;
-                ConsumerRegistrationTracker tracker = Trackers.GetValue(key, registryKey =>
-                {
-                    IConsumerRegistrationRegistry registry = zooKeeper != null
-                        ? new ZooKeeperConsumerRegistry(zooKeeper) : new NacosConsumerRegistry(nacos);
-                    var created = new ConsumerRegistrationTracker(registry, _options);
-                    Active.RemoveAll(reference => !reference.TryGetTarget(out _));
-                    Active.Add(new WeakReference<ConsumerRegistrationTracker>(created));
+                    var created = new ConsumerRegistrationTracker(factory(), _options);
+                    _active.RemoveAll(reference => !reference.TryGetTarget(out _));
+                    _active.Add(new WeakReference<ConsumerRegistrationTracker>(created));
                     return created;
                 });
+                // Even disabled clients track references so enabling needs no new client or RPC.
                 return tracker.CreateLease(root);
             }
         }
 
-        internal static Task FlushAsync(CancellationToken cancellationToken = default) =>
-            Task.WhenAll(Snapshot().Select(tracker => tracker.Request())).WaitAsync(cancellationToken);
-
-        internal static void StopRegistry(object registry)
+        internal Task FlushAsync(CancellationToken cancellationToken = default)
         {
-            lock (Sync)
+            lock (_sync) return Task.WhenAll(Snapshot().Select(tracker => tracker.Request())).WaitAsync(cancellationToken);
+        }
+
+        internal Task ShutdownAsync()
+        {
+            lock (_sync)
             {
-                if (Trackers.TryGetValue(registry, out ConsumerRegistrationTracker tracker)) tracker.Dispose();
-                Trackers.Remove(registry);
+                _shutdown = true;
+                return Task.WhenAll(Snapshot().Select(tracker => tracker.ShutdownAsync()));
             }
         }
 
-        private static ConsumerRegistrationTracker[] Snapshot()
+        internal void StopRegistry(object registry, bool drain)
         {
-            lock (Sync)
-                return Active.Select(reference => reference.TryGetTarget(out var tracker) ? tracker : null)
-                    .Where(tracker => tracker != null).ToArray();
+            ConsumerRegistrationTracker tracker;
+            lock (_sync)
+            {
+                if (!_trackers.TryGetValue(registry, out tracker)) return;
+                _trackers.Remove(registry);
+                _active.RemoveAll(reference => !reference.TryGetTarget(out var target) || ReferenceEquals(target, tracker));
+            }
+            // ZooKeeper is already closing its session; Nacos needs explicit deregistration.
+            if (drain) tracker.Drain();
+            tracker.Dispose();
         }
 
-        private static void OnProcessExit(object sender, EventArgs args)
-        {
-            try { Task.WhenAll(Snapshot().Select(tracker => tracker.ShutdownAsync())).Wait(_options.ShutdownTimeout); }
-            catch { /* Ephemeral registrations are ultimately cleaned up by the registry server. */ }
-        }
+        // Call with _sync held: configuration, new trackers and process shutdown are ordered.
+        private ConsumerRegistrationTracker[] Snapshot() => _active
+            .Select(reference => reference.TryGetTarget(out var tracker) ? tracker : null)
+            .Where(tracker => tracker != null).ToArray();
     }
 }

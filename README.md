@@ -455,10 +455,12 @@ Naming/Config 订阅按调用方隔离，最后一个订阅者释放时注销监
 消费者注册默认关闭。启用后，可让注册中心和兼容的管理平台看到本应用引用的接口。
 它独立于 Provider 订阅及 RPC 调用，不会自动提供动态路由、配置覆盖等治理能力。
 
-配置作用于整个进程中的 `DubboClient`，不属于 `DubboClientConf`。必须在创建第一个
-`DubboClient` 之前调用；配置会复制并冻结，后续修改原配置对象不会影响共享注册中心，
-运行期间再次配置会抛出 `InvalidOperationException`。同一进程使用同一应用身份；
-独立进程自动生成不同的实例标识。
+配置作用于整个进程中的 `DubboClient`，不属于 `DubboClientConf`。可在创建 client
+之前或运行期间调用 `ConfigureConsumerRegistration`，再次调用即可热切换，无需重建 client。
+每次调用复制配置，单独修改原配置对象不会生效。省略或留空的 `ApplicationName`、`Host`、
+`InstanceId` 继承上次配置，首次启用必须提供应用名；自动生成的实例标识不会因切换而改变。
+`RetryInterval`、`ShutdownTimeout` 每次按传入值（未指定时为默认值）更新。
+同一进程使用同一应用身份；独立进程自动生成不同的实例标识。
 
 ```csharp
 using DubboNet.Clients;
@@ -480,6 +482,12 @@ using (var second = new DubboClient("127.0.0.1:2181"))
     await first.QueryAsync("com.foo.EchoService#echo", "hello");
     await second.QueryAsync("com.foo.EchoService#echo", "world");
     // 两个 client 的同一服务引用只产生一条共享消费者记录。
+
+    // 运行中关闭：后台注销消费者，RPC 和 Provider 订阅不受影响。
+    DubboClient.ConfigureConsumerRegistration(new ConsumerRegistrationOptions { Enabled = false });
+
+    // 运行中开启：继承原应用身份，补注册仍存活 client 已引用的服务。
+    DubboClient.ConfigureConsumerRegistration(new ConsumerRegistrationOptions { Enabled = true });
 }
 
 // 可选：在宿主关闭过程中等待当前后台注册/注销尝试；网络失败仍会告警并重试。
@@ -490,11 +498,17 @@ await DubboClient.FlushConsumerRegistrationsAsync(timeout.Token);
 注册与释放规则：
 
 - 仅在 `QueryAsync` 准备调用服务时异步登记。构造 client、读取服务目录或单独查询元数据不会注册。
+- 默认关闭或运行中关闭时也在本地记录服务引用，不进行消费者网络注册；之后启用会补注册，已释放 client 不会复活。
+- 配置调用同步更新期望状态，网络注册/注销在后台串行收敛，不等待注册中心确认。快速连续切换按最新配置收敛，中间状态不保证都上报。
+- 关闭会清理已确认和可能已写入的记录；在途请求不能取消时，等待其返回后继续按最新状态清理。网络故障时注销可能延迟，后台继续重试。
+- 运行中更改应用名、IP 或实例标识时，先确认旧身份注销再注册新身份；旧身份清理失败时不会冒进创建新记录。进程退出开始后不再接受重新启用。
 - 按共享注册中心连接、根路径/Nacos Naming 分组、接口、服务 version/group 去重；不同应用实例不会互相覆盖。
 - 不会针对每次请求重复创建记录。服务引用保留到对应 client 释放；Provider 缓存的淘汰不表示应用不再引用该服务。
 - 一个 client 释放时，仅移除它的引用。该服务的最后一个引用释放时注销；同一连接上的其他服务及 client 不受影响。
 - `DubboInvocation.Version/Group` 指定的是引用服务的版本与分组；未指定时消费者记录保留为空，不臆测某个 Provider 的版本。
-- 注册/注销失败不会阻断 RPC。失败结果和可能已写入的记录保留在后台重试队列；日志不输出注册中心凭据。
+- 注册/注销失败不会阻断 RPC。失败结果和可能已写入的记录保留在后台重试队列；按 `RetryInterval` 起步指数退避，上限为 `max(RetryInterval, 60 秒)`，不同服务独立重试。
+- `FlushConsumerRegistrationsAsync` 可主动触发一次重试并等待当前尝试完成；它不是注册中心确认屏障，也不取消后台工作。等待被取消只结束调用方等待。
+- 告警包含操作、连接标识、接口、根路径、版本/分组、连续失败次数及异常类型链，恢复成功会记录 Info；不输出原始异常消息和连接凭据。连续失败告警会限频。需要控制台输出时设置 `MyCommonHelper.MyLogger.LogPrintLevel = MyCommonHelper.MyLogger.LogType.Warn`（默认 Error）；查看恢复信息可设为 Info。
 - 启用时需要消费者目录/实例的写权限；ZooKeeper 使用认证连接时，新建节点采用创建者 ACL，已有目录 ACL 不会被修改。
 - `Dispose()` 至多等待 `ShutdownTimeout`；超时后的清理继续在共享连接上重试。正常进程退出也会尽力注销。
 
@@ -502,7 +516,8 @@ ZooKeeper 使用 `/{root}/{interface}/consumers/{URL编码的consumer://URL}` �
 复用现有会话心跳；会话过期时由服务端删除，新会话建立后恢复仍被引用的记录。
 Nacos 使用 `consumers:{interface}:{version}:{group}` 临时实例，通过现有 Naming SDK
 的连接检查及重连重注册维护；消费者实例使用独立的 cluster 标识，避免同机多进程覆盖。
-`RetryInterval` 用于失败重试及会话恢复检查，不是额外的心跳。
+`RetryInterval` 用于失败重试的基础间隔及会话恢复检查，不是额外的心跳。
+ZooKeeper 新会话仅恢复当前启用、仍被引用的消费者；关闭且清理完成后停止消费者恢复检查。
 
 Nacos 的空闲连接仍保留在进程级池中，因此最后一个服务引用释放后会显式注销，不能依赖
 SDK 连接断开。进程崩溃或被强制终止时，ZooKeeper/Nacos 的会话或连接失效机制最终清理

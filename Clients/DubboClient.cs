@@ -176,8 +176,8 @@ namespace DubboNet.Clients
         private static MultiMyNacosStorage DubboClientMultiMyNacosStorage = new MultiMyNacosStorage();
 
         /// <summary>
-        /// 配置进程级消费者注册；必须在创建第一个客户端之前调用。配置会被复制并冻结，默认关闭。
-        /// EN: Configures process-wide consumer registration before the first client is created. Options are copied and frozen; disabled by default.
+        /// 配置进程级消费者注册；可重复调用以热切换。配置被复制，后台异步收敛，不等待注册中心确认，默认关闭。
+        /// EN: Configures process-wide consumer registration, including runtime switching. Copies options and reconciles asynchronously without waiting for registry acknowledgement; disabled by default.
         /// </summary>
         public static void ConfigureConsumerRegistration(ConsumerRegistrationOptions options) =>
             ConsumerRegistrationConfiguration.Configure(options);

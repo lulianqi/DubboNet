@@ -1531,7 +1531,7 @@ namespace DubboNet.Clients.RegistryClient
         /// </summary>
         public void Dispose()
         {
-            ConsumerRegistrationConfiguration.StopRegistry(this);
+            ConsumerRegistrationConfiguration.StopRegistry(this, drain: true);
             _subscriptionLock.Wait();
             try
             {
