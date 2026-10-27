@@ -42,20 +42,18 @@ public class MyNacosTest
         var server = new FakeNacos { ConfigContent = "config-value" };
         server.Add("1", 20880);
         using MyNacos nacos = server.CreateClient(catalogHandler: new FakeCatalogHandler(
-            """
-            {
-              "count": 3,
-              "serviceList": [
-                { "name": "providers:com.example.Service:1:g", "groupName": "DEFAULT_GROUP", "clusterCount": 1, "ipCount": 1, "healthyInstanceCount": 1 },
-                { "name": "providers:com.example.OtherService:1:g", "groupName": "dubbo-prod", "clusterCount": 1, "ipCount": 2, "healthyInstanceCount": 1 },
-                { "name": "ordinary-web-service", "groupName": "other" }
-              ]
-            }
-            """));
+            "{\n" +
+                "  \"count\": 3,\n" +
+                "  \"serviceList\": [\n" +
+                "    { \"name\": \"providers:com.example.Service:1:g\", \"groupName\": \"DEFAULT_GROUP\", \"clusterCount\": 1, \"ipCount\": 1, \"healthyInstanceCount\": 1 },\n" +
+                "    { \"name\": \"providers:com.example.OtherService:1:g\", \"groupName\": \"dubbo-prod\", \"clusterCount\": 1, \"ipCount\": 2, \"healthyInstanceCount\": 1 },\n" +
+                "    { \"name\": \"ordinary-web-service\", \"groupName\": \"other\" }\n" +
+                "  ]\n" +
+                "}"));
 
-        Assert.Equal([Group, "dubbo-prod"], await nacos.ListRegistryRootsAsync());
-        Assert.Equal([Service], await nacos.ListServicesAsync(Group));
-        Assert.Equal(["providers:com.example.Service:1:g"], await nacos.ListNacosServicesAsync(Group));
+        Assert.Equal(new[] { Group, "dubbo-prod" }, await nacos.ListRegistryRootsAsync());
+        Assert.Equal(new[] { Service }, await nacos.ListServicesAsync(Group));
+        Assert.Equal(new[] { "providers:com.example.Service:1:g" }, await nacos.ListNacosServicesAsync(Group));
 
         NacosServiceInstanceInfo instance = Assert.Single(await nacos.GetServiceInstancesAsync(
             "providers:com.example.Service:1:g", Group));
@@ -110,8 +108,8 @@ public class MyNacosTest
             Address + "?username=tester&password=secret",
             handler);
 
-        Assert.Equal([Group], await nacos.ListRegistryRootsAsync());
-        Assert.Equal([Group], await nacos.ListRegistryRootsAsync());
+        Assert.Equal(new[] { Group }, await nacos.ListRegistryRootsAsync());
+        Assert.Equal(new[] { Group }, await nacos.ListRegistryRootsAsync());
         Assert.Equal(2, handler.LoginCalls);
         Assert.Equal(3, handler.CatalogCalls);
         Assert.EndsWith("accessToken=token-2", handler.LastCatalogQuery);
@@ -314,7 +312,7 @@ public class MyNacosTest
     }
 
     private static string Definition(string method, string type) =>
-        $$"""{"canonicalName":"{{Service}}","methods":[{"name":"{{method}}","parameterTypes":["{{type}}"],"returnType":"{{type}}"}],"types":[{"type":"{{type}}"}]}""";
+        $"{{\"canonicalName\":\"{Service}\",\"methods\":[{{\"name\":\"{method}\",\"parameterTypes\":[\"{type}\"],\"returnType\":\"{type}\"}}],\"types\":[{{\"type\":\"{type}\"}}]}}";
     private static string Location() => MyNacos.BuildMetadataLocation("dubbo", Service, "1", "g", "app");
 
     private static IEnumerable<Type> FlattenType(Type type)
@@ -422,13 +420,20 @@ public class MyNacosTest
         protected override object? Invoke(MethodInfo? method, object?[]? args) => Handler(method!, args!);
     }
 
-    private sealed class FakeCatalogHandler(string json) : HttpMessageHandler
+    private sealed class FakeCatalogHandler : HttpMessageHandler
     {
+        private readonly string _json;
+
+        public FakeCatalogHandler(string json)
+        {
+            _json = json;
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
+            Content = new StringContent(_json, Encoding.UTF8, "application/json")
         });
     }
 
@@ -446,7 +451,7 @@ public class MyNacosTest
             {
                 LoginCalls++;
                 return Json(HttpStatusCode.OK,
-                    $$"""{"accessToken":"token-{{LoginCalls}}","tokenTtl":18000}""");
+                    $"{{\"accessToken\":\"token-{LoginCalls}\",\"tokenTtl\":18000}}");
             }
 
             CatalogCalls++;
@@ -456,11 +461,9 @@ public class MyNacosTest
                 return Json(HttpStatusCode.Unauthorized, "unauthorized");
             }
             return Json(HttpStatusCode.OK,
-                """
-                {"count":1,"serviceList":[
-                  {"name":"providers:com.example.Service:1:g","groupName":"DEFAULT_GROUP"}
-                ]}
-                """);
+                "{\"count\":1,\"serviceList\":[\n" +
+                    "  {\"name\":\"providers:com.example.Service:1:g\",\"groupName\":\"DEFAULT_GROUP\"}\n" +
+                    "]}");
         }
 
         private static Task<HttpResponseMessage> Json(HttpStatusCode status, string content) =>

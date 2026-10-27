@@ -26,7 +26,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 6.0.x
 
       - name: Resolve package version from release tag
         shell: bash
@@ -42,10 +42,18 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore DubboNet.sln
 
+      - name: Build library and examples
+        run: >-
+          dotnet build DubboNet.sln
+          --configuration Release
+          --no-restore
+          -p:GeneratePackageOnBuild=false
+
       - name: Run unit tests
         run: >-
           dotnet test Tests/UnitTestForDubboNet/UnitTestForDubboNet.csproj
           --configuration Release
+          --no-build
           --no-restore
           -p:GeneratePackageOnBuild=false
 

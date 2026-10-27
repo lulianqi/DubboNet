@@ -1,12 +1,30 @@
 {
+    "version": "0.2.0",
     "configurations": [
+        {
+            "name": "C#: DubboClientIntegrationTests Debug",
+            "type": "dotnet",
+            "request": "launch",
+            "projectPath": "${workspaceFolder}/Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj"
+        },
+        {
+            "name": "C#: DubboClientIntegrationTests Debug (coreclr)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build: DubboClientIntegrationTests",
+            "program": "${workspaceFolder}/Tests/DubboClientIntegrationTests/bin/Debug/net6.0/DubboClientIntegrationTests.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/Tests/DubboClientIntegrationTests",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
         {
             "name": "Containers: .NET Launch",
             "type": "docker",
             "request": "launch",
             "preLaunchTask": "docker-run: debug",
             "netCore": {
-                "appProject": "${workspaceFolder}/Tests/NativeDubboIntegration/NativeDubboIntegration.csproj"
+                "appProject": "${workspaceFolder}/Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj"
             }
         }
     ]

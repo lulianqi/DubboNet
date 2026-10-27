@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <Title>DubboNet</Title>
     <Authors>lulianqi</Authors>
@@ -16,7 +16,7 @@
 	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
 	  <NoWarn>$(NoWarn);1591</NoWarn>
 	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <Version>3.2.1</Version>
+    <Version>3.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

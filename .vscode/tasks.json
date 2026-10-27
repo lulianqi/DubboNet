@@ -2,31 +2,47 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "build: DubboClientIntegrationTests",
+			"type": "process",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"${workspaceFolder}/Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			],
+			"problemMatcher": "$msCompile",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
 			"type": "docker-build",
 			"label": "docker-build: debug",
 			"dependsOn": [
-				"build"
+				"build: DubboClientIntegrationTests"
 			],
 			"dockerBuild": {
 				"tag": "dubbonet:dev",
 				"target": "base",
-				"dockerfile": "${workspaceFolder}/Tests/NativeDubboIntegration/Dockerfile",
+				"dockerfile": "${workspaceFolder}/Tests/DubboClientIntegrationTests/Dockerfile",
 				"context": "${workspaceFolder}",
 				"pull": true
 			},
 			"netCore": {
-				"appProject": "${workspaceFolder}/Tests/NativeDubboIntegration/NativeDubboIntegration.csproj"
+				"appProject": "${workspaceFolder}/Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj"
 			}
 		},
 		{
 			"type": "docker-build",
 			"label": "docker-build: release",
 			"dependsOn": [
-				"build"
+				"build: DubboClientIntegrationTests"
 			],
 			"dockerBuild": {
 				"tag": "dubbonet:latest",
-				"dockerfile": "${workspaceFolder}/Tests/NativeDubboIntegration/Dockerfile",
+				"dockerfile": "${workspaceFolder}/Tests/DubboClientIntegrationTests/Dockerfile",
 				"context": "${workspaceFolder}",
 				"platform": {
 					"os": "linux",
@@ -35,7 +51,7 @@
 				"pull": true
 			},
 			"netCore": {
-				"appProject": "${workspaceFolder}/Tests/NativeDubboIntegration/NativeDubboIntegration.csproj"
+				"appProject": "${workspaceFolder}/Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj"
 			}
 		},
 		{
@@ -46,7 +62,7 @@
 			],
 			"dockerRun": {},
 			"netCore": {
-				"appProject": "${workspaceFolder}/Tests/NativeDubboIntegration/NativeDubboIntegration.csproj",
+				"appProject": "${workspaceFolder}/Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj",
 				"enableDebugging": true
 			}
 		},
@@ -58,7 +74,7 @@
 			],
 			"dockerRun": {},
 			"netCore": {
-				"appProject": "${workspaceFolder}/Tests/NativeDubboIntegration/NativeDubboIntegration.csproj"
+				"appProject": "${workspaceFolder}/Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj"
 			}
 		}
 	]
