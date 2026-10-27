@@ -669,6 +669,20 @@ namespace DubboNet.Clients.RegistryClient
                 retryTime).ConfigureAwait(false);
         }
 
+        internal async Task UpdateConsumerAsync(ConsumerRegistration registration, bool unregister)
+        {
+            bool confirmed = await InnerDoZkRequest(registration.ZooKeeperPath, async (client, _) =>
+            {
+                await ZooKeeperConsumerRegistry.UpdateAsync(client, registration, unregister,
+                    ZooKeeperConsumerRegistry.GetCreateAcl(AuthInfo)).ConfigureAwait(false);
+                return true;
+            }, retryTime: 0).ConfigureAwait(false);
+            // InnerDoZkRequest maps NoNode to default. For a write this isn't confirmation:
+            // an ancestor may have been deleted between creation steps; retry the registration.
+            if (!confirmed && !unregister)
+                throw new InvalidOperationException("Consumer registration path disappeared during creation.");
+        }
+
 
         /// <summary>
         /// 内部ZooKeeper执行方法 （内置可复用的连接及重连逻辑，用于让ZooKeeper执行实际网络请求）
@@ -805,6 +819,8 @@ namespace DubboNet.Clients.RegistryClient
             {
                 return;
             }
+
+            ConsumerRegistrationConfiguration.StopRegistry(this);
 
             // 与连接建立共用同一信号量，保证释放期间不会发布新的 ZooKeeper 客户端。
             await _connectSemaphore.WaitAsync().ConfigureAwait(false);
