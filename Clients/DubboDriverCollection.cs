@@ -9,6 +9,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using DubboNet.Clients.DataModle;
 using DubboNet.DubboService;
+using DubboNet.DubboService.DataModle;
 
 namespace DubboNet.Clients
 {
@@ -46,20 +47,21 @@ namespace DubboNet.Clients
         /// 内部维持的DubboActuatorSuite（用于最大程度复用链接）
         /// EN: Shared actuator suites retained to maximize connection reuse across services.
         /// </summary>
-        private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _sourceDubboActuatorSuiteCollection;
+        private readonly Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _sourceDubboActuatorSuiteCollection;
 
         /// <summary>
         /// 内部维持的DubboServiceDriver（使用_sourceDubboActuatorSuiteCollection资源，复用服务资源）
         /// EN: Cached service drivers that reuse resources from the shared actuator-suite collection.
         /// </summary>
         //private Dictionary<string, DubboServiceDriver> _dubboServiceDriverCollection = null;
-        private ConcurrentDictionary<string, DubboServiceDriver> _dubboServiceDriverCollection = null;
+        private readonly ConcurrentDictionary<string, DubboServiceDriver> _dubboServiceDriverCollection;
+        private volatile bool _disposed;
 
 
         private DubboDriverCollectionConf _innerDubboDriverCollectionConf = null;
 
         /// <summary>当前缓存的服务驱动数量。EN: Number of service drivers currently cached.</summary>
-        public int Count { get { return _dubboServiceDriverCollection?.Count ?? 0; } }
+        public int Count => _disposed ? 0 : _dubboServiceDriverCollection.Count;
 
         /// <summary>
         /// 初始化服务驱动集合。
@@ -88,7 +90,7 @@ namespace DubboNet.Clients
         /// <returns>存在对应驱动时为 <see langword="true"/>。EN: <see langword="true"/> when a matching driver exists.</returns>
         public bool HasServiceDriver(string serviceName)
         {
-            return _dubboServiceDriverCollection.ContainsKey(serviceName);
+            return !_disposed && _dubboServiceDriverCollection.ContainsKey(serviceName);
         }
 
         /// <summary>
@@ -103,6 +105,7 @@ namespace DubboNet.Clients
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
         public bool AddDubboServiceDriver(string serviceName, List<DubboServiceEndPointInfo> dbEpList)
         {
+            if (_disposed) throw new ObjectDisposedException(nameof(DubboDriverCollection));
             if (string.IsNullOrEmpty(serviceName))
             {
                 throw new ArgumentNullException(nameof(serviceName));
@@ -183,15 +186,25 @@ namespace DubboNet.Clients
         /// <param name="loadBalanceMode">负载均衡策略。EN: Load-balancing strategy.</param>
         /// <param name="qurey">请求内容，仅用于一致性 Hash 计算。EN: Request content used only as the consistent-hash key.</param>
         /// <param name="requiredProtocol">可选的协议约束。EN: Optional protocol constraint applied before load balancing.</param>
+        /// <param name="invocation">用于隔离方法统计的调用描述。EN: Invocation identifying the method statistics.</param>
+        /// <param name="reserve">是否为实际发送预占一次调用。EN: Whether to reserve one actual dispatch.</param>
         /// <returns>包含选择结果、服务驱动和执行器的结果对象。EN: Result describing the selection outcome, service driver, and actuator suite.</returns>
         /// <exception cref="ArgumentNullException">服务名和默认服务名均为空。EN: Both the service name and configured default service name are empty.</exception>
         public AvailableDubboActuatorInfo GetDubboActuatorSuite(
             string serviceName,
             LoadBalanceMode loadBalanceMode = LoadBalanceMode.Random,
             string qurey = null,
-            DubboActuatorProtocolType? requiredProtocol = null)
+            DubboActuatorProtocolType? requiredProtocol = null,
+            DubboInvocation invocation = null,
+            bool reserve = false)
         {
             AvailableDubboActuatorInfo availableDubboActuatorInfo = new AvailableDubboActuatorInfo();
+            if (_disposed)
+            {
+                availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator;
+                availableDubboActuatorInfo.ErrorMes = "The service-driver collection is disposed.";
+                return availableDubboActuatorInfo;
+            }
             if (string.IsNullOrEmpty(serviceName))
             {
                 serviceName = _innerDubboDriverCollectionConf.DefaultServiceName;
@@ -200,28 +213,30 @@ namespace DubboNet.Clients
             {
                 throw new ArgumentNullException(nameof(serviceName));
             }
-            if(_dubboServiceDriverCollection.ContainsKey(serviceName))
+            if (_dubboServiceDriverCollection.TryGetValue(serviceName, out var driver))
             {
-                availableDubboActuatorInfo.NowDubboServiceDriver =
-                    _dubboServiceDriverCollection[serviceName];
-                availableDubboActuatorInfo.AvailableDubboActuatorSuite =
-                    availableDubboActuatorInfo.NowDubboServiceDriver.GetDubboActuatorSuite(
-                        loadBalanceMode,
-                        qurey,
-                        requiredProtocol);
-                if (availableDubboActuatorInfo.NowDubboServiceDriver.InnerActuatorSuites.Count == 0)
+                availableDubboActuatorInfo.NowDubboServiceDriver = driver;
+                if (reserve)
+                {
+                    availableDubboActuatorInfo.Invocation = driver.SelectAndReserve(loadBalanceMode, qurey, requiredProtocol, invocation);
+                    availableDubboActuatorInfo.AvailableDubboActuatorSuite = availableDubboActuatorInfo.Invocation?.Suite;
+                }
+                else availableDubboActuatorInfo.AvailableDubboActuatorSuite = driver.GetDubboActuatorSuite(loadBalanceMode, qurey, requiredProtocol);
+                // A reserved call remains valid if a watcher removes the provider immediately
+                // afterwards: its temporary connection reference must be dispatched and released.
+                if (availableDubboActuatorInfo.AvailableDubboActuatorSuite != null)
                 {
                     availableDubboActuatorInfo.ResultType =
-                        AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService;
+                        AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite;
                 }
-                else if (availableDubboActuatorInfo.AvailableDubboActuatorSuite == null)
+                else if (driver.ProviderCount == 0)
                 {
-                    availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator;
+                    availableDubboActuatorInfo.ResultType = AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoActuatorInService;
                 }
                 else
                 {
                     availableDubboActuatorInfo.ResultType =
-                        AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.GetDubboActuatorSuite;
+                        AvailableDubboActuatorInfo.GetDubboActuatorSuiteResultType.NoAvailableActuator;
                 }
             }
             else
@@ -306,17 +321,14 @@ namespace DubboNet.Clients
         /// 释放所有缓存的服务驱动，并断开对共享执行器集合的引用。
         /// EN: Disposes all cached service drivers and releases the reference to the shared actuator-suite collection.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
         public void Dispose()
         {
-            if(_dubboServiceDriverCollection!=null)
-            {
-                foreach(var item in _dubboServiceDriverCollection)
-                {
-                    item.Value.Dispose();
-                }
-            }
-            _dubboServiceDriverCollection = null;
-            _sourceDubboActuatorSuiteCollection = null;
+            if (_disposed) return;
+            _disposed = true;
+            DubboServiceDriver[] drivers = _dubboServiceDriverCollection.Values.ToArray();
+            _dubboServiceDriverCollection.Clear();
+            foreach (DubboServiceDriver driver in drivers) driver.Dispose();
         }
 
     }

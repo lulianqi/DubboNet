@@ -19,7 +19,7 @@ namespace DubboNet.Clients.DataModle
         public IPEndPoint EndPoint { get;internal set; } = null;
         /// <summary>该端点关联的执行器套件。EN: Actuator suite associated with this endpoint.</summary>
         public IDubboActuatorSuite InnerDubboActuatorSuite { get;internal set; }
-        /// <summary>平滑加权轮询使用的当前调度权重。EN: Current dispatch weight used by smooth weighted round robin.</summary>
+        /// <summary>最近参与选择的方法的轮询权重（兼容诊断字段，实际状态按方法隔离）。EN: Latest selected method's round-robin weight for diagnostics; actual scheduling state is method-local.</summary>
         public int NowDispatchWeight { get;internal set; } = 0;
         /// <summary>注册 URL 的协议，例如 <c>dubbo</c> 或 <c>tri</c>。EN: Registry URL scheme, such as <c>dubbo</c> or <c>tri</c>.</summary>
         public string Scheme { get; set; } = null;
@@ -74,6 +74,15 @@ namespace DubboNet.Clients.DataModle
         public long? Timestamp { get; set; } = null;
         /// <summary>负载均衡权重，默认值为 100。EN: Load-balancing weight; defaults to 100.</summary>
         public int Weight { get; set; } = 100;
+
+        // Registry snapshots may be reused by their publisher. Never let later mutation change
+        // dictionary keys or invalidate the cached weight prefix sums behind the selector's back.
+        internal DubboServiceEndPointInfo RoutingSnapshot()
+        {
+            var snapshot = (DubboServiceEndPointInfo)MemberwiseClone();
+            snapshot.EndPoint = new IPEndPoint(EndPoint.Address, EndPoint.Port);
+            return snapshot;
+        }
 
 
         /// <summary>

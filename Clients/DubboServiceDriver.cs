@@ -1,5 +1,6 @@
-﻿using DubboNet.Clients.DataModle;
+using DubboNet.Clients.DataModle;
 using DubboNet.Clients.Helper;
+using DubboNet.Clients.LoadBalancing;
 using DubboNet.DubboService;
 using DubboNet.DubboService.DataModle;
 using MyCommonHelper;
@@ -7,450 +8,382 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading.Tasks;
 using static DubboNet.Clients.DubboClient;
-
 
 namespace DubboNet.Clients
 {
-    /// <summary>
-    /// 管理单个服务的所有连接器（单个服务可以有N个服务节点，每个服务节点可以有N个连接）
-    /// EN: Manages all actuator suites for one service; a service may have multiple provider endpoints and each endpoint may own multiple connections.
-    /// </summary>
-    internal class DubboServiceDriver:IDisposable
+    /// <summary>管理单个服务的 Provider、共享连接及负载状态。EN: Manages providers, shared connections and load state for one service.</summary>
+    internal class DubboServiceDriver : IDisposable
     {
-        /// <summary>
-        /// 单个服务驱动的连接与超时配置。
-        /// EN: Connection and timeout options for one service driver.
-        /// </summary>
         internal class DubboServiceDriverConf
         {
-            /// <summary>Triple 与 Telnet Provider 的最大连接数；Native 不使用。EN: Maximum connections for Triple and Telnet providers; ignored by Native.</summary>
             public int DubboActuatorSuiteMaxConnections { get; set; } = 20;
-            /// <summary>Telnet 辅助连接的空闲存活时间，单位秒。EN: Idle lifetime of Telnet auxiliary connections, in seconds.</summary>
             public int DubboActuatorSuiteAssistConnectionAliveTime { get; set; } = 60 * 5;
-            /// <summary>Telnet 主连接及 Triple HTTP 连接池的空闲存活时间，单位秒。EN: Idle lifetime for the Telnet primary connection and Triple HTTP connection pool, in seconds.</summary>
             public int DubboActuatorSuiteMasterConnectionAliveTime { get; set; } = 60 * 20;
-            /// <summary>Native、Triple 与 Telnet 请求超时时间，单位毫秒。EN: Native, Triple, and Telnet request timeout, in milliseconds.</summary>
             public int DubboRequestTimeout { get; set; } = 60 * 1000;
         }
 
-        /// <summary>
-        /// 服务名称
-        /// EN: Fully qualified Dubbo service name managed by this driver.
-        /// </summary>
-        public string ServiceName { get; private set; }
-
-        /// <summary>
-        /// 最后激活时间
-        /// EN: Time at which this service driver was most recently selected.
-        /// </summary>
-        public DateTime LastActivateTime { get; private set; } = default(DateTime);
-
-        /// <summary>
-        /// 当前DubboServiceDriver可使用的各EndPoint的DubboActuatorSuite集合
-        /// EN: Provider endpoint metadata and actuator suites currently available to this service driver.
-        /// </summary>
-        public Dictionary<IPEndPoint, DubboServiceEndPointInfo> InnerActuatorSuites { get; private set; }
-
-        /// <summary>
-        /// DubboClient的源ActuatorSuiteCollection（不要直接使用，保留的这份引用是为了释放时同时清理）
-        /// EN: Shared actuator-suite collection owned by DubboClient; retained only for reference counting and cleanup.
-        /// </summary>
-        private Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _sourceDubboActuatorSuiteCollection;
-
-        private DubboServiceDriverConf _innerDubboServiceDriverConf = null;
-
-        private DubboSuiteConsistentHash _dubboSuiteConsistentHash = new DubboSuiteConsistentHash(16);
-
-        /// <summary>
-        /// 初始化DubboServiceDriver
-        /// EN: Initializes a service driver and registers its initial provider endpoints.
-        /// </summary>
-        /// <param name="serviceName">当前服务名称。EN: Name of the service managed by this driver.</param>
-        /// <param name="dbEpList">当前服务的 Provider 节点列表。EN: Provider endpoints currently registered for the service.</param>
-        /// <param name="dubboActuatorSuiteCollection">用于跨服务复用连接的共享执行器集合。EN: Shared actuator-suite collection used to reuse connections across services.</param>
-        /// <param name="dubboServiceDriverConf">可选的连接与超时配置。EN: Optional connection and timeout configuration.</param>
-        /// <exception cref="ArgumentNullException"><paramref name="dbEpList"/> 为 null；允许空列表。EN: <paramref name="dbEpList"/> is null; empty lists are allowed.</exception>
-        /// <exception cref="ArgumentNullException"><paramref name="dubboActuatorSuiteCollection"/> 为空。EN: <paramref name="dubboActuatorSuiteCollection"/> is null.</exception>
-        public DubboServiceDriver(string serviceName, List<DubboServiceEndPointInfo> dbEpList, Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection , DubboServiceDriverConf dubboServiceDriverConf = null)
+        private sealed class MethodProvider
         {
+            internal readonly RequestLoadStatistics Statistics = new();
+            internal long CurrentWeight;
+            internal volatile bool Retired;
+        }
+
+        private sealed class MethodState
+        {
+            internal readonly Dictionary<IPEndPoint, MethodProvider> Providers = new();
+            internal double LastUsed;
+            internal MethodProvider For(IPEndPoint endpoint)
+            {
+                if (!Providers.TryGetValue(endpoint, out var provider)) Providers.Add(endpoint, provider = new MethodProvider());
+                return provider;
+            }
+        }
+
+        private sealed class CandidateSet
+        {
+            internal readonly DubboServiceEndPointInfo[] Providers;
+            internal readonly long[] PrefixWeights;
+            internal readonly long TotalWeight;
+            internal DubboSuiteConsistentHash Hash;
+
+            internal CandidateSet(IEnumerable<DubboServiceEndPointInfo> providers)
+            {
+                Providers = providers.OrderBy(item => item.EndPoint.ToString(), StringComparer.Ordinal).ToArray();
+                PrefixWeights = new long[Providers.Length];
+                for (int i = 0; i < Providers.Length; i++) PrefixWeights[i] = TotalWeight += Providers[i].Weight;
+            }
+        }
+
+        private readonly object _sync = new();
+        private readonly Dictionary<IPEndPoint, DubboServiceEndPointInfo> _endpoints = new();
+        private readonly Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> _shared;
+        private readonly Dictionary<int, CandidateSet> _candidates = new();
+        private readonly Dictionary<string, MethodState> _methods = new(StringComparer.Ordinal);
+        private readonly DubboServiceDriverConf _configuration;
+        private readonly Func<double> _clock;
+        private readonly Func<long, long> _random;
+        private readonly Func<DubboServiceEndPointInfo, IDubboActuatorSuite> _factory;
+        private bool _disposed;
+        private long _lastActivateTicks;
+
+        public string ServiceName { get; }
+        public DateTime LastActivateTime => new DateTime(System.Threading.Interlocked.Read(ref _lastActivateTicks));
+        // Callers cannot enumerate a dictionary while a registry watcher mutates it.
+        public Dictionary<IPEndPoint, DubboServiceEndPointInfo> InnerActuatorSuites
+        { get { lock (_sync) return new Dictionary<IPEndPoint, DubboServiceEndPointInfo>(_endpoints); } }
+        internal int ProviderCount { get { lock (_sync) return _endpoints.Count; } }
+
+        public DubboServiceDriver(string serviceName, List<DubboServiceEndPointInfo> dbEpList,
+            Dictionary<IPEndPoint, DubboActuatorSuiteEndPintInfo> dubboActuatorSuiteCollection,
+            DubboServiceDriverConf dubboServiceDriverConf = null, Func<double> clock = null,
+            Func<long, long> random = null, Func<DubboServiceEndPointInfo, IDubboActuatorSuite> factory = null)
+        {
+            ArgumentNullException.ThrowIfNull(dbEpList);
+            ArgumentNullException.ThrowIfNull(dubboActuatorSuiteCollection);
             ServiceName = serviceName;
-            LastActivateTime = DateTime.Now;
-            _sourceDubboActuatorSuiteCollection = dubboActuatorSuiteCollection;
-            _innerDubboServiceDriverConf = dubboServiceDriverConf ?? new DubboServiceDriverConf();
-            InnerActuatorSuites = new Dictionary<IPEndPoint, DubboServiceEndPointInfo>();
-            if (dbEpList == null)
-            {
-                throw new ArgumentNullException(nameof(dbEpList));
-            }
-            if (dubboActuatorSuiteCollection == null)
-            {
-                throw new ArgumentNullException(nameof(dubboActuatorSuiteCollection));
-            }
-            foreach (DubboServiceEndPointInfo ep in dbEpList)
-            {
-                AddActuatorSuite(ep);
-            }
-            UpdateConsistentHash();
+            _shared = dubboActuatorSuiteCollection;
+            _configuration = dubboServiceDriverConf ?? new DubboServiceDriverConf();
+            _clock = clock ?? RequestLoadStatistics.MonotonicMilliseconds;
+            _random = random ?? Random.Shared.NextInt64;
+            _factory = factory ?? CreateSuite;
+            _lastActivateTicks = DateTime.Now.Ticks;
+            try { UpdateActuatorSuiteEndPoints(dbEpList); }
+            catch { Dispose(); throw; }
         }
 
-        /// <summary>
-        /// 更新一致性Hash环
-        /// EN: Rebuilds the consistent-hash ring from the current provider endpoints.
-        /// </summary>
-        private void UpdateConsistentHash()
+        private IDubboActuatorSuite CreateSuite(DubboServiceEndPointInfo endpoint)
         {
-            if(InnerActuatorSuites?.Count>0)
+            var options = new DubboActuatorSuiteConf
             {
-                _dubboSuiteConsistentHash.Init(InnerActuatorSuites.Keys);
-            }
-            else
-            {
-                _dubboSuiteConsistentHash.Init();
-            }
+                AssistConnectionAliveTime = _configuration.DubboActuatorSuiteAssistConnectionAliveTime,
+                MasterConnectionAliveTime = _configuration.DubboActuatorSuiteMasterConnectionAliveTime,
+                DubboRequestTimeout = _configuration.DubboRequestTimeout,
+                MaxConnections = _configuration.DubboActuatorSuiteMaxConnections
+            };
+            if (string.Equals(endpoint.Scheme, "dubbo", StringComparison.OrdinalIgnoreCase))
+                return new NativeDubboActuatorSuite(endpoint.EndPoint, options);
+            if (string.Equals(endpoint.Scheme, "tri", StringComparison.OrdinalIgnoreCase))
+                return new TripleDubboActuatorSuite(endpoint.EndPoint, options);
+            return new TelnetDubboActuatorSuite(endpoint.EndPoint, options);
         }
 
-        /// <summary>
-        /// 通过IPEndPoint添加ActuatorSuite (内部函数)
-        /// EN: Adds or reuses an actuator suite for one provider endpoint.
-        /// </summary>
-        /// <param name="ep">待添加的 Provider 端点信息。EN: Provider endpoint metadata to add.</param>
-        /// <returns>成功加入当前服务时为 <see langword="true"/>。EN: <see langword="true"/> when the endpoint was added to this service.</returns>
-        private bool AddActuatorSuite(DubboServiceEndPointInfo ep)
+        private void RegisterMetadata(DubboServiceEndPointInfo endpoint)
         {
-            //判断服务节点是否禁用
-            if(ep.Disabled==true)
-            {
-                return false;
-            }
-            if (_sourceDubboActuatorSuiteCollection.ContainsKey(ep.EndPoint))
-            {
-                //多个DubboServiceEndPointInfo（不同的服务）会复用同一个ActuatorSuite（因为这些服务都使用同一个网络EndPoint节点），他们的DubboServiceEndPointInfo的信息是不同的（只是其引用的InnerDubboActuatorSuite是同一个）
-                ep.InnerDubboActuatorSuite=_sourceDubboActuatorSuiteCollection[ep.EndPoint].ActuatorSuite;
-                if (ep.InnerDubboActuatorSuite is NativeDubboActuatorSuite reusedNativeSuite)
-                {
-                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
-                    reusedNativeSuite.RegisterService(ep);
-                }
-                else if (ep.InnerDubboActuatorSuite is TripleDubboActuatorSuite reusedTripleSuite)
-                {
-                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
-                    reusedTripleSuite.RegisterService(ep);
-                }
-                if(InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
-                {
-                    _sourceDubboActuatorSuiteCollection[ep.EndPoint].ReferenceCount++;
-                    return true;
-                }
-            }
-            else
-            {
-                IDubboActuatorSuite newDubboActuatorSuite = null;
-                //选择IDubboActuatorSuite的协议类型
-                if (string.Equals(ep.Scheme, "dubbo", StringComparison.OrdinalIgnoreCase))
-                {
-                    newDubboActuatorSuite = new NativeDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
-                    {
-                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
-                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
-                        DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
-                        MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
-                    });
-                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
-                    ((NativeDubboActuatorSuite)newDubboActuatorSuite).RegisterService(ep);
-                }
-                else if (string.Equals(ep.Scheme, "tri", StringComparison.OrdinalIgnoreCase))
-                {
-                    newDubboActuatorSuite = new TripleDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
-                    {
-                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
-                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
-                        DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
-                        MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
-                    });
-                    if (string.IsNullOrWhiteSpace(ep.Interface)) ep.Interface = ServiceName;
-                    ((TripleDubboActuatorSuite)newDubboActuatorSuite).RegisterService(ep);
-                }
-                if(newDubboActuatorSuite == null)
-                {
-                    newDubboActuatorSuite = new TelnetDubboActuatorSuite(ep.EndPoint, new DubboActuatorSuiteConf()
-                    {
-                        AssistConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteAssistConnectionAliveTime,
-                        MasterConnectionAliveTime = _innerDubboServiceDriverConf.DubboActuatorSuiteMasterConnectionAliveTime,
-                        DubboRequestTimeout = _innerDubboServiceDriverConf.DubboRequestTimeout,
-                        MaxConnections = _innerDubboServiceDriverConf.DubboActuatorSuiteMaxConnections
-                    });
-                }
-                DubboActuatorSuiteEndPintInfo dubboActuatorSuiteEndPintInfo = new DubboActuatorSuiteEndPintInfo()
-                {
-                    EndPoint = ep.EndPoint,
-                    ActuatorSuite = newDubboActuatorSuite,
-                    ReferenceCount = 0
-                };
-                ep.InnerDubboActuatorSuite = dubboActuatorSuiteEndPintInfo.ActuatorSuite;
-                if (InnerActuatorSuites.TryAdd(ep.EndPoint, ep))
-                {
-                    dubboActuatorSuiteEndPintInfo.ReferenceCount++;
-                    _sourceDubboActuatorSuiteCollection.Add(ep.EndPoint, dubboActuatorSuiteEndPintInfo);
-                    return true;
-                }
-            }
-            return false;
+            if (string.IsNullOrWhiteSpace(endpoint.Interface)) endpoint.Interface = ServiceName;
+            if (endpoint.InnerDubboActuatorSuite is NativeDubboActuatorSuite native) native.RegisterService(endpoint);
+            else if (endpoint.InnerDubboActuatorSuite is TripleDubboActuatorSuite triple) triple.RegisterService(endpoint);
         }
 
-        /// <summary>
-        /// 更新DubboServiceDriver服务节点
-        /// EN: Reconciles the service driver's provider endpoints with the latest registry snapshot.
-        /// </summary>
-        /// <param name="dbEpList">最新的 Provider 节点列表。EN: Latest provider endpoint list.</param>
-        /// <returns>新增、移除或更新的节点总数；空列表表示全部下线。EN: Number of added, removed, or updated endpoints; an empty list removes all providers.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="dbEpList"/> 为 null。EN: <paramref name="dbEpList"/> is null.</exception>
         public int UpdateActuatorSuiteEndPoints(List<DubboServiceEndPointInfo> dbEpList)
         {
-            if (dbEpList == null)
+            ArgumentNullException.ThrowIfNull(dbEpList);
+            if (dbEpList.Any(item => item?.EndPoint == null))
+                throw new ArgumentException("Provider snapshots must contain non-null endpoints.", nameof(dbEpList));
+            var retired = new List<IDubboActuatorSuite>();
+            int changes = 0;
+            try
             {
-                throw new ArgumentNullException(nameof(dbEpList));
-            }
-            dbEpList = dbEpList.Where(endpoint => endpoint.Disabled != true).ToList();
-            int changeCount=0;
-            //移出多余节点
-            foreach(var insItem in InnerActuatorSuites.ToArray())
-            {
-                
-                //if (!dbEpList.Contains(insItem.Key))
-                if(dbEpList.FirstOrDefault((it) => it.EndPoint.Equals(insItem.Key)) == null)
+                lock (_sync)
                 {
-                    InnerActuatorSuites.Remove(insItem.Key);
-                    changeCount++;
-                    if(_sourceDubboActuatorSuiteCollection.ContainsKey(insItem.Key))
+                    if (_disposed) return 0;
+                    var latest = dbEpList.Where(item => item.Disabled != true).Select(item => item.RoutingSnapshot()).GroupBy(item => item.EndPoint)
+                        .ToDictionary(group => group.Key, group => group.Last());
+                    // Invalidate before mutating, including when creating a new connection fails.
+                    _candidates.Clear();
+                    foreach (IPEndPoint endpoint in _endpoints.Keys.Where(key => !latest.ContainsKey(key)).ToArray())
                     {
-                        _sourceDubboActuatorSuiteCollection[insItem.Key].ReferenceCount--;
-                        if(_sourceDubboActuatorSuiteCollection[insItem.Key].ReferenceCount<=0)
+                        _endpoints.Remove(endpoint);
+                        foreach (MethodState method in _methods.Values)
+                            if (method.Providers.TryGetValue(endpoint, out var state))
+                            {
+                                state.Retired = true;
+                                if (state.Statistics.Active == 0) method.Providers.Remove(endpoint);
+                            }
+                        IDubboActuatorSuite unused = ReleaseReference(endpoint);
+                        if (unused != null) retired.Add(unused);
+                        changes++;
+                    }
+                    foreach (var pair in latest)
+                    {
+                        DubboServiceEndPointInfo endpoint = pair.Value;
+                        if (_endpoints.TryGetValue(pair.Key, out var previous))
                         {
-                            _sourceDubboActuatorSuiteCollection[insItem.Key].ActuatorSuite.Dispose();
-                            _sourceDubboActuatorSuiteCollection.Remove(insItem.Key);
+                            endpoint.InnerDubboActuatorSuite = previous.InnerDubboActuatorSuite;
+                            if (previous.Weight != endpoint.Weight)
+                                foreach (MethodState method in _methods.Values)
+                                    if (method.Providers.TryGetValue(pair.Key, out var state)) state.CurrentWeight = 0;
                         }
+                        else
+                        {
+                            lock (_shared)
+                            {
+                                if (!_shared.TryGetValue(pair.Key, out var shared))
+                                {
+                                    var suite = _factory(endpoint) ?? throw new InvalidOperationException("The provider factory returned no actuator suite.");
+                                    shared = new DubboActuatorSuiteEndPintInfo { EndPoint = pair.Key, ActuatorSuite = suite };
+                                    _shared.Add(pair.Key, shared);
+                                }
+                                shared.ReferenceCount++;
+                                endpoint.InnerDubboActuatorSuite = shared.ActuatorSuite;
+                            }
+                        }
+                        RegisterMetadata(endpoint);
+                        foreach (MethodState method in _methods.Values)
+                            if (method.Providers.TryGetValue(pair.Key, out var state)) state.Retired = false;
+                        _endpoints[pair.Key] = endpoint;
+                        changes++;
                     }
-                    else
-                    {
-                        MyLogger.LogError($"[UpdateEqualIPEndPoints]_sourceDubboActuatorSuiteCollection not contain {insItem.Key}");
-                    }
                 }
             }
-            //添加新增节点
-            foreach(var epItem in dbEpList)
-            {
-                if(!InnerActuatorSuites.ContainsKey(epItem.EndPoint))
-                {
-                    if(AddActuatorSuite(epItem)) changeCount++;
-                }
-                else
-                {
-                    // 同一节点也可能更新权重、版本或分组；保留连接但替换端点元数据。
-                    // EN: Refresh routing metadata for existing endpoints while retaining their connection.
-                    epItem.InnerDubboActuatorSuite = InnerActuatorSuites[epItem.EndPoint].InnerDubboActuatorSuite;
-                    InnerActuatorSuites[epItem.EndPoint] = epItem;
-                    if (epItem.InnerDubboActuatorSuite is NativeDubboActuatorSuite native)
-                        native.RegisterService(epItem);
-                    else if (epItem.InnerDubboActuatorSuite is TripleDubboActuatorSuite triple)
-                        triple.RegisterService(epItem);
-                    changeCount++;
-                }
-            }
-            if(changeCount!=0)
-            {
-                UpdateConsistentHash();
-            }
-            return changeCount;
+            finally { DisposeRetired(retired); }
+            return changes;
         }
 
-        /// <summary>
-        /// 以指定负载策略返回可用DubboActuatorSuite
-        /// EN: Selects an available actuator suite using the specified load-balancing strategy.
-        /// </summary>
-        /// <param name="loadBalanceMode">负载均衡策略。EN: Load-balancing strategy.</param>
-        /// <param name="qurey">请求内容，仅用于一致性 Hash 计算。EN: Request content used only as the consistent-hash key.</param>
-        /// <param name="requiredProtocol">可选的协议约束。EN: Optional protocol constraint applied before load balancing.</param>
-        /// <returns>选中的执行器套件；当前服务没有匹配节点时为 <see langword="null"/>。EN: Selected actuator suite, or <see langword="null"/> when the service has no matching endpoints.</returns>
-        /// <exception cref="Exception">负载策略不受支持，或无法选出端点。EN: The load-balancing mode is unsupported or no endpoint can be selected.</exception>
-        public IDubboActuatorSuite GetDubboActuatorSuite(
-            LoadBalanceMode loadBalanceMode,
-            string qurey = null,
+        public IDubboActuatorSuite GetDubboActuatorSuite(LoadBalanceMode loadBalanceMode, string qurey = null,
             DubboActuatorProtocolType? requiredProtocol = null)
         {
-            LastActivateTime = DateTime.Now;
-            List<KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>> candidates =
-                InnerActuatorSuites
-                    .Where(item => item.Value.Disabled != true && item.Value.Weight > 0
-                        && (requiredProtocol == null
-                        || item.Value.InnerDubboActuatorSuite.ProtocolType == requiredProtocol.Value))
-                    .ToList();
-            if (candidates.Count == 0)
+            lock (_sync) return Select(loadBalanceMode, qurey, requiredProtocol, null)?.InnerDubboActuatorSuite;
+        }
+
+        internal LoadBalancedInvocation SelectAndReserve(LoadBalanceMode mode, string query,
+            DubboActuatorProtocolType? protocol, DubboInvocation invocation)
+        {
+            lock (_sync)
             {
+                if (_disposed) return null;
+                MethodState method = Method(invocation);
+                DubboServiceEndPointInfo endpoint = Select(mode, query, protocol, invocation, method);
+                if (endpoint == null) return null;
+                MethodProvider provider = method.For(endpoint.EndPoint);
+                RequestLoadStatistics statistics = provider.Statistics;
+                lock (_shared) _shared[endpoint.EndPoint].ReferenceCount++;
+                // Selection and active increment are indivisible to competing requests on this driver.
+                return new LoadBalancedInvocation(endpoint.InnerDubboActuatorSuite, statistics, _clock,
+                    () => ReleaseInvocation(endpoint.EndPoint, method, provider));
+            }
+        }
+
+        private DubboServiceEndPointInfo Select(LoadBalanceMode mode, string query,
+            DubboActuatorProtocolType? protocol, DubboInvocation invocation, MethodState method = null)
+        {
+            if ((uint)mode > (uint)LoadBalanceMode.P2CLoadBalance) throw new ArgumentOutOfRangeException(nameof(mode));
+            System.Threading.Interlocked.Exchange(ref _lastActivateTicks, DateTime.Now.Ticks);
+            if (_disposed) return null;
+            int key = protocol.HasValue ? (int)protocol.Value : -1;
+            if (!_candidates.TryGetValue(key, out var set))
+            {
+                set = new CandidateSet(_endpoints.Values.Where(item => item.Disabled != true && item.Weight > 0
+                    && (!protocol.HasValue || item.InnerDubboActuatorSuite.ProtocolType == protocol)));
+                _candidates.Add(key, set);
+            }
+            DubboServiceEndPointInfo[] providers = set.Providers;
+            if (providers.Length == 0) return null;
+            if (providers.Length == 1) return providers[0];
+            MethodState state;
+            switch (mode)
+            {
+                case LoadBalanceMode.Random: return providers[WeightedIndex(set)];
+                case LoadBalanceMode.ConsistentHash:
+                    if (query == null) return providers[WeightedIndex(set)];
+                    if (set.Hash == null)
+                    {
+                        set.Hash = new DubboSuiteConsistentHash(160);
+                        set.Hash.Init(providers.Select(item => item.EndPoint));
+                    }
+                    return _endpoints[set.Hash.GetNode(query)];
+                case LoadBalanceMode.RoundRobin:
+                    state = method ?? Method(invocation);
+                    DubboServiceEndPointInfo best = null;
+                    long maximum = long.MinValue;
+                    foreach (var provider in providers)
+                    {
+                        long current = state.For(provider.EndPoint).CurrentWeight += provider.Weight;
+                        provider.NowDispatchWeight = (int)Math.Clamp(current, int.MinValue, int.MaxValue);
+                        if (current > maximum) { maximum = current; best = provider; }
+                    }
+                    long remaining = state.For(best.EndPoint).CurrentWeight -= set.TotalWeight;
+                    best.NowDispatchWeight = (int)Math.Clamp(remaining, int.MinValue, int.MaxValue);
+                    return best;
+                case LoadBalanceMode.LeastActive:
+                    return LeastActive(providers, method ?? Method(invocation));
+                case LoadBalanceMode.P2CLoadBalance:
+                    state = method ?? Method(invocation);
+                    int a = WeightedIndex(set), b = WeightedIndex(set, a);
+                    int activeA = state.For(providers[a].EndPoint).Statistics.Active;
+                    int activeB = state.For(providers[b].EndPoint).Statistics.Active;
+                    if (activeA != activeB) return providers[activeA < activeB ? a : b];
+                    return _random((long)providers[a].Weight + providers[b].Weight) < providers[a].Weight ? providers[a] : providers[b];
+                case LoadBalanceMode.ShortestResponse:
+                    return ShortestResponse(providers, method ?? Method(invocation));
+                default: throw new ArgumentOutOfRangeException(nameof(mode));
+            }
+        }
+
+        private int WeightedIndex(CandidateSet set, int excluded = -1)
+        {
+            long offset = _random(set.TotalWeight - (excluded < 0 ? 0 : set.Providers[excluded].Weight));
+            if (excluded >= 0 && offset >= set.PrefixWeights[excluded] - set.Providers[excluded].Weight)
+                offset += set.Providers[excluded].Weight;
+            int index = Array.BinarySearch(set.PrefixWeights, offset + 1);
+            return index < 0 ? ~index : index;
+        }
+
+        private DubboServiceEndPointInfo LeastActive(DubboServiceEndPointInfo[] providers, MethodState state)
+        {
+            int minimum = int.MaxValue;
+            long total = 0;
+            DubboServiceEndPointInfo best = null;
+            foreach (var provider in providers)
+            {
+                int active = state.For(provider.EndPoint).Statistics.Active;
+                if (active < minimum) { minimum = active; total = 0; best = null; }
+                if (active == minimum && _random(total += provider.Weight) < provider.Weight) best = provider;
+            }
+            return best;
+        }
+
+        private DubboServiceEndPointInfo ShortestResponse(DubboServiceEndPointInfo[] providers, MethodState state)
+        {
+            double now = _clock(), minimum = double.PositiveInfinity;
+            long total = 0, probeWeight = 0;
+            DubboServiceEndPointInfo best = null, probe = null;
+            foreach (var provider in providers)
+            {
+                var statistics = state.For(provider.EndPoint).Statistics;
+                var snapshot = statistics.Read(now);
+                if (!snapshot.HasSamples)
+                {
+                    if (snapshot.Active == 0 && now - snapshot.LastProbe >= RequestLoadStatistics.ProbeIntervalMilliseconds
+                        && _random(probeWeight += provider.Weight) < provider.Weight) probe = provider;
+                    continue;
+                }
+                // Failure samples are not fast successful responses. This is a score penalty,
+                // not a circuit breaker: no provider is excluded and no RPC is retried here.
+                double score = snapshot.EstimateResponse(Math.Max(snapshot.AverageMilliseconds,
+                    Math.Max(1, provider.Timeout ?? _configuration.DubboRequestTimeout)));
+                if (score < minimum) { minimum = score; total = 0; best = null; }
+                if (score == minimum && _random(total += provider.Weight) < provider.Weight) best = provider;
+            }
+            if (probe != null)
+            {
+                state.For(probe.EndPoint).Statistics.MarkProbe(now);
+                return probe;
+            }
+            return best ?? LeastActive(providers, state);
+        }
+
+        private MethodState Method(DubboInvocation invocation)
+        {
+            var builder = new StringBuilder();
+            void Part(string value) { value ??= string.Empty; builder.Append(value.Length).Append(':').Append(value); }
+            Part(invocation?.Method); Part(invocation?.Version); Part(invocation?.Group);
+            foreach (string parameter in invocation?.ParameterTypes ?? Array.Empty<string>()) Part(parameter);
+            string key = builder.ToString();
+            if (!_methods.TryGetValue(key, out var state))
+            {
+                // Bound idle method-signature state; never evict observations of in-flight calls.
+                if (_methods.Count >= 1024)
+                {
+                    var idle = _methods.Where(pair => pair.Value.Providers.Values.All(provider => provider.Statistics.Active == 0))
+                        .OrderBy(pair => pair.Value.LastUsed).Take(_methods.Count - 1024 + 1).Select(pair => pair.Key).ToArray();
+                    foreach (string unused in idle) _methods.Remove(unused);
+                }
+                _methods.Add(key, state = new MethodState());
+            }
+            state.LastUsed = _clock();
+            return state;
+        }
+
+        private void ReleaseInvocation(IPEndPoint endpoint, MethodState method, MethodProvider provider)
+        {
+            if (provider.Retired && provider.Statistics.Active == 0)
+                lock (_sync)
+                    if (provider.Retired && provider.Statistics.Active == 0
+                        && method.Providers.TryGetValue(endpoint, out var current) && ReferenceEquals(current, provider))
+                        method.Providers.Remove(endpoint);
+            IDubboActuatorSuite retired = ReleaseReference(endpoint);
+            if (retired != null) DisposeRetired(new[] { retired });
+        }
+
+        private IDubboActuatorSuite ReleaseReference(IPEndPoint endpoint)
+        {
+            lock (_shared)
+            {
+                if (_shared.TryGetValue(endpoint, out var shared) && --shared.ReferenceCount == 0)
+                { _shared.Remove(endpoint); return shared.ActuatorSuite; }
                 return null;
             }
-            if (candidates.Count == 1)
-            {
-                return candidates[0].Value.InnerDubboActuatorSuite;
-            }
-            int candidateTotalWeight = candidates.Sum(item => Math.Max(0, item.Value.Weight));
-            DubboServiceEndPointInfo selectedDubboServiceEndPointInfo = null;
-            switch (loadBalanceMode)
-            {
-                case LoadBalanceMode.Random:
-                    Random random = new Random();
-                    if (candidateTotalWeight <= 0)
-                    {
-                        selectedDubboServiceEndPointInfo =
-                            candidates[random.Next(0, candidates.Count)].Value;
-                        break;
-                    }
-                    int randomNumber = random.Next(0, candidateTotalWeight) + 1;
-                    foreach(var weightedItem in candidates)
-                    {
-                        int weight = Math.Max(0, weightedItem.Value.Weight);
-                        if(randomNumber <= weight)
-                        {
-                            selectedDubboServiceEndPointInfo = weightedItem.Value;
-                            break;
-                        }
-                        randomNumber -= weight;
-                    }
-                    break;
-                case LoadBalanceMode.RoundRobin:
-                    if (candidateTotalWeight <= 0)
-                    {
-                        return GetDubboActuatorSuite(
-                            LoadBalanceMode.Random,
-                            qurey,
-                            requiredProtocol);
-                    }
-                    foreach (var weightedItem in candidates)
-                    {
-                        weightedItem.Value.NowDispatchWeight += Math.Max(0, weightedItem.Value.Weight);
-                    }
-                    var maxDispatchWeightItem = candidates.MaxBy<
-                        KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(
-                            item => item.Value.NowDispatchWeight);
-                    maxDispatchWeightItem.Value.NowDispatchWeight -= candidateTotalWeight;
-                    selectedDubboServiceEndPointInfo = maxDispatchWeightItem.Value;
-                    break;
-                case LoadBalanceMode.ConsistentHash:
-                    if(qurey==null)
-                    {
-                        return GetDubboActuatorSuite(
-                            LoadBalanceMode.Random,
-                            qurey,
-                            requiredProtocol);
-                    }
-                    DubboSuiteConsistentHash consistentHash = _dubboSuiteConsistentHash;
-                    if (requiredProtocol != null || candidates.Count != InnerActuatorSuites.Count)
-                    {
-                        consistentHash = new DubboSuiteConsistentHash(16);
-                        consistentHash.Init(candidates.Select(item => item.Key));
-                    }
-                    IPEndPoint nowEp = consistentHash.GetNode(qurey);
-                    selectedDubboServiceEndPointInfo = InnerActuatorSuites[nowEp];
-                    break;
-                case LoadBalanceMode.ShortestResponse:
-                    DateTime nowTime = DateTime.Now;
-                    int minQueryElapsedItemValue = candidates.Min<
-                        KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(
-                            item => (nowTime - item.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60
-                                ? item.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed
-                                : 0);
-                    var minQueryElapsedItems = candidates.Where(element =>
-                        minQueryElapsedItemValue ==
-                        ((nowTime - element.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60
-                            ? element.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed
-                            : 0));
-                    if (minQueryElapsedItems.Count()==0)
-                    {
-                        var minQueryElapsedItem = candidates.MinBy<
-                            KeyValuePair<IPEndPoint, DubboServiceEndPointInfo>, int>(
-                                item => (DateTime.Now - item.Value.InnerDubboActuatorSuite.LastActivateTime).TotalSeconds < 60
-                                    ? item.Value.InnerDubboActuatorSuite.ActuatorSuiteStatusInfo.LastQueryElapsed
-                                    : 0);
-                        selectedDubboServiceEndPointInfo = minQueryElapsedItem.Value;
-                    }
-                    else if(minQueryElapsedItems.Count() == 1)
-                    {
-                        selectedDubboServiceEndPointInfo = minQueryElapsedItems.First().Value;
-                    }
-                    else
-                    {
-                        random = new Random();
-                        randomNumber = random.Next(0, minQueryElapsedItems.Count());
-                        selectedDubboServiceEndPointInfo = minQueryElapsedItems.Skip(randomNumber).First().Value;
-                    }
-                    break;
-                case LoadBalanceMode.LeastActive:
-                    //未实现
-                    return GetDubboActuatorSuite(
-                        LoadBalanceMode.Random,
-                        qurey,
-                        requiredProtocol);
-                case LoadBalanceMode.P2CLoadBalance:
-                    IDubboActuatorSuite providerA = GetDubboActuatorSuite(
-                        LoadBalanceMode.Random,
-                        qurey,
-                        requiredProtocol);
-                    IDubboActuatorSuite providerB = GetDubboActuatorSuite(
-                        LoadBalanceMode.Random,
-                        qurey,
-                        requiredProtocol);
-                    if (providerA?.ActuatorSuiteStatusInfo?.StatusInfo?.Load == null
-                        || providerB?.ActuatorSuiteStatusInfo?.StatusInfo?.Load == null)
-                    {
-                        MyLogger.LogWarning(
-                            "[GetDubboActuatorSuite] provider load is unavailable; " +
-                            "falling back to the first random provider");
-                        return providerA;
-                    }
-                    else
-                    {
-                        return providerA.ActuatorSuiteStatusInfo.StatusInfo.Load.Load > providerB.ActuatorSuiteStatusInfo.StatusInfo.Load.Load ? providerB : providerA;
-                    }
-                default:
-                    throw new Exception($"[GetDubboActuatorSuite] nonsupported LoadBalanceMode {loadBalanceMode}");
-            }
-            if (selectedDubboServiceEndPointInfo == null)
-            {
-                throw new Exception("[GetDubboActuatorSuite] fialed get DubboActuatorSuite ,that selectedDubboServiceEndPointInfo is null");
-            }
-            return selectedDubboServiceEndPointInfo.InnerDubboActuatorSuite;
         }
 
-        /// <summary>
-        /// 释放当前服务持有的端点引用，并在引用计数归零时释放共享执行器。
-        /// EN: Releases endpoint references held by this service and disposes shared actuator suites whose reference count reaches zero.
-        /// </summary>
+        private static void DisposeRetired(IEnumerable<IDubboActuatorSuite> retired)
+        {
+            foreach (IDubboActuatorSuite suite in retired)
+                try { suite.Dispose(); }
+                catch (Exception exception)
+                {
+                    try { MyLogger.LogWarning($"[LoadBalance] connection disposal failed: {exception.GetType().Name}."); }
+                    catch { /* Cleanup diagnostics must not replace an RPC result. */ }
+                }
+        }
+
         public void Dispose()
         {
-            if (InnerActuatorSuites != null)
+            var retired = new List<IDubboActuatorSuite>();
+            lock (_sync)
             {
-                foreach(var actuatorSuiteItem in InnerActuatorSuites)
+                if (_disposed) return;
+                _disposed = true;
+                foreach (IPEndPoint endpoint in _endpoints.Keys)
                 {
-                    if(_sourceDubboActuatorSuiteCollection.ContainsKey(actuatorSuiteItem.Key))
-                    {
-                        _sourceDubboActuatorSuiteCollection[actuatorSuiteItem.Key].ReferenceCount--;
-                        if(_sourceDubboActuatorSuiteCollection[actuatorSuiteItem.Key].ReferenceCount<=0)
-                        {
-                            _sourceDubboActuatorSuiteCollection[actuatorSuiteItem.Key].ActuatorSuite.Dispose();
-                            _sourceDubboActuatorSuiteCollection.Remove(actuatorSuiteItem.Key);
-                        }
-                    }
+                    IDubboActuatorSuite unused = ReleaseReference(endpoint);
+                    if (unused != null) retired.Add(unused);
                 }
+                _endpoints.Clear(); _candidates.Clear(); _methods.Clear();
             }
-            InnerActuatorSuites.Clear();
-            InnerActuatorSuites = null;
-            //_sourceDubboActuatorSuiteCollection是外部传入的公用对象，不要在这里做Clear操作
-            _sourceDubboActuatorSuiteCollection = null;
-            _dubboSuiteConsistentHash = null;
+            DisposeRetired(retired);
         }
     }
-
 }

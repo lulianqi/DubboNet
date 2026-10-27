@@ -18,7 +18,7 @@ namespace DubboNet.Clients.DataModle
         public IPEndPoint EndPoint { get;internal set; }
         /// <summary>可在多个服务间复用的执行器套件。EN: Actuator suite shared across services.</summary>
         public IDubboActuatorSuite ActuatorSuite { get;internal set; }
-        /// <summary>当前引用该执行器套件的服务驱动数量。EN: Number of service drivers currently referencing the actuator suite.</summary>
+        /// <summary>服务驱动及在途调用持有的引用数。EN: References held by service drivers and in-flight invocations.</summary>
         public int ReferenceCount { get; internal set; } = 0;
     }
 }

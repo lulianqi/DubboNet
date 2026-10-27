@@ -16,7 +16,7 @@
 	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
 	  <NoWarn>$(NoWarn);1591</NoWarn>
 	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <Version>3.3.0</Version>
+    <Version>3.6.2</Version>
   </PropertyGroup>
 
   <ItemGroup>
