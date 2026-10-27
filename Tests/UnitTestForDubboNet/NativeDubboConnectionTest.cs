@@ -12,24 +12,31 @@ namespace UnitTestForDubboNet
         [Fact]
         public async Task InvokeAsync_MatchesOutOfOrderResponsesByRequestId()
         {
-            using TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            IPEndPoint endpoint = (IPEndPoint)listener.LocalEndpoint;
+            TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+            try
+            {
+                listener.Start();
+                IPEndPoint endpoint = (IPEndPoint)listener.LocalEndpoint;
 
-            Task server = ServeTwoOutOfOrderResponses(listener);
-            using NativeDubboConnection connection = new NativeDubboConnection(endpoint, 5_000);
+                Task server = ServeTwoOutOfOrderResponses(listener);
+                using NativeDubboConnection connection = new NativeDubboConnection(endpoint, 5_000);
 
-            Task<NativeDubboResponse> first = connection.InvokeAsync(
-                Invocation("first"), null, null);
-            Task<NativeDubboResponse> second = connection.InvokeAsync(
-                Invocation("second"), null, null);
+                Task<NativeDubboResponse> first = connection.InvokeAsync(
+                    Invocation("first"), null, null);
+                Task<NativeDubboResponse> second = connection.InvokeAsync(
+                    Invocation("second"), null, null);
 
-            NativeDubboResponse[] responses = await Task.WhenAll(first, second);
-            await server;
+                NativeDubboResponse[] responses = await Task.WhenAll(first, second);
+                await server;
 
-            Assert.Equal("first", responses[0].Value);
-            Assert.Equal("second", responses[1].Value);
-            Assert.NotEqual(responses[0].RequestId, responses[1].RequestId);
+                Assert.Equal("first", responses[0].Value);
+                Assert.Equal("second", responses[1].Value);
+                Assert.NotEqual(responses[0].RequestId, responses[1].RequestId);
+            }
+            finally
+            {
+                listener.Stop();
+            }
         }
 
         private static DubboInvocation Invocation(string method)

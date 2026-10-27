@@ -34,34 +34,32 @@ namespace UnitTestForDubboNet
         [Fact]
         public void ParseMetadataDocument_ReturnsMethodAndPojoDetails()
         {
-            const string json = """
-                {
-                  "canonicalName": "com.foo.DemoService",
-                  "codeSource": "demo-api.jar",
-                  "methods": [
-                    {
-                      "name": "save",
-                      "parameterTypes": ["com.foo.User", "java.lang.Long"],
-                      "returnType": "java.lang.Boolean"
-                    }
-                  ],
-                  "types": [
-                    {
-                      "id": "com.foo.User",
-                      "type": "object",
-                      "enums": ["ACTIVE", "INACTIVE"],
-                      "properties": {
-                        "name": { "type": "java.lang.String" }
-                      },
-                      "typeBuilderName": "org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder"
-                    }
-                  ],
-                  "parameters": {
-                    "application": "demo-provider",
-                    "version": "1.0.0"
-                  }
-                }
-                """;
+            const string json = "{\n" +
+                "  \"canonicalName\": \"com.foo.DemoService\",\n" +
+                "  \"codeSource\": \"demo-api.jar\",\n" +
+                "  \"methods\": [\n" +
+                "    {\n" +
+                "      \"name\": \"save\",\n" +
+                "      \"parameterTypes\": [\"com.foo.User\", \"java.lang.Long\"],\n" +
+                "      \"returnType\": \"java.lang.Boolean\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"types\": [\n" +
+                "    {\n" +
+                "      \"id\": \"com.foo.User\",\n" +
+                "      \"type\": \"object\",\n" +
+                "      \"enums\": [\"ACTIVE\", \"INACTIVE\"],\n" +
+                "      \"properties\": {\n" +
+                "        \"name\": { \"type\": \"java.lang.String\" }\n" +
+                "      },\n" +
+                "      \"typeBuilderName\": \"org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"parameters\": {\n" +
+                "    \"application\": \"demo-provider\",\n" +
+                "    \"version\": \"1.0.0\"\n" +
+                "  }\n" +
+                "}";
             DubboServiceEndPointInfo provider = new DubboServiceEndPointInfo
             {
                 Application = "demo-provider",
@@ -103,39 +101,37 @@ namespace UnitTestForDubboNet
         [Fact]
         public void ParseMetadataDocument_MapsAllDubbo273TypeDefinitionFields()
         {
-            const string json = """
-                {
-                  "canonicalName": "com.foo.DemoService",
-                  "methods": [
-                    {
-                      "name": "save",
-                      "parameterTypes": ["com.foo.Container"],
-                      "returnType": "void"
-                    }
-                  ],
-                  "types": [
-                    {
-                      "id": "container-id",
-                      "type": "com.foo.Container",
-                      "items": [
-                        {
-                          "type": "com.foo.Status",
-                          "enum": ["ACTIVE", "INACTIVE"],
-                          "typeBuilderName": "org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder"
-                        }
-                      ],
-                      "$ref": "com.foo.Container",
-                      "properties": {
-                        "status": {
-                          "type": "com.foo.Status",
-                          "$ref": "com.foo.Status"
-                        }
-                      },
-                      "typeBuilderName": "org.apache.dubbo.metadata.definition.builder.DefaultTypeBuilder"
-                    }
-                  ]
-                }
-                """;
+            const string json = "{\n" +
+                "  \"canonicalName\": \"com.foo.DemoService\",\n" +
+                "  \"methods\": [\n" +
+                "    {\n" +
+                "      \"name\": \"save\",\n" +
+                "      \"parameterTypes\": [\"com.foo.Container\"],\n" +
+                "      \"returnType\": \"void\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"types\": [\n" +
+                "    {\n" +
+                "      \"id\": \"container-id\",\n" +
+                "      \"type\": \"com.foo.Container\",\n" +
+                "      \"items\": [\n" +
+                "        {\n" +
+                "          \"type\": \"com.foo.Status\",\n" +
+                "          \"enum\": [\"ACTIVE\", \"INACTIVE\"],\n" +
+                "          \"typeBuilderName\": \"org.apache.dubbo.metadata.definition.builder.EnumTypeBuilder\"\n" +
+                "        }\n" +
+                "      ],\n" +
+                "      \"$ref\": \"com.foo.Container\",\n" +
+                "      \"properties\": {\n" +
+                "        \"status\": {\n" +
+                "          \"type\": \"com.foo.Status\",\n" +
+                "          \"$ref\": \"com.foo.Status\"\n" +
+                "        }\n" +
+                "      },\n" +
+                "      \"typeBuilderName\": \"org.apache.dubbo.metadata.definition.builder.DefaultTypeBuilder\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
 
             IReadOnlyList<DubboMethodMetadata> methods =
                 DubboMetadataManager.ParseMetadataDocument(
@@ -169,46 +165,44 @@ namespace UnitTestForDubboNet
         [Fact]
         public void ParseMetadataDocument_NormalizesOfficialStringTypeReferences()
         {
-            const string json = """
-                {
-                  "canonicalName": "com.example.dubbonet.api.OrderService",
-                  "methods": [
-                    {
-                      "name": "calculateTotal",
-                      "parameterTypes": ["java.util.List<com.example.dubbonet.model.OrderItem>"],
-                      "returnType": "java.math.BigDecimal"
-                    }
-                  ],
-                  "types": [
-                    {
-                      "type": "java.util.List<com.example.dubbonet.model.OrderItem>",
-                      "items": ["com.example.dubbonet.model.OrderItem"],
-                      "properties": {},
-                      "enums": []
-                    },
-                    {
-                      "type": "com.example.dubbonet.model.OrderItem",
-                      "items": [],
-                      "properties": {
-                        "sku": "java.lang.String",
-                        "name": "java.lang.String",
-                        "quantity": "int",
-                        "unitPrice": "java.math.BigDecimal"
-                      },
-                      "enums": []
-                    },
-                    {
-                      "type": "java.util.Map<java.lang.String,com.example.dubbonet.model.OrderItem>",
-                      "items": [
-                        "java.lang.String",
-                        "com.example.dubbonet.model.OrderItem"
-                      ],
-                      "properties": {},
-                      "enums": []
-                    }
-                  ]
-                }
-                """;
+            const string json = "{\n" +
+                "  \"canonicalName\": \"com.example.dubbonet.api.OrderService\",\n" +
+                "  \"methods\": [\n" +
+                "    {\n" +
+                "      \"name\": \"calculateTotal\",\n" +
+                "      \"parameterTypes\": [\"java.util.List<com.example.dubbonet.model.OrderItem>\"],\n" +
+                "      \"returnType\": \"java.math.BigDecimal\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"types\": [\n" +
+                "    {\n" +
+                "      \"type\": \"java.util.List<com.example.dubbonet.model.OrderItem>\",\n" +
+                "      \"items\": [\"com.example.dubbonet.model.OrderItem\"],\n" +
+                "      \"properties\": {},\n" +
+                "      \"enums\": []\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"type\": \"com.example.dubbonet.model.OrderItem\",\n" +
+                "      \"items\": [],\n" +
+                "      \"properties\": {\n" +
+                "        \"sku\": \"java.lang.String\",\n" +
+                "        \"name\": \"java.lang.String\",\n" +
+                "        \"quantity\": \"int\",\n" +
+                "        \"unitPrice\": \"java.math.BigDecimal\"\n" +
+                "      },\n" +
+                "      \"enums\": []\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"type\": \"java.util.Map<java.lang.String,com.example.dubbonet.model.OrderItem>\",\n" +
+                "      \"items\": [\n" +
+                "        \"java.lang.String\",\n" +
+                "        \"com.example.dubbonet.model.OrderItem\"\n" +
+                "      ],\n" +
+                "      \"properties\": {},\n" +
+                "      \"enums\": []\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
 
             DubboMethodMetadata method = Assert.Single(
                 DubboMetadataManager.ParseMetadataDocument(
@@ -243,24 +237,22 @@ namespace UnitTestForDubboNet
         public void ParseMetadataDocument_AcceptsSingularAndPluralEnumFieldNames(
             string enumFieldName)
         {
-            string json = $$"""
-                {
-                  "canonicalName": "com.foo.DemoService",
-                  "methods": [
-                    {
-                      "name": "save",
-                      "parameterTypes": ["com.foo.Status"],
-                      "returnType": "void"
-                    }
-                  ],
-                  "types": [
-                    {
-                      "type": "com.foo.Status",
-                      "{{enumFieldName}}": ["ACTIVE", "INACTIVE"]
-                    }
-                  ]
-                }
-                """;
+            string json = $"{{\n" +
+                $"  \"canonicalName\": \"com.foo.DemoService\",\n" +
+                $"  \"methods\": [\n" +
+                $"    {{\n" +
+                $"      \"name\": \"save\",\n" +
+                $"      \"parameterTypes\": [\"com.foo.Status\"],\n" +
+                $"      \"returnType\": \"void\"\n" +
+                $"    }}\n" +
+                $"  ],\n" +
+                $"  \"types\": [\n" +
+                $"    {{\n" +
+                $"      \"type\": \"com.foo.Status\",\n" +
+                $"      \"{enumFieldName}\": [\"ACTIVE\", \"INACTIVE\"]\n" +
+                $"    }}\n" +
+                $"  ]\n" +
+                $"}}";
 
             DubboMethodMetadata method = Assert.Single(
                 DubboMetadataManager.ParseMetadataDocument(
@@ -279,42 +271,40 @@ namespace UnitTestForDubboNet
         [Fact]
         public void ParseMetadataDocument_MaterializesDubboJsonPathPropertyReferences()
         {
-            const string json = """
-                {
-                  "canonicalName": "com.example.dubbonet.api.OrderService",
-                  "methods": [
-                    {
-                      "name": "calculateTotal",
-                      "parameterTypes": ["java.util.List<com.example.dubbonet.model.OrderItem>"],
-                      "returnType": "java.math.BigDecimal"
-                    }
-                  ],
-                  "types": [
-                    {
-                      "type": "com.example.dubbonet.model.Order",
-                      "properties": {
-                        "orderId": { "type": "java.lang.String" },
-                        "totalAmount": { "type": "java.math.BigDecimal" }
-                      }
-                    },
-                    {
-                      "type": "com.example.dubbonet.model.OrderQuery",
-                      "properties": {
-                        "pageNo": { "type": "int" }
-                      }
-                    },
-                    {
-                      "type": "com.example.dubbonet.model.OrderItem",
-                      "properties": {
-                        "name": { "$ref": "$.types[0].properties.orderId" },
-                        "quantity": { "$ref": "$.types[1].properties.pageNo" },
-                        "sku": { "$ref": "#/types/0/properties/orderId" },
-                        "unitPrice": { "$ref": "$.types[0].properties.totalAmount" }
-                      }
-                    }
-                  ]
-                }
-                """;
+            const string json = "{\n" +
+                "  \"canonicalName\": \"com.example.dubbonet.api.OrderService\",\n" +
+                "  \"methods\": [\n" +
+                "    {\n" +
+                "      \"name\": \"calculateTotal\",\n" +
+                "      \"parameterTypes\": [\"java.util.List<com.example.dubbonet.model.OrderItem>\"],\n" +
+                "      \"returnType\": \"java.math.BigDecimal\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"types\": [\n" +
+                "    {\n" +
+                "      \"type\": \"com.example.dubbonet.model.Order\",\n" +
+                "      \"properties\": {\n" +
+                "        \"orderId\": { \"type\": \"java.lang.String\" },\n" +
+                "        \"totalAmount\": { \"type\": \"java.math.BigDecimal\" }\n" +
+                "      }\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"type\": \"com.example.dubbonet.model.OrderQuery\",\n" +
+                "      \"properties\": {\n" +
+                "        \"pageNo\": { \"type\": \"int\" }\n" +
+                "      }\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"type\": \"com.example.dubbonet.model.OrderItem\",\n" +
+                "      \"properties\": {\n" +
+                "        \"name\": { \"$ref\": \"$.types[0].properties.orderId\" },\n" +
+                "        \"quantity\": { \"$ref\": \"$.types[1].properties.pageNo\" },\n" +
+                "        \"sku\": { \"$ref\": \"#/types/0/properties/orderId\" },\n" +
+                "        \"unitPrice\": { \"$ref\": \"$.types[0].properties.totalAmount\" }\n" +
+                "      }\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
 
             DubboMethodMetadata method = Assert.Single(
                 DubboMetadataManager.ParseMetadataDocument(
@@ -664,33 +654,31 @@ namespace UnitTestForDubboNet
         public async Task ServiceTypes_LoadFromMetadataCenterAfterExistsCheckAndAreCached()
         {
             const string serviceName = "com.foo.DemoService";
-            const string metadataJson = """
-                {
-                  "canonicalName": "com.foo.DemoService",
-                  "methods": [],
-                  "types": [
-                    {
-                      "type": "com.foo.CreateRequest",
-                      "properties": {
-                        "name": { "type": "java.lang.String" },
-                        "children": {
-                          "type": "java.util.List<com.foo.ChildRequest>",
-                          "typeBuilderName": "CollectionTypeBuilder"
-                        }
-                      },
-                      "typeBuilderName": "DefaultTypeBuilder"
-                    },
-                    {
-                      "$ref": "$.types[0].properties.name"
-                    },
-                    {
-                      "type": "com.foo.EnvironmentTypeEnum",
-                      "enum": ["DEV", "PROD"],
-                      "typeBuilderName": "EnumTypeBuilder"
-                    }
-                  ]
-                }
-                """;
+            const string metadataJson = "{\n" +
+                "  \"canonicalName\": \"com.foo.DemoService\",\n" +
+                "  \"methods\": [],\n" +
+                "  \"types\": [\n" +
+                "    {\n" +
+                "      \"type\": \"com.foo.CreateRequest\",\n" +
+                "      \"properties\": {\n" +
+                "        \"name\": { \"type\": \"java.lang.String\" },\n" +
+                "        \"children\": {\n" +
+                "          \"type\": \"java.util.List<com.foo.ChildRequest>\",\n" +
+                "          \"typeBuilderName\": \"CollectionTypeBuilder\"\n" +
+                "        }\n" +
+                "      },\n" +
+                "      \"typeBuilderName\": \"DefaultTypeBuilder\"\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"$ref\": \"$.types[0].properties.name\"\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"type\": \"com.foo.EnvironmentTypeEnum\",\n" +
+                "      \"enum\": [\"DEV\", \"PROD\"],\n" +
+                "      \"typeBuilderName\": \"EnumTypeBuilder\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
             int existsCount = 0;
             int dataReadCount = 0;
             int telnetProbeCount = 0;

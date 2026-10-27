@@ -2,7 +2,7 @@
 
 DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper 或 Nacos 发现 Provider，依据 Provider URL 选择传输执行器，并通过经典 Dubbo TCP/Hessian2 或 Dubbo 3 Triple HTTP/JSON 调用 Java 接口，因此调用方不需要引用 Java 接口 JAR。
 
-> 当前项目目标框架为 **.NET 10**。原生 Dubbo TCP 调用已在 **Dubbo 2.7.3** Provider 上完成真实环境验证；Triple 第一期已在 **Dubbo 3.3.6** Java Interface Provider 上完成真实环境验证。其他版本的支持边界请先阅读[版本兼容性 / Compatibility](#版本兼容性--compatibility)。
+> 当前项目目标框架为 **.NET 6**，可被 .NET 6 及以上版本的应用引用。原生 Dubbo TCP 调用已在 **Dubbo 2.7.3** Provider 上完成真实环境验证；Triple 第一期已在 **Dubbo 3.3.6** Java Interface Provider 上完成真实环境验证。其他版本的支持边界请先阅读[版本兼容性 / Compatibility](#版本兼容性--compatibility)。
 
 ## 功能概览 / Features
 
@@ -45,10 +45,10 @@ DubboClient
 
 ## 安装 / Installation
 
-项目文件当前声明版本为 `3.2.1`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+项目文件当前声明版本为 `3.3.0`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
 
 ```bash
-dotnet add package DubboNet --version 3.2.1
+dotnet add package DubboNet --version 3.3.0
 ```
 
 如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
@@ -59,7 +59,7 @@ dotnet add package DubboNet --version 3.2.1
 </ItemGroup>
 ```
 
-运行和编译需要 .NET 10 SDK。项目的主要依赖是 `DistributedLock.ZooKeeper`、`nacos-sdk-csharp` 和 `NHessian`。
+编译需要 .NET 6 SDK 或更新版本；示例和测试默认运行在 .NET 6 Runtime 上。NuGet 类库可由 .NET 6 及以上版本的应用引用，并使用调用方的运行时。项目的主要依赖是 `DistributedLock.ZooKeeper`、`nacos-sdk-csharp` 和 `NHessian`。
 
 ## 快速开始 / Quick Start
 
@@ -572,8 +572,9 @@ else
 
 | 组件或版本 | 支持状态 | 说明 |
 | --- | --- | --- |
-| .NET 10 | **支持** | 当前库、示例和测试项目均只目标化 `net10.0` |
-| .NET 6/7/8/9 | **当前包不支持** | 项目已从 `net6.0` 改为 `net10.0`，未提供多目标构建 |
+| .NET 6 | **支持** | 当前库、示例和测试项目均目标化 `net6.0`；可使用 .NET 6 SDK 构建 |
+| .NET 7/8/9/10 | **兼容引用** | 应用可引用包内的 `net6.0` 类库，并使用自身运行时；无需额外安装 .NET 6 Runtime |
+| .NET Framework / .NET Standard | **当前包不支持** | 未提供 `netstandard2.0`、`netstandard2.1` 或 .NET Framework 目标 |
 | ZooKeeper 经典接口级注册 | **支持** | 读取 `/dubbo/{interface}/providers` 并注册 watch |
 | Nacos 2.5.4 接口级注册 | **真实验证** | 使用 Naming 服务发现/订阅 Provider，并从 Config 读取/监听远程元数据；已验证 Dubbo 3.2.20、3.3.6 |
 | Consul、Kubernetes 等其他注册中心 | **未实现** | 当前 `DubboClient` 实现 ZooKeeper 与 Nacos |
@@ -709,11 +710,11 @@ Dubbo 3.3.6 的默认 Triple HTTP/JSON 映射不能可靠区分全部 Java 重�
 
 ## 构建与测试 / Build and Test
 
-需要 .NET 10 SDK：
+需要 .NET 6 SDK 或更新版本。运行 `net6.0` 示例和测试时还需安装 .NET 6 Runtime；仅引用类库的高版本应用不需要安装它：
 
 ```bash
 dotnet restore DubboNet.sln
-dotnet build DubboNet.csproj --no-restore
+dotnet build DubboNet.sln --no-restore
 dotnet test Tests/UnitTestForDubboNet/UnitTestForDubboNet.csproj --no-restore
 ```
 
@@ -752,7 +753,7 @@ dotnet run --project Tests/QueryDemo/QueryDemo.csproj
 ### 自动发布 NuGet 包 / Automated NuGet publishing
 
 仓库通过 `.github/workflows/publish-nuget.yml` 自动发布正式版本。创建并发布 GitHub
-Release 后，工作流会把 Release Tag（支持 `3.2.1` 或 `v3.2.1`）作为包版本，依次运行
+Release 后，工作流会把 Release Tag（支持 `3.3.0` 或 `v3.3.0`）作为包版本，依次运行
 单元测试、打包，并将同一个 `.nupkg` 发布到 GitHub Packages 和 nuget.org。
 
 nuget.org 使用 Trusted Publishing/OIDC 颁发的临时密钥，不在仓库中保存长期 API Key。
