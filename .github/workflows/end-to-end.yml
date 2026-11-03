@@ -72,7 +72,7 @@ jobs:
 
       - name: Resolve the Runner provider address
         run: |
-          provider_host=$(ip -4 route get 1.1.1.1 | awk '{ for (index = 1; index <= NF; index++) if ($index == "src") { print $(index + 1); exit } }')
+          provider_host=$(ip -4 route get 1.1.1.1 | awk '{ for (field = 1; field <= NF; field++) if ($field == "src") { print $(field + 1); exit } }')
           if [[ -z "$provider_host" || "$provider_host" == 127.* ]]; then
             echo "Cannot resolve a non-loopback Runner IPv4 address." >&2
             exit 1
