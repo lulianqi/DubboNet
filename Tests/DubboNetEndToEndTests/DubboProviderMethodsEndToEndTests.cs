@@ -2,6 +2,7 @@ using DubboNet.Clients;
 using DubboNet.Clients.DataModle;
 using DubboNet.DubboService.DataModle;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Xunit;
 using Xunit.Abstractions;
@@ -65,7 +66,8 @@ public sealed class DubboProviderMethodsEndToEndTests
                 .OrderBy(signature => signature, StringComparer.Ordinal)
                 .ToArray();
             string[] actual = metadata
-                .Select(method => method.Name + "(" + string.Join(",", method.ParameterTypes) + ")")
+                .Select(method => method.Name + "(" + string.Join(",",
+                    method.ParameterTypes.Select(EraseGenericArguments)) + ")")
                 .OrderBy(signature => signature, StringComparer.Ordinal)
                 .ToArray();
 
@@ -423,6 +425,35 @@ public sealed class DubboProviderMethodsEndToEndTests
             CultureInfo.InvariantCulture,
             DateTimeStyles.RoundtripKind,
             out _));
+    }
+
+    /// <summary>
+    /// 按 Java 类型擦除规则移除元数据中的泛型参数，以便和实际 Dubbo 调用签名比较。
+    /// EN: Removes metadata generic arguments using Java type erasure before comparing invocation signatures.
+    /// </summary>
+    private static string EraseGenericArguments(string typeName)
+    {
+        StringBuilder erased = new(typeName.Length);
+        int genericDepth = 0;
+        foreach (char character in typeName)
+        {
+            if (character == '<')
+            {
+                genericDepth++;
+                continue;
+            }
+            if (character == '>')
+            {
+                genericDepth--;
+                continue;
+            }
+            if (genericDepth == 0)
+            {
+                erased.Append(character);
+            }
+        }
+        Assert.Equal(0, genericDepth);
+        return erased.ToString().Trim();
     }
 
     private static string Shorten(string? value)
