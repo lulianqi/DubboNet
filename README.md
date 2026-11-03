@@ -837,6 +837,9 @@ ZooKeeper 测试矩阵覆盖 Dubbo 2.7.23、3.1.11、3.2.20 和 3.3.6；Nacos �
 ZooKeeper 3.8.4 与 Nacos 2.5.4 容器，编译并启动位于
 `Tests/EndToEndTestEnvironment/JavaProviders` 的 Dubbo 2.7.23、3.1.11、3.2.20、3.3.6 Provider，随后执行：
 
+- `DubboNetEndToEndTests` 对环境公开的 5 个服务、25 个方法逐一发起真实调用；
+- 在 ZooKeeper 四个版本和 Nacos 两个版本中共执行 150 个方法调用用例；
+- 额外执行 6 个元数据覆盖校验，确保 Provider 新增公开方法后必须同步增加调用用例；
 - ZooKeeper 全版本发现、元数据与调用矩阵；
 - Nacos 3.2.20/3.3.6 发现、目录 API、元数据与调用矩阵；
 - `QueryDemo` 全部重载以及 Dubbo TCP、Triple 直连演示。
@@ -844,7 +847,9 @@ ZooKeeper 3.8.4 与 Nacos 2.5.4 容器，编译并启动位于
 工作流会自动取得 Runner 的非回环 IPv4，所有 Provider 都向临时注册中心登记该地址和
 本机端口，不访问公网测试机。
 Job 结束时会销毁注册中心并停止 Provider；无论成功失败，Provider 与注册中心日志都会作为
-`end-to-end-logs-*` Artifact 上传。该工作流支持手动运行，并会在相关源码发生变化的
+`end-to-end-logs-*` Artifact 上传，xUnit 的 TRX 结果会单独作为
+`end-to-end-test-results-*` Artifact 上传。测试用例也会以详细模式输出到 Action 日志，
+可以直接定位到注册中心、Dubbo 版本、服务和方法。该工作流支持手动运行，并会在相关源码发生变化的
 `master`、`release3.*` 推送及 Pull Request 上自动运行。
 
 在已安装 Docker、JDK 8、Maven、.NET 6 SDK 的 Linux 环境中，也可以复现相同环境：
@@ -855,6 +860,14 @@ mvn -B -ntp -f Tests/EndToEndTestEnvironment/JavaProviders/pom.xml package -Dski
 export DUBBONET_PROVIDER_HOST=$(ip -4 route get 1.1.1.1 | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
 Tests/EndToEndTestEnvironment/start-providers.sh
 Tests/EndToEndTestEnvironment/wait-for-environment.sh
+
+export DUBBONET_E2E_ENABLED=true
+export DUBBONET_E2E_ZOOKEEPER_ADDRESS=127.0.0.1:2181
+export DUBBONET_E2E_NACOS_ADDRESS=nacos://127.0.0.1:8848
+dotnet test \
+  Tests/DubboNetEndToEndTests/DubboNetEndToEndTests.csproj \
+  --logger "console;verbosity=detailed" \
+  --logger "trx;LogFileName=dubbonet-end-to-end.trx"
 
 dotnet run \
   --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
