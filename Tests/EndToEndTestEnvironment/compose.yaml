@@ -1,0 +1,23 @@
+name: dubbonet-e2e
+
+services:
+  zookeeper:
+    image: zookeeper:3.8.4
+    environment:
+      ZOO_4LW_COMMANDS_WHITELIST: ruok,mntr,srvr
+    ports:
+      - "2181:2181"
+
+  nacos:
+    image: nacos/nacos-server:v2.5.4
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      PREFER_HOST_MODE: hostname
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+      - "9849:9849"

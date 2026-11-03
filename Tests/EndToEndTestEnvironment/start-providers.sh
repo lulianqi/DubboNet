@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+provider_root="$script_dir/JavaProviders"
+log_dir=${1:-"$script_dir/logs"}
+pid_file="$log_dir/provider-pids"
+
+mkdir -p "$log_dir"
+: > "$pid_file"
+
+export DUBBO_REGISTRY_ADDRESS=${DUBBO_REGISTRY_ADDRESS:-zookeeper://127.0.0.1:2181}
+export DUBBO_NACOS_REGISTRY_ADDRESS=${DUBBO_NACOS_REGISTRY_ADDRESS:-nacos://127.0.0.1:8848}
+
+if [[ -z "${DUBBONET_PROVIDER_HOST:-}" ]] && command -v ip >/dev/null 2>&1; then
+  DUBBONET_PROVIDER_HOST=$(ip -4 route get 1.1.1.1 \
+    | awk '{ for (index = 1; index <= NF; index++) if ($index == "src") { print $(index + 1); exit } }')
+fi
+if [[ -z "${DUBBONET_PROVIDER_HOST:-}" ]]; then
+  echo "DUBBONET_PROVIDER_HOST must be a non-loopback address reachable from this machine." >&2
+  exit 1
+fi
+if [[ "$DUBBONET_PROVIDER_HOST" == 127.* || "$DUBBONET_PROVIDER_HOST" == "0.0.0.0" ]]; then
+  echo "Dubbo does not allow the registry address $DUBBONET_PROVIDER_HOST for a provider." >&2
+  exit 1
+fi
+export DUBBONET_PROVIDER_HOST
+echo "$DUBBONET_PROVIDER_HOST" > "$log_dir/provider-host"
+
+modules=(
+  provider-2.7.23
+  provider-3.1.11
+  provider-3.2.20
+  provider-3.3.6
+)
+
+for module in "${modules[@]}"; do
+  jar_file=$(find "$provider_root/$module/target" -maxdepth 1 \
+    -name 'dubbonet-example-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+    -print -quit)
+  if [[ -z "$jar_file" ]]; then
+    echo "Cannot find the packaged provider JAR for $module." >&2
+    exit 1
+  fi
+
+  java -Xms64m -Xmx256m -jar "$jar_file" > "$log_dir/$module.log" 2>&1 &
+  provider_pid=$!
+  echo "$provider_pid" >> "$pid_file"
+  echo "Started $module (PID $provider_pid)."
+done

@@ -7,7 +7,7 @@ using System.Text.Json;
 
 const string DefaultZooKeeper = "110.40.136.183:2181";
 const string DefaultNacos = "nacos://110.40.136.183:8848";
-const string ProviderHost = "110.40.136.183";
+const string DefaultProviderHost = "110.40.136.183";
 const string DataTypeService = "com.example.dubbonet.api.DataTypeService";
 const string EchoService = "com.example.dubbonet.api.EchoService";
 const string OrderService = "com.example.dubbonet.api.OrderService";
@@ -18,6 +18,10 @@ string registryAddress = args.Length > 0
         ? DefaultNacos
         : args[0])
     : DefaultZooKeeper;
+string providerHost = args.Length > 1
+    ? args[1]
+    : Environment.GetEnvironmentVariable("DUBBONET_TEST_PROVIDER_HOST")
+        ?? DefaultProviderHost;
 bool useNacos = registryAddress.StartsWith("nacos://", StringComparison.OrdinalIgnoreCase);
 VersionScenario[] versions = useNacos
     ? new[]
@@ -35,12 +39,13 @@ VersionScenario[] versions = useNacos
 
 TestSummary summary = new();
 Console.WriteLine($"Registry: {registryAddress} ({(useNacos ? "Nacos" : "ZooKeeper")})");
+Console.WriteLine($"Provider host: {providerHost}");
 Console.WriteLine("Dubbo versions: " + string.Join(", ", versions.Select(version => version.Version)));
 Console.WriteLine();
 
 if (useNacos)
 {
-    await RunNacosDirectoryCasesAsync(registryAddress, summary);
+    await RunNacosDirectoryCasesAsync(registryAddress, providerHost, summary);
 }
 
 foreach (VersionScenario version in versions)
@@ -48,7 +53,7 @@ foreach (VersionScenario version in versions)
     await RunVersionAsync(version, registryAddress, summary);
 }
 
-await RunDirectProtocolCasesAsync(summary);
+await RunDirectProtocolCasesAsync(providerHost, summary);
 
 Console.WriteLine();
 Console.WriteLine(
@@ -65,7 +70,10 @@ if (summary.Failed > 0)
     Environment.ExitCode = 1;
 }
 
-static async Task RunNacosDirectoryCasesAsync(string registryAddress, TestSummary summary)
+static async Task RunNacosDirectoryCasesAsync(
+    string registryAddress,
+    string providerHost,
+    TestSummary summary)
 {
     Console.WriteLine("=== Nacos public directory API ===");
     try
@@ -85,7 +93,7 @@ static async Task RunNacosDirectoryCasesAsync(string registryAddress, TestSummar
             EchoService,
             "dubbo-3.3.6");
         Record("Nacos", "directory/providers",
-            providers.Any(provider => provider.EndPoint?.Address.ToString() == ProviderHost),
+            providers.Any(provider => provider.EndPoint?.Address.ToString() == providerHost),
             string.Join(", ", providers.Select(provider => $"{provider.Scheme}://{provider.EndPoint}")),
             summary);
 
@@ -95,7 +103,7 @@ static async Task RunNacosDirectoryCasesAsync(string registryAddress, TestSummar
             rawService,
             "dubbo-3.3.6");
         Record("Nacos", "directory/raw-instances",
-            instances.Any(instance => instance.Ip == ProviderHost
+            instances.Any(instance => instance.Ip == providerHost
                 && instance.Metadata.ContainsKey("protocol")),
             $"{instances.Count} instances", summary);
     }
@@ -250,7 +258,9 @@ static async Task RunVersionAsync(
         "provider-exception",
         () => client.QueryAsync($"{EchoService}.alwaysFail", "expected-error"),
         result => !result.QuerySuccess
-            && !string.IsNullOrWhiteSpace(result.ErrorMeaasge),
+            && !string.IsNullOrWhiteSpace(result.ErrorMeaasge)
+            && (result.ErrorMeaasge.Contains("expected-error", StringComparison.OrdinalIgnoreCase)
+                || result.ErrorMeaasge.Contains("DEMO_FAILURE", StringComparison.OrdinalIgnoreCase)),
         summary);
 
     Console.WriteLine();
@@ -294,7 +304,7 @@ static async Task RunMetadataCaseAsync(
     }
 }
 
-static async Task RunDirectProtocolCasesAsync(TestSummary summary)
+static async Task RunDirectProtocolCasesAsync(string providerHost, TestSummary summary)
 {
     Console.WriteLine("=== Dubbo 3.3.6 direct protocol selection ===");
     DubboInvocation invocation = new(
@@ -311,7 +321,7 @@ static async Task RunDirectProtocolCasesAsync(TestSummary summary)
         DubboRequestTimeout = 10_000
     };
 
-    using (NativeDubboActuatorSuite native = new(ProviderHost, 20880, configuration))
+    using (NativeDubboActuatorSuite native = new(providerHost, 20880, configuration))
     {
         await RunCaseAsync(
             "3.3.6",
@@ -324,7 +334,7 @@ static async Task RunDirectProtocolCasesAsync(TestSummary summary)
             summary);
     }
 
-    using (TripleDubboActuatorSuite triple = new(ProviderHost, 50051, configuration))
+    using (TripleDubboActuatorSuite triple = new(providerHost, 50051, configuration))
     {
         await RunCaseAsync(
             "3.3.6",

@@ -807,12 +807,13 @@ dotnet build DubboNet.sln --no-restore
 dotnet test Tests/UnitTestForDubboNet/UnitTestForDubboNet.csproj --no-restore
 ```
 
-`DubboClientIntegrationTests` 默认连接公开 ZooKeeper 测试注册中心 `110.40.136.183:2181`，也可以把其他注册中心地址作为第一个参数传入：
+`DubboClientIntegrationTests` 默认连接公开 ZooKeeper 测试注册中心 `110.40.136.183:2181`。
+第一个参数可以覆盖注册中心地址，第二个参数可以覆盖 Provider 对外注册地址；后者主要用于本机或 CI 临时环境：
 
 ```bash
 dotnet run \
   --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
-  -- 110.40.136.183:2181
+  -- 110.40.136.183:2181 110.40.136.183
 ```
 
 Nacos 测试环境可直接使用简写 `nacos`，或传入完整地址：
@@ -832,8 +833,47 @@ ZooKeeper 测试矩阵覆盖 Dubbo 2.7.23、3.1.11、3.2.20 和 3.3.6；Nacos �
 以及 Dubbo TCP/Hessian2 和 Triple HTTP/JSON 的明确直连。
 测试使用专门准备的 `com.example.dubbonet` 服务；如传入其他注册中心地址，需确保存在相同分组、根路径和测试服务。程序以非零退出码报告失败，可直接用于手工验收或 CI。
 
+仓库内置 `.github/workflows/end-to-end.yml`。工作流会在 GitHub Runner 上启动临时
+ZooKeeper 3.8.4 与 Nacos 2.5.4 容器，编译并启动位于
+`Tests/EndToEndTestEnvironment/JavaProviders` 的 Dubbo 2.7.23、3.1.11、3.2.20、3.3.6 Provider，随后执行：
+
+- ZooKeeper 全版本发现、元数据与调用矩阵；
+- Nacos 3.2.20/3.3.6 发现、目录 API、元数据与调用矩阵；
+- `QueryDemo` 全部重载以及 Dubbo TCP、Triple 直连演示。
+
+工作流会自动取得 Runner 的非回环 IPv4，所有 Provider 都向临时注册中心登记该地址和
+本机端口，不访问公网测试机。
+Job 结束时会销毁注册中心并停止 Provider；无论成功失败，Provider 与注册中心日志都会作为
+`end-to-end-logs-*` Artifact 上传。该工作流支持手动运行，并会在相关源码发生变化的
+`master`、`release3.*` 推送及 Pull Request 上自动运行。
+
+在已安装 Docker、JDK 8、Maven、.NET 6 SDK 的 Linux 环境中，也可以复现相同环境：
+
+```bash
+docker compose -f Tests/EndToEndTestEnvironment/compose.yaml up -d
+mvn -B -ntp -f Tests/EndToEndTestEnvironment/JavaProviders/pom.xml package -DskipTests
+export DUBBONET_PROVIDER_HOST=$(ip -4 route get 1.1.1.1 | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
+Tests/EndToEndTestEnvironment/start-providers.sh
+Tests/EndToEndTestEnvironment/wait-for-environment.sh
+
+dotnet run \
+  --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
+  -- 127.0.0.1:2181 "$DUBBONET_PROVIDER_HOST"
+
+dotnet run \
+  --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
+  -- nacos://127.0.0.1:8848 "$DUBBONET_PROVIDER_HOST"
+
+dotnet run \
+  --project Tests/QueryDemo/QueryDemo.csproj \
+  -- 127.0.0.1:2181 "$DUBBONET_PROVIDER_HOST"
+
+Tests/EndToEndTestEnvironment/stop-providers.sh
+docker compose -f Tests/EndToEndTestEnvironment/compose.yaml down --volumes
+```
+
 `QueryDemo` 使用顺序代码展示 `DubboClient.QueryAsync` 的全部重载，以及已知 Provider
-IP、端口和协议时如何绕过注册中心直接调用：
+IP、端口和协议时如何绕过注册中心直接调用。它同样接受注册中心地址与 Provider 地址两个参数：
 
 ```bash
 dotnet run --project Tests/QueryDemo/QueryDemo.csproj

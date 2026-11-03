@@ -5,14 +5,19 @@ using DubboNet.DubboService.DataModle;
 
 const string DefaultZooKeeper = "110.40.136.183:2181";
 const string DubboRootPath = "/dubbo-3.3.6";
-const string ProviderHost = "110.40.136.183";
+const string DefaultProviderHost = "110.40.136.183";
 const string EchoService = "com.example.dubbonet.api.EchoService";
 const string DataTypeService = "com.example.dubbonet.api.DataTypeService";
 
 string zooKeeper = args.Length > 0 ? args[0] : DefaultZooKeeper;
+string providerHost = args.Length > 1
+    ? args[1]
+    : Environment.GetEnvironmentVariable("DUBBONET_TEST_PROVIDER_HOST")
+        ?? DefaultProviderHost;
 
 Console.WriteLine($"ZooKeeper: {zooKeeper}");
 Console.WriteLine($"Dubbo root: {DubboRootPath}");
+Console.WriteLine($"Provider host: {providerHost}");
 Console.WriteLine();
 
 // DubboClient 应作为长生命周期对象复用。它会复用 ZooKeeper、Provider 连接、
@@ -166,7 +171,7 @@ DubboInvocation directInvocation = new(
 // 参数依次是 Provider IP、Dubbo TCP 端口和可选执行器配置。
 // EN: Create NativeDubboActuatorSuite for a known dubbo:// provider IP and TCP port.
 using NativeDubboActuatorSuite nativeSuite = new(
-    ProviderHost,
+    providerHost,
     20880,
     new DubboActuatorSuiteConf { DubboRequestTimeout = 10_000 });
 DubboRequestResult directNativeResult = await nativeSuite.SendQuery(directInvocation);
@@ -176,8 +181,27 @@ Console.WriteLine($"直连 Dubbo TCP: {directNativeResult.Result}");
 // 参数依次是 Provider IP、Triple 端口和可选执行器配置。
 // EN: Create TripleDubboActuatorSuite for a known tri:// Java-interface provider IP and port.
 using TripleDubboActuatorSuite tripleSuite = new(
-    ProviderHost,
+    providerHost,
     50051,
     new DubboActuatorSuiteConf { DubboRequestTimeout = 10_000 });
 DubboRequestResult directTripleResult = await tripleSuite.SendQuery(directInvocation);
 Console.WriteLine($"直连 Triple HTTP/JSON: {directTripleResult.Result}");
+
+bool allCallsSucceeded = noArgumentResult.QuerySuccess
+    && oneArgumentResult.QuerySuccess
+    && multipleArgumentsResult.QuerySuccess
+    && typedNoArgumentResult.QuerySuccess
+    && typedOneArgumentResult.QuerySuccess
+    && typedMultipleArgumentsResult.QuerySuccess
+    && explicitTypesResult.QuerySuccess
+    && typedExplicitTypesResult.QuerySuccess
+    && invocationResult.QuerySuccess
+    && typedInvocationResult.QuerySuccess
+    && directNativeResult.QuerySuccess
+    && directTripleResult.QuerySuccess;
+
+if (!allCallsSucceeded)
+{
+    Console.Error.WriteLine("QueryDemo 至少有一个调用失败，请检查上方调用结果。");
+    Environment.ExitCode = 1;
+}
