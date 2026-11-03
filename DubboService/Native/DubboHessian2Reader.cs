@@ -134,6 +134,7 @@ namespace DubboNet.DubboService.Native
                 throw new InvalidDataException($"Invalid Hessian2 class field count {fieldCount}.");
             }
 
+            EnsureCountFitsPayload(fieldCount);
             string[] fields = new string[fieldCount];
             for (int i = 0; i < fields.Length; i++)
             {
@@ -193,66 +194,75 @@ namespace DubboNet.DubboService.Native
 
         private object ReadList(byte tag)
         {
-            bool hasEnd;
-            int length;
+            int? length = ReadListHeader(tag);
+            if (length is int count)
+            {
+                if (count < 0)
+                {
+                    throw new InvalidDataException($"Invalid Hessian2 list length {count}.");
+                }
+                EnsureCountFitsPayload(count);
+            }
 
+            List<object> list = new List<object>(length ?? 0);
+            _references.Add(list); // References may point to this list before it is complete.
+            ReadListElements(list, length);
+            return list;
+        }
+
+        // Null means the list ends with 'Z'; a value is its fixed element count.
+        private int? ReadListHeader(byte tag)
+        {
             switch (tag)
             {
                 case 0x55:
                     _ = ReadType();
-                    hasEnd = true;
-                    length = -1;
-                    break;
+                    return null;
                 case 0x56:
                     _ = ReadType();
-                    hasEnd = false;
-                    length = ReadInt();
-                    break;
+                    return ReadInt();
                 case 0x57:
-                    hasEnd = true;
-                    length = -1;
-                    break;
+                    return null;
                 case 0x58:
-                    hasEnd = false;
-                    length = ReadInt();
-                    break;
+                    return ReadInt();
                 default:
-                    hasEnd = false;
                     if (tag >= 0x70 && tag <= 0x77)
                     {
-                        length = tag - 0x70;
+                        int length = tag - 0x70;
                         _ = ReadType();
+                        return length;
                     }
-                    else
-                    {
-                        length = tag - 0x78;
-                    }
-                    break;
+                    return tag - 0x78;
             }
+        }
 
-            if (length < -1)
+        private void ReadListElements(List<object> list, int? length)
+        {
+            if (length is int count)
             {
-                throw new InvalidDataException($"Invalid Hessian2 list length {length}.");
-            }
-
-            List<object> list = length > 0 ? new List<object>(length) : new List<object>();
-            _references.Add(list);
-            if (hasEnd)
-            {
-                while (PeekByte() != (byte)'Z')
+                for (int i = 0; i < count; i++)
                 {
                     list.Add(ReadValue());
                 }
-                _position++;
+                return;
             }
-            else
+
+            while (PeekByte() != (byte)'Z')
             {
-                for (int i = 0; i < length; i++)
-                {
-                    list.Add(ReadValue());
-                }
+                list.Add(ReadValue());
             }
-            return list;
+            _position++;
+        }
+
+        private void EnsureCountFitsPayload(int count)
+        {
+            // Each declared value or field name needs at least one wire byte.
+            int remaining = _buffer.Length - _position;
+            if (count > remaining)
+            {
+                throw new InvalidDataException(
+                    $"Hessian2 declared count {count} exceeds the {remaining} remaining payload bytes.");
+            }
         }
 
         private string ReadType()
