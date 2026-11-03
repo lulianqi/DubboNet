@@ -1,58 +1,60 @@
 # DubboNet
 
-DubboNet 是一个面向 .NET 的 Dubbo 客户端库。它可以从 ZooKeeper 或 Nacos 发现 Provider，依据 Provider URL 选择传输执行器，并通过经典 Dubbo TCP/Hessian2 或 Dubbo 3 Triple HTTP/JSON 调用 Java 接口，因此调用方不需要引用 Java 接口 JAR。
+**English** | [简体中文](readme_cn.md)
 
-> 当前 Apache 导入分支目标框架为 **.NET 10**，库、示例和测试均使用 `net10.0`。本次变更不会替换此前发布的个人项目 NuGet 包。原生 Dubbo TCP 调用已在 **Dubbo 2.7.3** Provider 上完成真实环境验证；Triple 第一期已在 **Dubbo 3.3.6** Java Interface Provider 上完成真实环境验证。其他版本的支持边界请先阅读[版本兼容性 / Compatibility](#版本兼容性--compatibility)。
+DubboNet is a Dubbo client library for .NET. It discovers Providers through ZooKeeper or Nacos, selects a transport actuator based on the Provider URL, and invokes Java interfaces through classic Dubbo TCP/Hessian2 or Dubbo 3 Triple HTTP/JSON. The caller does not need to reference a Java interface JAR.
 
-## 功能概览 / Features
+> The current Apache import branch targets **.NET 10**: the library, examples, and tests all use `net10.0`. This change does not replace previously published NuGet packages from the personal project. Native Dubbo TCP invocation has been verified against a **Dubbo 2.7.3** Provider in a real environment; the first phase of Triple support has been verified against a **Dubbo 3.3.6** Java Interface Provider. Read [Compatibility](#compatibility) for the boundaries of support for other versions.
 
-- 从 ZooKeeper 的经典接口级目录或 Nacos 接口级 Naming 服务自动发现和订阅 Provider。
-- 根据 Provider URL scheme 自动选择执行器：
-  - `dubbo://`：`NativeDubboActuatorSuite`，使用 Dubbo2 TCP 帧和 Hessian2 泛化调用。
-  - `tri://`：`TripleDubboActuatorSuite`，使用 Dubbo 3.3 的 Java Interface Unary HTTP/JSON 调用。
-- 支持按权重随机、平滑加权轮询、最短响应、一致性 Hash 等负载策略。
-- 自动从 Dubbo 元数据中心或 Provider Telnet `ls -l` 获取 Java 方法签名。
-- 根据实参数量和 CLR 类型推断重载，并缓存方法元数据。
-- 支持调用方显式指定 Java 参数类型，用于元数据缺失、`null`、包装类型和重载歧义等场景。
-- 支持服务版本、分组、自定义 attachments、POJO、集合和 Map 参数。
-- 暴露 Request ID、Dubbo response status、serialization id、响应 attachments 和动态原始结果。
-- 同地址的 ZooKeeper/Nacos 客户端、Provider 连接和服务驱动在多个请求之间复用。
-- 可选的进程级消费者注册：按实际调用登记接口，跨客户端引用计数，并使用 ZooKeeper 临时节点或 Nacos 临时实例。
-- 主要公共 API 提供中英文 XML documentation，并随程序集/NuGet 包生成 `DubboNet.xml`。
+## Features
 
-## 调用架构 / Architecture
+- Automatic Provider discovery and subscriptions through classic interface-level ZooKeeper directories or interface-level Nacos Naming services.
+- Automatic actuator selection based on the Provider URL scheme:
+  - `dubbo://`: `NativeDubboActuatorSuite`, using Dubbo2 TCP frames and Hessian2 generic invocation.
+  - `tri://`: `TripleDubboActuatorSuite`, using Dubbo 3.3 Java Interface Unary HTTP/JSON invocation.
+- Load-balancing strategies including weighted random, smooth weighted round robin, shortest response, and consistent hashing.
+- Automatic Java method signature lookup through the Dubbo metadata center or Provider Telnet `ls -l`.
+- Overload resolution based on argument count and CLR types, with cached method metadata.
+- Explicit Java parameter types for missing metadata, `null`, wrapper types, and ambiguous overloads.
+- Service versions, groups, custom attachments, POJO, collection, and Map parameters.
+- Request IDs, Dubbo response status, serialization IDs, response attachments, and dynamic raw results.
+- Reuse of ZooKeeper/Nacos clients for the same address, Provider connections, and service drivers across requests.
+- Optional process-wide consumer registration: interfaces are registered when invoked, references are counted across clients, and registrations use ZooKeeper ephemeral nodes or Nacos ephemeral instances.
+- Chinese and English XML documentation for the main public APIs, with `DubboNet.xml` included alongside the assembly and in the NuGet package.
+
+## Architecture
 
 ```text
-应用调用
+Application
    |
    v
 DubboClient
-   |-- 注册中心
+   |-- Registry
    |       |-- ZooKeeper --> /dubbo/{interface}/providers + Watch
    |       +-- Nacos -----> providers:{interface}:{version}:{group} + Subscribe
    |
    |-- DubboMetadataManager
-   |       |-- release >= 2.7.3 或未知 --> 元数据中心 FullServiceDefinition
-   |       |                                  |
-   |       |                                  +-- 失败时一次性 Telnet ls -l
-   |       +-- release < 2.7.3 -----------> 一次性 Telnet ls -l
+   |       |-- release >= 2.7.3 or unknown --> Metadata center FullServiceDefinition
+   |       |                                      |
+   |       |                                      +-- One-time Telnet ls -l on failure
+   |       +-- release < 2.7.3 --------------> One-time Telnet ls -l
    |
-   +-- DubboServiceDriver --> 负载均衡 --> 按 scheme 选择执行器
+   +-- DubboServiceDriver --> Load balancing --> Select actuator by scheme
            |-- dubbo:// --> NativeDubboActuatorSuite --> Dubbo TCP + Hessian2
            +-- tri://   --> TripleDubboActuatorSuite --> Triple Unary HTTP/JSON
 ```
 
-`release` 只决定元数据获取顺序；执行器由 Provider URL 的 scheme 决定。Provider URL 中的 `dubbo=2.0.2` 是经典线协议版本，`version` 和 `group` 则是服务路由信息，这几个字段不要混用。
+`release` only determines the metadata lookup order; the Provider URL scheme determines the actuator. In a Provider URL, `dubbo=2.0.2` identifies the classic wire protocol version, while `version` and `group` identify service routing. These fields are not interchangeable.
 
-## 安装 / Installation
+## Installation
 
-项目文件当前声明版本为 `3.6.2`、NuGet 包 ID 为 `DubboNet`。对应版本已经发布到你的 NuGet 源时，可以执行：
+The project currently declares version `3.6.2` and the NuGet package ID `DubboNet`. If that version is available in your NuGet feed, run:
 
 ```bash
 dotnet add package DubboNet --version 3.6.2
 ```
 
-如果包尚未发布，或需要使用当前仓库中的最新实现，请直接引用源码项目：
+If the package has not been published, or you need the latest implementation in this repository, reference the source project directly:
 
 ```xml
 <ItemGroup>
@@ -60,11 +62,11 @@ dotnet add package DubboNet --version 3.6.2
 </ItemGroup>
 ```
 
-当前源码编译需要 .NET 10 SDK，示例和测试使用 .NET 10 Runtime。当前分支生成的类库仅提供 `net10.0` 目标，不能再被 .NET 6/7/8/9 应用直接引用；旧版本应用需要升级或继续使用此前兼容的已发布包。项目的主要依赖是 `DistributedLock.ZooKeeper`、`nacos-sdk-csharp` 和 `NHessian`。
+Building the current source requires the .NET 10 SDK; the examples and tests use the .NET 10 Runtime. The library built from this branch only targets `net10.0` and cannot be referenced directly by .NET 6/7/8/9 applications. Those applications must upgrade or continue using a previously published compatible package. The main dependencies are `DistributedLock.ZooKeeper`, `nacos-sdk-csharp`, and `NHessian`.
 
-## 快速开始 / Quick Start
+## Quick Start
 
-推荐创建一个长生命周期的 `DubboClient`，在应用关闭时释放，不要为每个请求创建新实例：
+Create a long-lived `DubboClient` and dispose it when the application shuts down. Do not create a new instance for every request:
 
 ```csharp
 using DubboNet.Clients;
@@ -85,21 +87,21 @@ if (!result.QuerySuccess)
 Console.WriteLine(result.Result);
 ```
 
-使用 Nacos 时只需把注册中心地址改为固定的 `nacos://` 格式；该前缀也是客户端选择注册中心实现的依据：
+To use Nacos, change the registry address to the required `nacos://` format. This prefix also selects the registry implementation:
 
 ```csharp
 using var client = new DubboClient(
     "nacos://127.0.0.1:8848",
     new DubboClient.DubboClientConf
     {
-        // Naming 分组；不填写时为 DEFAULT_GROUP。
+        // Naming group; defaults to DEFAULT_GROUP when omitted.
         DubboRootPath = "dubbo-prod",
-        // Config 元数据分组独立配置；不填写时为 dubbo。
+        // Config metadata group is independent; defaults to dubbo when omitted.
         MetadataRootPath = "dubbo-metadata-prod"
     });
 ```
 
-服务和方法之间支持 `#`、`.` 或 `/`，例如：
+The service and method names can be separated by `#`, `.`, or `/`, for example:
 
 ```text
 com.foo.JobService#getJob
@@ -107,18 +109,18 @@ com.foo.JobService.getJob
 com.foo.JobService/getJob
 ```
 
-建议使用 `#`，它能让完整 Java 接口名和方法名的边界最清楚。
+Use `#` to make the boundary between the fully qualified Java interface name and the method name explicit.
 
-### 无参数调用 / No-argument Invocation
+### No-argument Invocation
 
 ```csharp
 DubboRequestResult result = await client.QueryAsync(
     "com.foo.HealthService#check");
 ```
 
-当两种元数据来源都不可用时，无参数方法仍可使用空参数签名发起调用。
+If neither metadata source is available, a no-argument method can still be invoked with an empty parameter signature.
 
-### 自动推断参数类型 / Automatic Type Inference
+### Automatic Type Inference
 
 ```csharp
 DubboRequestResult result = await client.QueryAsync(
@@ -127,20 +129,20 @@ DubboRequestResult result = await client.QueryAsync(
     1234L);
 ```
 
-自动推断不会只根据 JSON 武断地猜测 Java 类型。客户端先取得服务方法签名，再根据方法名、参数数量和 CLR 实参类型选择唯一重载。无法唯一确定时会抛出 `DubboMetadataException`。
+Automatic inference does not guess Java types from JSON alone. The client first obtains service method signatures, then selects a unique overload based on the method name, argument count, and CLR argument types. If no unique overload can be determined, it throws `DubboMetadataException`.
 
-尤其需要注意：
+In particular:
 
-- C# `1234` 是 `int`，`1234L` 是 `long`。
-- 仅从值无法可靠地区分 Java `int` 与 `java.lang.Integer`，或 `long` 与 `java.lang.Long`。
-- `null` 无法提供 CLR 类型信息。
-- 同参数数量且类型兼容的多个 Java 重载可能仍然有歧义。
+- C# `1234` is an `int`; `1234L` is a `long`.
+- A value alone cannot reliably distinguish Java `int` from `java.lang.Integer`, or `long` from `java.lang.Long`.
+- `null` provides no CLR type information.
+- Multiple Java overloads with the same argument count and compatible types can remain ambiguous.
 
-以上情况优先使用显式类型重载。
+Prefer an explicit-type overload in these cases.
 
-### 显式 Java 参数类型 / Explicit Java Parameter Types
+### Explicit Java Parameter Types
 
-显式重载不依赖元数据获取成功，是生产环境中最确定的调用方式。客户端仍可能尽力读取元数据以辅助协议选择，但读取失败不会阻止使用用户提供的签名发送请求：
+Explicit-type overloads do not require metadata lookup to succeed and provide the most deterministic invocation path for production. The client may still attempt a best-effort metadata lookup to assist protocol selection, but a lookup failure does not prevent sending a request with the supplied signature:
 
 ```csharp
 DubboRequestResult job = await client.QueryAsync(
@@ -154,14 +156,14 @@ DubboRequestResult customer = await client.QueryAsync(
     new object[] { "123", 1234L });
 ```
 
-数组中的类型必须是 Provider `$invoke` 能加载的准确 Java 类型名，例如：
+Each type name must be an exact Java type that the Provider's `$invoke` can load, for example:
 
-- 基础类型：`int`、`long`、`boolean`、`double`
-- 包装类型：`java.lang.Integer`、`java.lang.Long`、`java.lang.Boolean`
-- 集合和数组：`java.util.List`、`java.util.Map`、`java.lang.String[]`
-- POJO：`com.foo.api.dto.CustomerRequest`
+- Primitives: `int`, `long`, `boolean`, `double`
+- Wrappers: `java.lang.Integer`, `java.lang.Long`, `java.lang.Boolean`
+- Collections and arrays: `java.util.List`, `java.util.Map`, `java.lang.String[]`
+- POJO: `com.foo.api.dto.CustomerRequest`
 
-### 强类型响应 / Typed Response
+### Typed Response
 
 ```csharp
 public sealed class JobDto
@@ -182,11 +184,11 @@ if (result.QuerySuccess)
 }
 ```
 
-`ResultModle` 使用 `System.Text.Json` 从 `Result` 反序列化。如果本地反序列化失败，详细信息写入 `ErrorMeaasge`；它与 Provider 业务返回是否成功是不同概念。
+`ResultModle` uses `System.Text.Json` to deserialize `Result`. If local deserialization fails, details are written to `ErrorMeaasge`. This is separate from whether the Provider's business result indicates success.
 
-### 高级调用对象 / DubboInvocation
+### DubboInvocation
 
-`DubboInvocation` 适合设置准确签名、服务版本、分组和自定义 attachments：
+Use `DubboInvocation` to specify an exact signature, service version, group, and custom attachments:
 
 ```csharp
 using DubboNet.DubboService.DataModle;
@@ -215,36 +217,36 @@ var invocation = new DubboInvocation(
 DubboRequestResult result = await client.QueryAsync(invocation);
 ```
 
-对于 POJO 参数，客户端会根据 `ParameterTypes` 自动补充泛化调用需要的 `class=<Java FQCN>`。如果 `ParameterTypes` 为空，`DubboClient` 会尝试通过元数据自动推断。
+For POJO parameters, the client automatically supplies the `class=<Java FQCN>` required for generic invocation based on `ParameterTypes`. If `ParameterTypes` is empty, `DubboClient` attempts to infer it from metadata.
 
-### 统一调用 API / Unified Invocation API
+### Unified Invocation API
 
-所有通过 `DubboClient` 发送请求的公共入口统一命名为 `QueryAsync`。常用重载如下：
+All public request entry points on `DubboClient` are named `QueryAsync`. Common overloads include:
 
 ```csharp
-// 无参数
+// No arguments
 await client.QueryAsync("com.foo.HealthService#check");
 
-// 单参数；即使参数本身是数组，也不会被错误展开
+// A single argument; an array argument is not accidentally expanded
 await client.QueryAsync("com.foo.UserService#batchGet", new long[] { 1, 2 });
 
-// 两个或更多参数
+// Two or more arguments
 DubboRequestResult result = await client.QueryAsync(
     "com.foo.CustomerService#getCustomer",
     "123",
     1234L);
 
-// 强类型响应
+// Typed response
 DubboRequestResult<MyResponse> typed = await client.QueryAsync<MyResponse>(
     "com.foo.JobService#getJob",
     1234L);
 ```
 
-release3.0 分支不再公开 `QueryGenericAsync`、原始 JSON 文本重载，以及按请求类型泛型数量扩展的旧重载。迁移时将 `QueryGenericAsync` 改为 `QueryAsync`；显式 Java 类型调用需要把实参放入独立的 `object[]`。字符串现在始终表示一个普通字符串参数，不再被解释为逗号分隔的原始 JSON 请求。
+The release3.0 branch no longer exposes `QueryGenericAsync`, raw JSON text overloads, or the old overloads extended by the number of generic request types. To migrate, replace `QueryGenericAsync` with `QueryAsync`; explicit Java type calls require arguments in a separate `object[]`. A string now always represents an ordinary string argument and is no longer interpreted as comma-separated raw JSON requests.
 
-### 直接使用执行器 / Direct Actuator Usage
+### Direct Actuator Usage
 
-不需要注册中心、已经知道 Provider IP 和端口时，可以直接创建原生执行器。此方式不会提供服务发现、负载均衡或元数据推断，因此应始终传入准确 Java 签名：
+If you already know the Provider IP and port and do not need a registry, create a native actuator directly. This path provides no service discovery, load balancing, or metadata inference, so always supply the exact Java signature:
 
 ```csharp
 using DubboNet.DubboService;
@@ -267,8 +269,8 @@ var invocation = new DubboInvocation(
 DubboRequestResult result = await suite.SendQuery(invocation);
 ```
 
-Dubbo 3.3+ Java Interface 服务也可以直接使用 Triple 第一期执行器。请求会发送到
-`/{service}/{method}`，正文始终是 JSON 参数数组，并携带服务 version/group 路由头：
+Dubbo 3.3+ Java Interface services can also be called directly with the first-phase Triple actuator. Requests are sent to
+`/{service}/{method}`; the body is always a JSON argument array, with service version/group routing headers:
 
 ```csharp
 using var triple = new TripleDubboActuatorSuite(
@@ -289,7 +291,7 @@ var invocation = new DubboInvocation(
 DubboRequestResult result = await triple.SendQuery(invocation);
 ```
 
-Provider 开放 Dubbo Telnet 命令时，也可以显式使用 `DubboActuator` 做诊断：
+If the Provider exposes Dubbo Telnet commands, you can explicitly use `DubboActuator` for diagnostics:
 
 ```csharp
 using DubboNet.DubboService;
@@ -301,11 +303,11 @@ var methods = await telnet.GetDubboServiceFuncAsync(
 var status = await telnet.GetDubboStatusInfoAsync();
 ```
 
-`DubboActuator.SendQuery` 和 `TelnetDubboActuatorSuite` 也保留了 Telnet `invoke` 业务调用能力，但依赖 Provider 开启 Telnet。新业务调用建议使用 `NativeDubboActuatorSuite` 或 `DubboClient`，Telnet 主要用于 `ls`、`status`、`ps`、`trace` 等诊断。
+`DubboActuator.SendQuery` and `TelnetDubboActuatorSuite` also retain Telnet `invoke` business calls, but require Telnet to be enabled on the Provider. For new business calls, use `NativeDubboActuatorSuite` or `DubboClient`; Telnet is primarily for diagnostics such as `ls`, `status`, `ps`, and `trace`.
 
-## 查询方法元数据 / Metadata Inspection
+## Metadata Inspection
 
-可以在调用前查看方法的所有重载：
+Inspect all method overloads before invoking a method:
 
 ```csharp
 using DubboNet.Clients.DataModle;
@@ -315,7 +317,7 @@ IReadOnlyList<DubboMethodMetadata> overloads =
         "com.foo.JobService",
         "getJob");
 
-// 也可以传完整 endpoint。
+// A full endpoint is also accepted.
 IReadOnlyList<DubboMethodMetadata> sameOverloads =
     await client.GetMethodMetadataAsync(
         "com.foo.JobService#getJob");
@@ -331,8 +333,8 @@ foreach (DubboMethodMetadata method in overloads)
         $"{method.Name}({string.Join(", ", method.ParameterTypes)})");
 }
 
-// 仅从元数据中心读取 FullServiceDefinition.types，适合 DubboTester
-// 生成 POJO/集合/嵌套参数编辑器；该接口不会使用 Telnet 回退。
+// Read FullServiceDefinition.types from the metadata center only, for tools
+// such as DubboTester to build POJO/collection/nested parameter editors; no Telnet fallback.
 IReadOnlyList<DubboTypeMetadata> types =
     await client.GetServiceTypesMetadataAsync(
         "com.foo.JobService");
@@ -347,69 +349,69 @@ foreach (DubboTypeMetadata type in types)
 }
 ```
 
-主要字段包括：
+Key fields include:
 
-- `ParameterTypes`、`ReturnType`：准确 Java 签名。
-- `MetadataSource`：`MetadataCenter` 或 `Telnet`。
-- `Application`、`Version`、`Group`：对应 Provider 信息。
-- `MetadataPath`：ZooKeeper 节点、`nacos-config://` 配置位置或 `telnet://` 来源地址。
-- `TypeDefinitions`：FullServiceDefinition 中的 POJO、集合、枚举和引用定义；Telnet 来源通常没有这部分信息。
-- `MetadataVersion`、`LoadedAt`：元数据版本和读取时间；Nacos Config 当前不提供等价节点版本，因此版本为 `-1`。
+- `ParameterTypes`, `ReturnType`: exact Java signatures.
+- `MetadataSource`: `MetadataCenter` or `Telnet`.
+- `Application`, `Version`, `Group`: information about the corresponding Provider.
+- `MetadataPath`: a ZooKeeper node, `nacos-config://` configuration location, or `telnet://` source address.
+- `TypeDefinitions`: POJO, collection, enum, and reference definitions from FullServiceDefinition; Telnet sources generally do not provide these.
+- `MetadataVersion`, `LoadedAt`: metadata version and load time. Nacos Config currently has no equivalent node version, so its version is `-1`.
 
-`GetServiceTypesMetadataAsync` 会先检查完整元数据位置是否存在并安装变化监听，确认存在后才读取数据。ZooKeeper 使用 `exists`/watcher，Nacos 使用 Config listener。位置不存在、连接不可用或文档无效时会抛出包含预期位置的 `DubboMetadataException`；因为 Telnet `ls -l` 不包含 `types`，该接口不会退回 Telnet。成功结果和稳定的“不存在”结论都会按服务缓存，元数据后续创建或修改时会刷新缓存。
+`GetServiceTypesMetadataAsync` first checks whether the full metadata location exists and installs a change listener, then reads the data only after confirming its existence. ZooKeeper uses `exists`/watchers; Nacos uses Config listeners. A missing location, unavailable connection, or invalid document results in a `DubboMetadataException` containing the expected location. Because Telnet `ls -l` does not include `types`, this API never falls back to Telnet. Successful results and stable "not found" conclusions are cached per service; subsequent metadata creation or modification refreshes the cache.
 
-## 元数据策略与缓存 / Metadata Strategy and Cache
+## Metadata Strategy and Cache
 
-客户端读取 Provider URL 的 `release` 字段来选择元数据来源：
+The client uses the Provider URL's `release` field to select metadata sources:
 
-| Provider `release` | 获取顺序 |
+| Provider `release` | Lookup order |
 | --- | --- |
-| `>= 2.7.3` | 元数据中心优先，失败后 Telnet `ls -l` |
-| 已知且 `< 2.7.3` | 直接尝试 Telnet `ls -l` |
-| 缺失或格式无法识别 | 元数据中心优先，失败后 Telnet `ls -l` |
-| 多个 Provider 版本混合 | 只要存在 `>= 2.7.3` 或未知版本，就优先元数据中心 |
+| `>= 2.7.3` | Metadata center first, then Telnet `ls -l` on failure |
+| Known and `< 2.7.3` | Try Telnet `ls -l` directly |
+| Missing or unrecognized format | Metadata center first, then Telnet `ls -l` on failure |
+| Mixed Provider versions | Prefer the metadata center if any Provider is `>= 2.7.3` or has an unknown version |
 
-ZooKeeper 元数据按以下节点结构读取：
+ZooKeeper metadata is read from the following node structure:
 
 ```text
 {MetadataRootPath}/metadata/{interface}/{version?}/{group?}/provider/{application}
 ```
 
-例如：
+For example:
 
 ```text
 /dubbo/metadata/com.foo.JobService/provider/job-service
 ```
 
-Nacos Config 使用 `MetadataRootPath` 去除首尾斜杠后的值作为分组，并按 Dubbo 官方规则生成 DataId：
+For Nacos Config, `MetadataRootPath` with leading and trailing slashes removed is the group. The DataId follows the official Dubbo convention:
 
 ```text
 Group:  {MetadataRootPath}
 DataId: {interface}:{version}:{serviceGroup}:provider:{application}
 ```
 
-例如 `MetadataRootPath=/dubbo-3.3.6` 时，实际 Config 分组为 `dubbo-3.3.6`。
-Nacos Naming 默认分组为 `DEFAULT_GROUP`，Config 元数据默认分组为 `dubbo`；两者独立。
-如果 Provider 将元数据写入自定义分组，需要显式填写 `MetadataRootPath`，不会自动沿用 Naming 分组。
+For example, `MetadataRootPath=/dubbo-3.3.6` selects the Config group `dubbo-3.3.6`.
+Nacos Naming defaults to `DEFAULT_GROUP`, while Config metadata independently defaults to `dubbo`.
+If a Provider writes metadata to a custom group, set `MetadataRootPath` explicitly; the Naming group is not inherited automatically.
 
-行为说明：
+Behavior:
 
-- `MetadataCenterAddress` 不填写时复用注册中心地址及同一个 ZooKeeper 或 Nacos 客户端；也允许注册中心和元数据中心使用不同类型。
-- FullServiceDefinition 成功加载后，会安装 ZooKeeper watch 或 Nacos Config listener。
-- 元数据修改、删除、后续创建以及 Provider application/version/group 变化都会触发缓存刷新；ZooKeeper 会话恢复还会重建 watch。
-- Nacos 为已使用接口每 30 秒检查一次服务目录，新注册的版本/分组无需重建客户端即可发现；同一地址的目录扫描按 Naming 分组复用。已有服务的实例变化仍使用 SDK 订阅。
-- 最后一个可用 Provider 下线后会清空服务驱动；禁用节点和零权重节点不会接收请求，节点恢复后可重新加入。
-- Telnet 元数据按服务缓存；一次探测可能依次尝试该服务的多个 `dubbo://` Provider，直到成功。
-- Telnet 成功结果和“Telnet 不可用”的失败结论都会缓存，一个 `DubboClient` 生命周期内不会对同一服务反复连接。
-- 如果之后创建了已被 watch 的元数据节点，缓存会切回优先级更高的 FullServiceDefinition。
-- 元数据中心瞬时连接失败不会永久缓存；后续请求会重试元数据中心，同时复用已有的 Telnet 正缓存或负缓存。
-- 元数据中心文档存在但缺少目标方法或重载时，客户端会再用同一份一次性 Telnet 结果补充。
-- Telnet 只用于获取方法签名和显式诊断，原生业务调用仍使用 Dubbo TCP。
-- Telnet 回退只能连接注册中心中 `dubbo://` Provider 的地址和端口，不支持另行配置独立 QoS/Telnet 端口。
+- If `MetadataCenterAddress` is omitted, the registry address and the same ZooKeeper or Nacos client are reused. The registry and metadata center may also use different registry types.
+- A successful FullServiceDefinition load installs a ZooKeeper watch or Nacos Config listener.
+- Metadata modification, deletion, subsequent creation, and changes to Provider application/version/group refresh the cache. ZooKeeper session recovery also reinstalls watches.
+- Nacos checks the service directory for referenced interfaces every 30 seconds, discovering newly registered versions/groups without recreating the client. Directory scans for the same address are shared by Naming group. Instance changes within existing services still use SDK subscriptions.
+- When the last available Provider goes offline, the service driver is cleared. Disabled and zero-weight nodes receive no requests and can rejoin after recovery.
+- Telnet metadata is cached per service. A single probe may try multiple `dubbo://` Providers of that service in sequence until one succeeds.
+- Both successful Telnet results and "Telnet unavailable" failures are cached, so the same service is not repeatedly connected to during one `DubboClient` lifetime.
+- If a watched metadata node is created later, the cache switches back to the higher-priority FullServiceDefinition.
+- Transient metadata center connection failures are not cached permanently. Later requests retry the metadata center while reusing the existing positive or negative Telnet cache.
+- If a metadata center document exists but lacks the requested method or overload, the client supplements it with the same one-time Telnet result.
+- Telnet is only used for method signatures and explicit diagnostics; native business invocation still uses Dubbo TCP.
+- Telnet fallback only connects to the address and port of a registered `dubbo://` Provider. A separate QoS/Telnet port cannot be configured.
 
-如果运行期间刚刚为某个服务开启 Telnet，而该 `DubboClient` 已缓存“Telnet 不可用”，请重新创建客户端实例；这是避免每次调用重复建立失败连接的设计选择。
+If Telnet is enabled for a service during runtime after a `DubboClient` has cached "Telnet unavailable", recreate that client. This avoids repeating failed connection attempts on every invocation.
 
-## 客户端配置 / Configuration
+## Configuration
 
 ```csharp
 using var client = new DubboClient(
@@ -417,8 +419,8 @@ using var client = new DubboClient(
     new DubboClient.DubboClientConf
     {
         DubboRootPath = "/dubbo/",
-        MetadataCenterAddress = "metadata-zk:2181", // 可选
-        MetadataRootPath = "/dubbo",                // 可选
+        MetadataCenterAddress = "metadata-zk:2181", // Optional
+        MetadataRootPath = "/dubbo",                // Optional
         DubboRequestTimeout = 60_000,
         TelnetMetadataTimeout = 10_000,
         MaintainServiceNum = 20,
@@ -426,41 +428,41 @@ using var client = new DubboClient(
     });
 ```
 
-ZooKeeper 地址支持多个节点，以逗号分隔。认证字符串可以写成：
+ZooKeeper addresses accept multiple comma-separated nodes. An authentication string can be supplied as:
 
 ```text
 zk-1:2181,zk-2:2181 [digest user:password]
 ```
 
-Nacos 地址必须以 `nacos://` 开头，同样支持逗号分隔的多个节点。可通过查询参数配置命名空间和认证：
+Nacos addresses must start with `nacos://` and also accept multiple comma-separated nodes. Configure namespaces and authentication through query parameters:
 
 ```text
 nacos://nacos-1:8848,nacos-2:8848?namespace=prod&username=nacos&password=nacos
 ```
 
-`namespace` 应填写命名空间 ID，省略、空值或 `public` 表示默认命名空间。还支持 `accessKey` 和 `secretKey` 查询参数。
-查询参数值中的 `+`、`&`、`#` 等特殊字符需要 URL 编码，例如密码中的 `+` 写成 `%2B`。
-主机名、地址顺序和查询参数顺序会规范化；namespace、用户名、密码及密钥的值严格区分大小写。
-等价配置创建的多个 `DubboClient` 共享底层 `MyNacos` 实例（包括先后创建的客户端），一个实例内部包含 Naming 和 Config 两个 SDK 客户端，不表示只使用一条 TCP 连接。
-Naming/Config 订阅按调用方隔离，最后一个订阅者释放时注销监听；没有接口订阅后停止目录刷新。
+Use the namespace ID for `namespace`; omission, an empty value, or `public` selects the default namespace. The `accessKey` and `secretKey` query parameters are also supported.
+Special characters in query values, such as `+`, `&`, and `#`, must be URL-encoded; for example, encode a `+` in a password as `%2B`.
+Hostnames, address order, and query parameter order are normalized; namespace, username, password, and key values are strictly case sensitive.
+Multiple `DubboClient` instances with equivalent configurations share the underlying `MyNacos` instance, including clients created at different times. Each instance contains separate Naming and Config SDK clients; sharing does not mean using only one TCP connection.
+Naming/Config subscriptions are isolated by caller, and listeners are removed when the last subscriber is disposed. Directory refresh stops when there are no interface subscriptions.
 
-**Nacos SDK 生命周期限制：** `nacos-sdk-csharp 1.3.10` 的 `ShutDown()` 不会停止内部 RPC 后台线程。
-因此共享池保留 SDK 实例供后续复用，并将进程内不同连接配置的总数限制为 **32**（包含空闲实例）。
-达到上限时，新配置会明确抛出异常；已有配置仍可继续复用。`Dispose()` 释放本客户端的订阅和业务连接，
-不代表 SDK 的后台连接已退出。需要使用超过 32 个不同地址/namespace/认证组合的应用，应分进程管理或重启进程；
-当前不通过驱逐空闲实例再创建来掩盖 SDK 线程泄漏。
+**Nacos SDK lifecycle limitation:** `nacos-sdk-csharp 1.3.10` does not stop its internal RPC worker threads when `ShutDown()` is called.
+The shared pool therefore retains SDK instances for reuse and limits the total number of distinct connection configurations per process to **32**, including idle instances.
+At the limit, a new configuration throws an explicit exception; existing configurations remain reusable. `Dispose()` removes this client's subscriptions and business connections,
+but does not mean the SDK background connections have exited. Applications requiring more than 32 distinct address/namespace/credential combinations must use separate processes or restart the process.
+The current implementation does not hide SDK thread leaks by evicting idle instances and creating replacements.
 
-### 可选消费者注册 / Optional Consumer Registration
+### Optional Consumer Registration
 
-消费者注册默认关闭。启用后，可让注册中心和兼容的管理平台看到本应用引用的接口。
-它独立于 Provider 订阅及 RPC 调用，不会自动提供动态路由、配置覆盖等治理能力。
+Consumer registration is disabled by default. When enabled, it makes the interfaces referenced by this application visible in the registry and compatible management platforms.
+It is independent of Provider subscriptions and RPC calls and does not automatically add governance features such as dynamic routing or configuration overrides.
 
-配置作用于整个进程中的 `DubboClient`，不属于 `DubboClientConf`。可在创建 client
-之前或运行期间调用 `ConfigureConsumerRegistration`，再次调用即可热切换，无需重建 client。
-每次调用复制配置，单独修改原配置对象不会生效。省略或留空的 `ApplicationName`、`Host`、
-`InstanceId` 继承上次配置，首次启用必须提供应用名；自动生成的实例标识不会因切换而改变。
-`RetryInterval`、`ShutdownTimeout` 每次按传入值（未指定时为默认值）更新。
-同一进程使用同一应用身份；独立进程自动生成不同的实例标识。
+Configuration applies to all `DubboClient` instances in the process, not to `DubboClientConf`. Call
+`ConfigureConsumerRegistration` before creating clients or during runtime; calling it again hot-switches registration without recreating clients.
+Each call copies the options, so modifying the original options object alone has no effect. Omitted or blank `ApplicationName`, `Host`,
+and `InstanceId` inherit their previous values. The first enable operation requires an application name; an automatically generated instance ID remains stable across switches.
+`RetryInterval` and `ShutdownTimeout` are updated from each supplied configuration, using defaults when omitted.
+All clients in one process use the same application identity; separate processes automatically generate different instance IDs.
 
 ```csharp
 using DubboNet.Clients;
@@ -470,7 +472,7 @@ DubboClient.ConfigureConsumerRegistration(new ConsumerRegistrationOptions
 {
     Enabled = true,
     ApplicationName = "orders-dotnet",
-    // 可选：容器、多网卡或 NAT 环境建议明确指定上报的本机 IP。
+    // Optional: explicitly set the advertised local IP for containers, multiple NICs, or NAT.
     // Host = "10.0.0.12",
     RetryInterval = TimeSpan.FromSeconds(10),
     ShutdownTimeout = TimeSpan.FromSeconds(3)
@@ -481,57 +483,58 @@ using (var second = new DubboClient("127.0.0.1:2181"))
 {
     await first.QueryAsync("com.foo.EchoService#echo", "hello");
     await second.QueryAsync("com.foo.EchoService#echo", "world");
-    // 两个 client 的同一服务引用只产生一条共享消费者记录。
+    // Both clients' references to the same service produce one shared consumer record.
 
-    // 运行中关闭：后台注销消费者，RPC 和 Provider 订阅不受影响。
+    // Disable at runtime: unregister in the background; RPC and Provider subscriptions are unaffected.
     DubboClient.ConfigureConsumerRegistration(new ConsumerRegistrationOptions { Enabled = false });
 
-    // 运行中开启：继承原应用身份，补注册仍存活 client 已引用的服务。
+    // Enable at runtime: inherit the application identity and register services still referenced by live clients.
     DubboClient.ConfigureConsumerRegistration(new ConsumerRegistrationOptions { Enabled = true });
 }
 
-// 可选：在宿主关闭过程中等待当前后台注册/注销尝试；网络失败仍会告警并重试。
+// Optional: wait for current background registration/unregistration attempts during host shutdown;
+// network failures still produce warnings and retries.
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 await DubboClient.FlushConsumerRegistrationsAsync(timeout.Token);
 ```
 
-注册与释放规则：
+Registration and disposal rules:
 
-- 仅在 `QueryAsync` 准备调用服务时异步登记。构造 client、读取服务目录或单独查询元数据不会注册。
-- 默认关闭或运行中关闭时也在本地记录服务引用，不进行消费者网络注册；之后启用会补注册，已释放 client 不会复活。
-- 配置调用同步更新期望状态，网络注册/注销在后台串行收敛，不等待注册中心确认。快速连续切换按最新配置收敛，中间状态不保证都上报。
-- 关闭会清理已确认和可能已写入的记录；在途请求不能取消时，等待其返回后继续按最新状态清理。网络故障时注销可能延迟，后台继续重试。
-- 运行中更改应用名、IP 或实例标识时，先确认旧身份注销再注册新身份；旧身份清理失败时不会冒进创建新记录。进程退出开始后不再接受重新启用。
-- 按共享注册中心连接、根路径/Nacos Naming 分组、接口、服务 version/group 去重；不同应用实例不会互相覆盖。
-- 不会针对每次请求重复创建记录。服务引用保留到对应 client 释放；Provider 缓存的淘汰不表示应用不再引用该服务。
-- 一个 client 释放时，仅移除它的引用。该服务的最后一个引用释放时注销；同一连接上的其他服务及 client 不受影响。
-- `DubboInvocation.Version/Group` 指定的是引用服务的版本与分组；未指定时消费者记录保留为空，不臆测某个 Provider 的版本。
-- 注册/注销失败不会阻断 RPC。失败结果和可能已写入的记录保留在后台重试队列；按 `RetryInterval` 起步指数退避，上限为 `max(RetryInterval, 60 秒)`，不同服务独立重试。
-- `FlushConsumerRegistrationsAsync` 可主动触发一次重试并等待当前尝试完成；它不是注册中心确认屏障，也不取消后台工作。等待被取消只结束调用方等待。
-- 告警包含操作、连接标识、接口、根路径、版本/分组、连续失败次数及异常类型链，恢复成功会记录 Info；不输出原始异常消息和连接凭据。连续失败告警会限频。需要控制台输出时设置 `MyCommonHelper.MyLogger.LogPrintLevel = MyCommonHelper.MyLogger.LogType.Warn`（默认 Error）；查看恢复信息可设为 Info。
-- 启用时需要消费者目录/实例的写权限；ZooKeeper 使用认证连接时，新建节点采用创建者 ACL，已有目录 ACL 不会被修改。
-- `Dispose()` 至多等待 `ShutdownTimeout`；超时后的清理继续在共享连接上重试。正常进程退出也会尽力注销。
+- Registration is asynchronous and only starts when `QueryAsync` prepares to invoke a service. Constructing a client, reading the service directory, or querying metadata alone does not register it.
+- Service references are tracked locally even when registration is disabled by default or at runtime, without consumer registration network calls. Enabling registration later catches up; disposed clients are not revived.
+- Configuration calls synchronously update the desired state. Network registration/unregistration converges serially in the background without waiting for registry confirmation. Rapid switches converge to the latest configuration; intermediate states are not guaranteed to be reported.
+- Disabling registration cleans up both confirmed and possibly written records. If an in-flight operation cannot be canceled, cleanup resumes against the latest state after it completes. Network failures can delay unregistration, which continues retrying in the background.
+- Changing the application name, IP, or instance ID at runtime first confirms cleanup of the old identity, then registers the new one. A failed cleanup does not create new records prematurely. Re-enabling is no longer accepted once process shutdown begins.
+- Records are deduplicated by shared registry connection, root path/Nacos Naming group, interface, and service version/group. Different application instances do not overwrite each other.
+- Records are not recreated for every request. A service reference remains until its client is disposed; Provider cache eviction does not mean the application no longer references that service.
+- Disposing one client removes only its references. A service is unregistered when its last reference is released; other services and clients on the same connection are unaffected.
+- `DubboInvocation.Version/Group` identifies the referenced service version and group. Unspecified fields remain empty in the consumer record rather than guessing a Provider's version.
+- Registration/unregistration failures do not block RPC. Failed operations and possibly written records stay in the background retry queue, using exponential backoff from `RetryInterval` up to `max(RetryInterval, 60 seconds)`. Different services retry independently.
+- `FlushConsumerRegistrationsAsync` can trigger a retry and wait for the current attempt. It is not a registry confirmation barrier and does not cancel background work. Canceling the wait only stops the caller from waiting.
+- Warnings include the operation, connection identifier, interface, root path, version/group, consecutive failure count, and exception type chain. Recovery is logged at Info level; raw exception messages and connection credentials are not logged. Repeated failure warnings are rate-limited. For console output, set `MyCommonHelper.MyLogger.LogPrintLevel = MyCommonHelper.MyLogger.LogType.Warn` (the default is Error); use Info to see recovery logs.
+- Enabling registration requires write permissions on consumer directories/instances. With authenticated ZooKeeper connections, new nodes use creator ACLs; existing directory ACLs are not modified.
+- `Dispose()` waits at most `ShutdownTimeout`. After a timeout, cleanup continues retrying on the shared connection. Normal process shutdown also attempts best-effort unregistration.
 
-ZooKeeper 使用 `/{root}/{interface}/consumers/{URL编码的consumer://URL}` 下的临时节点，
-复用现有会话心跳；会话过期时由服务端删除，新会话建立后恢复仍被引用的记录。
-Nacos 使用 `consumers:{interface}:{version}:{group}` 临时实例，通过现有 Naming SDK
-的连接检查及重连重注册维护；消费者实例使用独立的 cluster 标识，避免同机多进程覆盖。
-`RetryInterval` 用于失败重试的基础间隔及会话恢复检查，不是额外的心跳。
-ZooKeeper 新会话仅恢复当前启用、仍被引用的消费者；关闭且清理完成后停止消费者恢复检查。
+ZooKeeper uses ephemeral nodes under `/{root}/{interface}/consumers/{URL-encoded consumer://URL}`
+and reuses existing session heartbeats. The server deletes nodes when the session expires; a new session restores records that are still referenced.
+Nacos uses ephemeral instances named `consumers:{interface}:{version}:{group}`, maintained by the existing Naming SDK's
+connection checks and re-registration on reconnect. Consumer instances use a separate cluster identifier to avoid collisions between processes on the same host.
+`RetryInterval` is the base interval for failure retries and session recovery checks, not an additional heartbeat.
+A new ZooKeeper session only restores consumers that are enabled and still referenced; consumer recovery checks stop once registration is disabled and cleanup is complete.
 
-Nacos 的空闲连接仍保留在进程级池中，因此最后一个服务引用释放后会显式注销，不能依赖
-SDK 连接断开。进程崩溃或被强制终止时，ZooKeeper/Nacos 的会话或连接失效机制最终清理
-临时记录；网络断开后的清理不是瞬时发生，时间由服务端超时配置决定。
+Idle Nacos connections remain in the process-wide pool, so releasing the last service reference explicitly unregisters it rather than relying on SDK disconnection.
+If the process crashes or is forcibly terminated, ZooKeeper/Nacos session or connection expiration eventually removes ephemeral records.
+Cleanup after network disconnection is not instantaneous; its timing depends on server timeout settings.
 
-如果进程仍在运行、共享连接也健康，但业务忘记 `Dispose`，心跳无法判断该 client
-已经不再使用；消费者记录可能继续存在。应使用 `using` 或由 DI 容器管理生命周期，
-在宿主关闭时释放 client。GC/finalizer 和进程退出回调都不能替代确定性的释放。
+If the process and shared connection remain healthy but the application forgets to call `Dispose`, heartbeats cannot determine that a client is no longer used,
+and consumer records may remain. Use `using` or DI-managed lifetimes and dispose clients during host shutdown.
+GC/finalizers and process-exit callbacks do not replace deterministic disposal.
 
-### 直接读取 Nacos 服务目录
+### Direct Nacos Directory Access
 
-`MyNacos` 是公开的 Nacos 包装器。它的公共签名只包含 .NET 和 DubboNet 自有类型，应用（例如 DubboTester）
-无需直接引用或调用 `nacos-sdk-csharp`。除 DubboClient 内部的服务发现和元数据读取外，它还提供与
-`MyZookeeper` 目录读取能力对应的 Naming/Config API：
+`MyNacos` is a public Nacos wrapper whose public signatures contain only .NET and DubboNet-owned types. Applications such as DubboTester
+do not need to reference or call `nacos-sdk-csharp` directly. In addition to internal DubboClient service discovery and metadata lookup, it provides
+Naming/Config APIs corresponding to the directory access capabilities of `MyZookeeper`:
 
 ```csharp
 using DubboNet.Clients.DataModle;
@@ -539,99 +542,99 @@ using DubboNet.Clients.RegistryClient;
 
 using var nacos = new MyNacos("nacos://127.0.0.1:8848");
 
-// 枚举当前 namespace 中包含 Dubbo Provider 的所有 Naming 分组。
+// List all Naming groups containing Dubbo Providers in the current namespace.
 IReadOnlyList<string> roots = await nacos.ListRegistryRootsAsync();
 
-// 枚举指定分组中的 Java 接口名（已去除 providers:、version、service group 等 Nacos 编码信息）。
+// List Java interface names in a group, without providers:, version, or service group encoding.
 IReadOnlyList<string> services = await nacos.ListServicesAsync("dubbo-3.3.6");
 
-// 获取接口下的全部 Provider；包含禁用/不健康节点，方便测试或管理工具完整展示目录。
+// Get all Providers of an interface, including disabled/unhealthy nodes for a complete directory view.
 IReadOnlyList<DubboServiceEndPointInfo> providers = await nacos.GetProvidersAsync(
     "com.example.dubbonet.api.EchoService",
     "dubbo-3.3.6");
 
-// 需要保留 Nacos 原始实例元数据时，先枚举原始服务名，再读取 DubboNet 自有实例 DTO。
+// To retain raw Nacos instance metadata, list raw service names and read DubboNet-owned instance DTOs.
 IReadOnlyList<string> rawServices = await nacos.ListNacosServicesAsync("dubbo-3.3.6");
 IReadOnlyList<NacosServiceInstanceInfo> instances = await nacos.GetServiceInstancesAsync(
     rawServices[0],
     "dubbo-3.3.6");
 ```
 
-常用公开能力：
+Common public APIs:
 
-- `ListCatalogServicesAsync`：读取当前 namespace 的原始 Naming 目录及分组、实例统计。
-- `ListRegistryRootsAsync`：返回含 Dubbo Provider 的 Naming 分组。
-- `ListServicesAsync`：返回指定分组中的 Dubbo Java 接口名。
-- `ListNacosServicesAsync` / `GetServiceInstancesAsync`：读取原始服务与实例元数据，返回值不含 Nacos SDK 类型。
-- `GetProvidersAsync`：返回可直接映射到服务树的 `DubboServiceEndPointInfo`。
-- `SubscribeServiceAsync` / `SubscribeConfigAsync`：监听实例或配置变化；通过 `RemoveSubscriber` 统一取消。
-- `GetConfigAsync` / `ConfigExistsAsync`：读取任意 Nacos Config 配置。
-- `TestConnectionAsync` / `GetServerStatusAsync`：连接检测和 Naming 服务状态。
+- `ListCatalogServicesAsync`: reads the raw Naming catalog, groups, and instance statistics in the current namespace.
+- `ListRegistryRootsAsync`: returns Naming groups containing Dubbo Providers.
+- `ListServicesAsync`: returns Dubbo Java interface names in a specified group.
+- `ListNacosServicesAsync` / `GetServiceInstancesAsync`: reads raw service and instance metadata without returning Nacos SDK types.
+- `GetProvidersAsync`: returns `DubboServiceEndPointInfo` for direct mapping to a service tree.
+- `SubscribeServiceAsync` / `SubscribeConfigAsync`: subscribes to instance or configuration changes; use `RemoveSubscriber` to unsubscribe.
+- `GetConfigAsync` / `ConfigExistsAsync`: reads arbitrary Nacos Config configurations.
+- `TestConnectionAsync` / `GetServerStatusAsync`: checks connectivity and Naming server status.
 
-分组自动发现使用 Nacos Catalog API，因为 Naming SDK 只能枚举一个已知分组；已知分组内的服务、实例和订阅
-仍由 Naming SDK 处理。连接字符串中的 `username`/`password` 会用于 Catalog API 登录并缓存访问令牌，
-多节点地址会按顺序容错。`accessKey`/`secretKey` 继续用于 Naming/Config SDK 请求；不同 Nacos 认证插件若不支持
-标准 Token 登录，应直接调用 `ListServicesAsync(已知分组)`，或改用兼容标准 Catalog API 的账号。
+Automatic group discovery uses the Nacos Catalog API because the Naming SDK can only enumerate a known group. Services, instances, and subscriptions
+within known groups still use the Naming SDK. The connection string's `username`/`password` are used for Catalog API login and cached access tokens;
+multi-node addresses provide sequential failover. `accessKey`/`secretKey` remain in use for Naming/Config SDK requests. If a Nacos authentication plugin does not
+support standard token login, call `ListServicesAsync(knownGroup)` directly or use an account compatible with the standard Catalog API.
 
-EN: Nacos Naming defaults to `DEFAULT_GROUP`, while Config metadata independently defaults to `dubbo`.
+Nacos Naming defaults to `DEFAULT_GROUP`, while Config metadata independently defaults to `dubbo`.
 Equivalent addresses share clients, but namespaces and credentials are case sensitive. Catalogs refresh every 30 seconds.
 The SDK cannot shut down RPC workers, so a bounded process-wide pool retains at most 32 distinct configurations;
 disposing a DubboClient removes its subscriptions and business connections, not the retained SDK workers.
 
-| 配置项 | 默认值 | 说明 |
+| Setting | Default | Description |
 | --- | ---: | --- |
-| `DubboRootPath` | 自动 | ZooKeeper 默认 `/dubbo/`；Nacos Naming 默认 `DEFAULT_GROUP`（自动去除首尾 `/`） |
-| `MetadataCenterAddress` | 注册中心地址 | ZooKeeper 或 `nacos://` Nacos 元数据中心；相同地址会复用客户端 |
-| `MetadataRootPath` | 自动 | Nacos Config 默认 `dubbo`；ZooKeeper 沿用 ZooKeeper 注册根路径，混合中心时默认 `/dubbo` |
-| `DubboRequestTimeout` | `60000` ms | 业务请求最大等待时间 |
-| `TelnetMetadataTimeout` | `10000` ms | 单次 Telnet 元数据探测超时；非正数会恢复默认值 |
-| `MaintainServiceNum` | `20` | 可复用服务驱动数量；`0` 表示不限制 |
-| `NowLoadBalanceMode` | `Random` | 当前负载策略 |
-| `DubboActuatorSuiteMaxConnections` | `20` | 执行器最大连接数；主要影响 Telnet 连接池，原生执行器使用单 TCP 连接多路复用 |
-| `DubboActuatorSuiteAssistConnectionAliveTime` | `300` 秒 | Telnet 辅助连接空闲释放时间；`0` 表示不主动释放 |
-| `DubboActuatorSuiteMasterConnectionAliveTime` | `1200` 秒 | Telnet 主连接空闲释放时间；`0` 表示不主动释放 |
-| `DefaultServiceName` | `null` | 省略服务名时使用的默认接口名 |
-| `DefaultFuncName` | `null` | endpoint 为空时使用的默认方法名 |
+| `DubboRootPath` | Automatic | ZooKeeper: `/dubbo/`; Nacos Naming: `DEFAULT_GROUP` (leading/trailing `/` removed automatically) |
+| `MetadataCenterAddress` | Registry address | ZooKeeper or `nacos://` Nacos metadata center; the same address reuses the client |
+| `MetadataRootPath` | Automatic | Nacos Config: `dubbo`; ZooKeeper: the ZooKeeper registry root, or `/dubbo` for mixed registry/metadata center types |
+| `DubboRequestTimeout` | `60000` ms | Maximum wait for a business request |
+| `TelnetMetadataTimeout` | `10000` ms | Timeout for one Telnet metadata probe; non-positive values revert to the default |
+| `MaintainServiceNum` | `20` | Number of reusable service drivers; `0` means unlimited |
+| `NowLoadBalanceMode` | `Random` | Current load-balancing strategy |
+| `DubboActuatorSuiteMaxConnections` | `20` | Maximum actuator connections; mainly affects the Telnet pool, while the native actuator multiplexes a single TCP connection |
+| `DubboActuatorSuiteAssistConnectionAliveTime` | `300` seconds | Idle timeout for Telnet auxiliary connections; `0` disables proactive release |
+| `DubboActuatorSuiteMasterConnectionAliveTime` | `1200` seconds | Idle timeout for the Telnet master connection; `0` disables proactive release |
+| `DefaultServiceName` | `null` | Default interface when the service name is omitted |
+| `DefaultFuncName` | `null` | Default method when the endpoint is empty |
 
-负载策略说明：
+Load-balancing strategies:
 
-- `Random`：加权随机，使用共享随机源及 64 位权重累计。
-- `RoundRobin`：并发安全的平滑加权轮询，状态按方法隔离，支持 Provider 权重更新。
-- `LeastActive`：选择当前消费者在途请求数最少的节点；活跃数相同时加权随机。
-- `P2CLoadBalance`：按权重抽取两个不同节点，比较本地在途请求数，同分加权随机；不依赖 Telnet 的 Provider load，Native/Triple 同样有效。这里的权重影响候选抽样和平局选择，不保证最终流量严格按权重分配。
-- `ShortestResponse`：基于最近 30 秒成功请求的平均耗时与在途请求数计算估算响应时间，同分加权随机。失败调用单独计数并加入超时量级的评分惩罚，不会把快速失败视为快速成功响应。返回正常业务数据但业务 `code` 失败的结果不会被当作协议失败。
-- `ConsistentHash`：使用稳定 MurmurHash2、UTF-8 请求内容和每节点 160 个虚拟节点；相同候选集和相同请求内容在不同进程中映射一致，不保证与 Java Dubbo 的 Hash 实现互通。未提供 Hash key 时使用加权随机。
+- `Random`: weighted random selection using a shared random source and 64-bit cumulative weights.
+- `RoundRobin`: concurrency-safe smooth weighted round robin, with per-method state and Provider weight updates.
+- `LeastActive`: selects the node with the fewest in-flight requests observed by this consumer; ties use weighted random selection.
+- `P2CLoadBalance`: samples two distinct nodes by weight and compares their local in-flight request counts, breaking ties with weighted random selection. It does not depend on Telnet Provider load and works for Native/Triple. Weights affect candidate sampling and tie-breaking, not a guarantee of strictly proportional final traffic.
+- `ShortestResponse`: estimates response time from the mean duration of successful requests over the last 30 seconds and the in-flight request count, breaking ties with weighted random selection. Failed calls are counted separately and incur a timeout-scale score penalty; fast failures are not treated as fast successful responses. Normal business data with a failing business `code` is not counted as a protocol failure.
+- `ConsistentHash`: uses stable MurmurHash2, UTF-8 request content, and 160 virtual nodes per node. The same candidate set and request content map consistently across processes; compatibility with Java Dubbo's hash implementation is not guaranteed. With no hash key, selection falls back to weighted random.
 
-活跃数是本 `DubboClient` 观察到的在途请求数，不是服务端全局负载或 TCP 连接数；连接可以多路复用。
-统计按 Provider、服务、方法签名及调用指定的 version/group 隔离，不混用同节点上的快慢方法。
-在统一发送入口中仅登记一次，成功、失败、超时、取消或异常均释放预占计数；节点移除或服务缓存淘汰不会提前关闭仍被在途请求持有的连接。显式释放整个 client 仍会关闭它持有的连接。
-旧统计窗口到期后不把节点直接当作 `0ms` 最快；无样本节点按 5 秒探测间隔、最多一个冷启动探测在途调用进行探测。
-如果全部节点都没有可用样本且均忙碌，则回退到最少活跃选择；该机制不是限流器。统计从空窗口开始，适合长生命周期 client，不能代表其他进程的负载。
-方法状态会随节点移除清理，并限制空闲签名缓存；计时使用单调时钟。选择节点、轮询状态及预占计数的更新在短临界区内完成，不在其中等待网络响应。
-本次优化不增加 RPC 自动重试或熔断，不改变默认 `Random` 和公开接口。
+Active counts represent in-flight requests observed by this `DubboClient`, not global server load or TCP connection counts; connections can be multiplexed.
+Statistics are isolated by Provider, service, method signature, and invocation version/group, so fast and slow methods on the same node do not share them.
+The unified send entry point reserves a count exactly once, releasing it on success, failure, timeout, cancellation, or exception. Node removal and service cache eviction do not prematurely close connections still held by in-flight requests. Explicitly disposing the entire client still closes its connections.
+An expired statistics window does not make a node the fastest with `0ms`. Nodes without samples are probed at 5-second intervals, with at most one cold-start probe in flight.
+If all nodes lack usable samples and are busy, selection falls back to least active; this is not a rate limiter. Statistics start with an empty window, suit long-lived clients, and do not represent other processes' load.
+Method state is cleaned up when nodes are removed, and idle signature caches are bounded. Timing uses a monotonic clock. Node selection, round-robin state, and reservation updates happen in short critical sections that do not wait for network responses.
+These optimizations add neither automatic RPC retries nor circuit breaking, and do not change the default `Random` strategy or public APIs.
 
-**一致性 Hash 升级注意：** 旧实现使用进程随机化的 `HashCode.Combine` 和 ASCII 请求编码；
-切换为稳定 Hash、UTF-8 及新虚拟节点数后，已有 key 的节点映射会改变。依赖会话亲和或本地缓存的应用应协调升级，不能假定新旧版本混用期间路由一致。
+**Consistent hash upgrade note:** the old implementation used process-randomized `HashCode.Combine` and ASCII request encoding.
+Switching to a stable hash, UTF-8, and a new virtual-node count changes existing key-to-node mappings. Applications relying on session affinity or local caches must coordinate upgrades; do not assume consistent routing while old and new versions coexist.
 
-## 返回结果 / Result Semantics
+## Result Semantics
 
-`DubboRequestResult` 的常用字段：
+Common `DubboRequestResult` fields:
 
-| 字段 | 含义 |
+| Field | Meaning |
 | --- | --- |
-| `QuerySuccess` | 传输和 Dubbo 调用层是否成功，不代表业务成功 |
-| `Result` | 响应值转换后的 JSON 字符串 |
-| `RawResult` | 转换为 JSON 前的动态 .NET 值，仅原生 Dubbo 执行器提供 |
-| `ErrorMeaasge` | 连接、超时、协议、Provider 异常或本地反序列化错误详情 |
-| `RequestElapsed` | 包含网络等待的客户端请求耗时，毫秒 |
-| `ServiceElapsed` | Telnet/HTTP 模式可用的服务耗时；原生 Dubbo 默认不提供 Provider 执行耗时 |
-| `ServiceElapsedAvailable` | `ServiceElapsed` 是否有实际意义 |
-| `RequestId` | 原生 Dubbo Request ID |
-| `ResponseStatus` | 原生 Dubbo response status；`20` 表示协议成功 |
-| `SerializationId` | Dubbo 帧中的序列化 ID；Hessian2 为 `2` |
-| `ResponseAttachments` | 原生 Dubbo 响应 attachments |
+| `QuerySuccess` | Success at the transport and Dubbo invocation layers, not business success |
+| `Result` | Response value converted to a JSON string |
+| `RawResult` | Dynamic .NET value before JSON conversion; provided only by the native Dubbo actuator |
+| `ErrorMeaasge` | Details of connection, timeout, protocol, Provider exception, or local deserialization errors |
+| `RequestElapsed` | Client request duration including network waits, in milliseconds |
+| `ServiceElapsed` | Service duration when available in Telnet/HTTP modes; native Dubbo does not provide Provider execution time by default |
+| `ServiceElapsedAvailable` | Whether `ServiceElapsed` is meaningful |
+| `RequestId` | Native Dubbo Request ID |
+| `ResponseStatus` | Native Dubbo response status; `20` means protocol success |
+| `SerializationId` | Serialization ID in the Dubbo frame; Hessian2 is `2` |
+| `ResponseAttachments` | Native Dubbo response attachments |
 
-下面这种响应中，即使业务字段 `success` 为 `false`，只要传输、协议和 Provider 方法执行正常，`QuerySuccess` 仍可能是 `true`：
+For a response such as the following, `QuerySuccess` can still be `true` even when the business field `success` is `false`, provided transport, protocol handling, and Provider method execution completed normally:
 
 ```json
 {
@@ -641,120 +644,120 @@ disposing a DubboClient removes its subscriptions and business connections, not 
 }
 ```
 
-因此应分别处理两层状态：
+Handle the two layers separately:
 
 ```csharp
 if (!result.QuerySuccess)
 {
-    // 连接、超时、Dubbo status、Provider 抛出的异常等调用层错误。
+    // Invocation-layer errors: connection, timeout, Dubbo status, Provider-thrown exceptions, etc.
     Console.WriteLine(result.ErrorMeaasge);
 }
 else
 {
-    // 再根据 Result 或 ResultModle 中的 code/success 判断业务是否成功。
+    // Then check code/success in Result or ResultModle for business success.
 }
 ```
 
-## 版本兼容性 / Compatibility
+## Compatibility
 
-下表区分“已经真实验证”和“满足条件时的兼容路径”，不表示对整个 Dubbo 版本线作无条件承诺。
+The table distinguishes real-environment verification from conditional compatibility paths. It is not an unconditional support commitment for an entire Dubbo version line.
 
-| 组件或版本 | 支持状态 | 说明 |
+| Component or version | Support status | Notes |
 | --- | --- | --- |
-| .NET 10 | **当前目标** | 库、示例和测试均目标化 `net10.0`，CI 使用 .NET 10 SDK |
-| .NET 6/7/8/9 | **当前分支不支持引用** | 本分支不再提供较低版本 TFM；此前个人项目已发布包不会因本次修改被替换 |
-| .NET Framework / .NET Standard | **当前包不支持** | 未提供 `netstandard2.0`、`netstandard2.1` 或 .NET Framework 目标 |
-| ZooKeeper 经典接口级注册 | **支持** | 读取 `/dubbo/{interface}/providers` 并注册 watch |
-| Nacos 2.5.4 接口级注册 | **真实验证** | 使用 Naming 服务发现/订阅 Provider，并从 Config 读取/监听远程元数据；已验证 Dubbo 3.2.20、3.3.6 |
-| Consul、Kubernetes 等其他注册中心 | **未实现** | 当前 `DubboClient` 实现 ZooKeeper 与 Nacos |
-| Dubbo 2.7.3 + `dubbo://` + Hessian2 | **真实验证** | 已验证无参数、单参数、双参数调用以及元数据/Telnet 回退 |
-| Dubbo `>= 2.7.3` 的其他版本 | **条件兼容，未逐版本验证** | 需要经典 ZooKeeper 接口级目录、`dubbo://`、Hessian2 和 `$invoke` 泛化能力 |
-| Dubbo `< 2.7.3` | **条件兼容，未逐版本验证** | 自动签名依赖 Provider Telnet；也可完全绕过元数据并显式传入 Java 类型 |
-| Dubbo 3.x 的 classic `dubbo://` 兼容模式 | **真实验证（指定版本）** | ZooKeeper/Nacos 下已验证 3.2.20、3.3.6 的 Dubbo2/Hessian2 `$invoke` Provider；其他版本仍需实测 |
-| Dubbo 3 应用级服务发现 | **未实现** | 未实现 Dubbo 3 application-level service discovery 元数据布局 |
-| Dubbo 3.3.6 + `tri://` + Java Interface Unary JSON | **真实验证（第一期）** | 支持 HTTP/1.1、`application/json`、version/group/timeout 头和 attachments |
-| Triple Protobuf/IDL、流式调用、gRPC framing | **未实现** | 第一期仅覆盖 Java Interface Unary HTTP/JSON，不宣称完整 Triple/gRPC 能力 |
-| Dubbo Telnet/QoS | **可选** | 仅在 Provider 地址和端口开放相关命令时用于元数据兜底和诊断 |
-| 显式 version/group 路由 | **严格匹配（兼容性变化）** | 非空 `Version` / `Group` 按大小写精确匹配 Provider 身份，不再回退到其他版本/分组；未指定的字段不加约束。没有匹配节点时返回无可用 Provider |
+| .NET 10 | **Current target** | Library, examples, and tests target `net10.0`; CI uses the .NET 10 SDK |
+| .NET 6/7/8/9 | **Cannot reference the current branch** | No lower TFM is provided by this branch; this change does not replace previously published personal-project packages |
+| .NET Framework / .NET Standard | **Not supported by the current package** | No `netstandard2.0`, `netstandard2.1`, or .NET Framework target |
+| Classic interface-level ZooKeeper registration | **Supported** | Reads `/dubbo/{interface}/providers` and installs watches |
+| Nacos 2.5.4 interface-level registration | **Verified in a real environment** | Naming Provider discovery/subscriptions and Config remote metadata reads/listeners; verified with Dubbo 3.2.20 and 3.3.6 |
+| Other registries such as Consul or Kubernetes | **Not implemented** | `DubboClient` currently implements ZooKeeper and Nacos |
+| Dubbo 2.7.3 + `dubbo://` + Hessian2 | **Verified in a real environment** | No-argument, single-argument, two-argument calls, and metadata/Telnet fallback verified |
+| Other Dubbo versions `>= 2.7.3` | **Conditionally compatible; not verified individually** | Requires classic interface-level ZooKeeper directories, `dubbo://`, Hessian2, and `$invoke` generic invocation |
+| Dubbo `< 2.7.3` | **Conditionally compatible; not verified individually** | Automatic signatures depend on Provider Telnet; explicit Java types can bypass metadata entirely |
+| Classic `dubbo://` compatibility mode in Dubbo 3.x | **Verified for specific versions** | Dubbo2/Hessian2 `$invoke` Providers in 3.2.20 and 3.3.6 verified with ZooKeeper/Nacos; other versions still require testing |
+| Dubbo 3 application-level service discovery | **Not implemented** | The Dubbo 3 application-level service discovery metadata layout is not implemented |
+| Dubbo 3.3.6 + `tri://` + Java Interface Unary JSON | **Verified in a real environment (first phase)** | HTTP/1.1, `application/json`, version/group/timeout headers, and attachments |
+| Triple Protobuf/IDL, streaming, gRPC framing | **Not implemented** | The first phase only covers Java Interface Unary HTTP/JSON, not full Triple/gRPC capabilities |
+| Dubbo Telnet/QoS | **Optional** | Metadata fallback and diagnostics only when the registered Provider address and port expose the required commands |
+| Explicit version/group routing | **Strict matching (compatibility change)** | Non-empty `Version` / `Group` must match Provider identities exactly, including case, with no fallback to another version/group. Unspecified fields impose no constraint. No matching nodes results in no available Provider |
 
-## 协议与序列化限制 / Protocol and Serialization Limits
+## Protocol and Serialization Limits
 
-原生执行器当前有以下边界：
+The native actuator currently has the following boundaries:
 
-- 使用 16 字节经典 Dubbo2 TCP 帧头，普通双向 Hessian2 请求 flag 为 `0xc2`。
-- 请求体中的 Dubbo protocol version 固定为 `2.0.2`，它与 Provider 框架 `release` 不是同一个版本。
-- 只发送 `$invoke` 泛化调用，不发送强类型 Java 接口调用。
-- **仅支持 Hessian2，serialization id 为 `2`**。Provider 返回其他序列化 ID 时会失败。
-- Provider URL 中的 `serialization` 和 `prefer.serialization` 当前不会切换客户端编码器。
-- 支持常用标量、字符串、日期、二进制、数组、集合、Map 和 POJO；未覆盖的 Hessian2 tag 会作为协议错误返回。
-- POJO 通过带 `class` 的泛化 Map 编码；字段名和 Java DTO 属性必须匹配。
-- Telnet 输出中的源码式泛型参数会先做 Java 类型擦除，例如 `java.util.Map<String, Long>` 会转换成 `java.util.Map`。
-- 单个原生 TCP 连接按 Request ID 多路复用并发请求；写入串行，响应可以乱序返回。
-- 单个收到的 response body 默认上限为 8 MiB，当前没有 `DubboClientConf` 配置项修改该限制。
-- Hessian2 响应的 wire 嵌套和转换为 JSON 时的引用展开深度分别限制为 64 层；浅层 wire 数据也可能因共享引用形成深链而被拒绝。错误信息会区分 wire nesting 与 reference expansion。分块字符串/二进制使用迭代拼接，块数不计作嵌套深度。
-- 为防止小响应通过共享引用放大内存，返回值/异常与 attachments 共用 100,000 个展开节点（容器与值）及 32 MiB 保守 JSON 体积预算；重复引用每次展开均计费，字符串按 UTF-16 字符最坏转义长度估算，因此可能在实际 JSON 达到 32 MiB 前拒绝。超限返回可捕获的协议错误，不把合法共享引用替换为占位符。这些安全上限当前不可配置；超大或深链响应请在服务端分页/简化。
-- 支持应答 Provider 发来的双向 event/heartbeat 帧。
-- 不提供 TLS 传输或 Dubbo 自定义序列化扩展。
-- 请求写入失败后不会自动重放，以避免 Provider 已执行但客户端误判失败时产生重复业务操作；后续请求会重新建连。
-- ZooKeeper Provider URL 的 host 当前必须是 IP 地址，域名/主机名不会自动解析。
+- Uses the classic 16-byte Dubbo2 TCP header; the flag for normal two-way Hessian2 requests is `0xc2`.
+- The Dubbo protocol version in the request body is fixed at `2.0.2`, distinct from the Provider framework's `release`.
+- Sends only `$invoke` generic invocations, not strongly typed Java interface invocations.
+- **Only Hessian2 is supported, with serialization ID `2`.** Responses using other serialization IDs fail.
+- Provider URL fields `serialization` and `prefer.serialization` do not currently switch the client encoder.
+- Supports common scalars, strings, dates, binary data, arrays, collections, Maps, and POJO. Unsupported Hessian2 tags produce protocol errors.
+- POJO parameters are encoded as generic Maps with `class`; field names must match Java DTO properties.
+- Source-style generic parameters in Telnet output undergo Java type erasure; for example, `java.util.Map<String, Long>` becomes `java.util.Map`.
+- A single native TCP connection multiplexes concurrent requests by Request ID. Writes are serialized; responses may arrive out of order.
+- A received response body is limited to 8 MiB by default, with no current `DubboClientConf` setting to change it.
+- Hessian2 response wire nesting and reference-expansion depth during JSON conversion are each limited to 64 levels. Even shallow wire data can be rejected if shared references form a deep expansion chain. Errors distinguish wire nesting from reference expansion. Chunked strings/binary are assembled iteratively; chunk counts do not count as nesting depth.
+- To prevent small responses from amplifying memory through shared references, return values/exceptions and attachments share a budget of 100,000 expanded nodes (containers and values) and a conservative 32 MiB JSON size estimate. Each repeated reference expansion is charged again; strings are estimated using the worst-case escaped size of UTF-16 characters, so rejection can occur before actual JSON reaches 32 MiB. Exceeding limits produces a catchable protocol error rather than replacing valid shared references with placeholders. These safety limits are not configurable; paginate or simplify very large or deeply chained responses on the server.
+- Responds to two-way event/heartbeat frames sent by Providers.
+- Does not provide TLS transport or custom Dubbo serialization extensions.
+- Failed request writes are not replayed automatically, avoiding duplicate business operations when the Provider may already have executed the request. Later requests reconnect.
+- Hosts in ZooKeeper Provider URLs must currently be IP addresses; domains/hostnames are not automatically resolved.
 
-更详细的帧头、请求体字段和响应结果 flag 请阅读 [Docs/NativeDubboProtocol.md](Docs/NativeDubboProtocol.md)。
+See [Docs/NativeDubboProtocol.md](Docs/NativeDubboProtocol.md) for frame headers, request fields, and response result flags.
 
-Triple 第一期的请求格式、路由头和明确边界请阅读 [Docs/TripleProtocol.md](Docs/TripleProtocol.md)。
+See [Docs/TripleProtocol.md](Docs/TripleProtocol.md) for the first-phase Triple request format, routing headers, and explicit limitations.
 
-Triple 每次请求使用一个覆盖响应头和完整响应体读取的截止时间。Provider URL 的 `timeout` 优先于客户端 `DubboRequestTimeout`（可更长或更短），未声明时使用客户端默认值；有效值最少为 1 ms。内部 `HttpClient.Timeout` 关闭，避免两个超时隐式竞争。
+Each Triple request uses one deadline covering both response headers and the entire response body. The Provider URL's `timeout` overrides the client's `DubboRequestTimeout` and may be longer or shorter. If absent, the client default applies; the effective value is at least 1 ms. Internal `HttpClient.Timeout` is disabled to avoid competing timeouts.
 
-直接使用 Native/Triple 执行器的 `SendQuery(invocation, cancellationToken)` 时，调用方取消仍按现有约定返回 `QuerySuccess == false` 的失败结果，而非让 Task 进入 Canceled 状态；不能依赖 `Task.WhenAll` 自动传播取消，需由上层检查结果/令牌并决定整批操作是否终止。Triple 的 `ErrorMeaasge` 明确区分 `canceled by caller` 与 `timed out after N ms`；取消与截止时间同时触发时优先标记调用方取消。参数错误和对已释放执行器的调用仍可直接抛异常。
+When calling Native/Triple `SendQuery(invocation, cancellationToken)` directly, caller cancellation follows the existing convention of returning a failure result with `QuerySuccess == false`, rather than putting the Task into the Canceled state. Do not rely on `Task.WhenAll` to propagate cancellation automatically; the caller must check results/tokens and decide whether to stop the batch. Triple's `ErrorMeaasge` distinguishes `canceled by caller` from `timed out after N ms`; caller cancellation takes precedence when both cancellation and the deadline fire. Invalid arguments and calls to a disposed actuator can still throw directly.
 
-## 使用建议 / Recommendations
+## Recommendations
 
-1. **复用 `DubboClient`。** 长生命周期实例才能充分复用 ZooKeeper/Nacos、Provider TCP 连接、服务驱动和元数据缓存。
-2. **统一使用 `QueryAsync`。** 普通调用让客户端自动推断签名；类型有歧义时使用显式 Java 类型重载。
-3. **关键接口显式传类型。** 对重载、包装类型、`null`、集合和 POJO，显式 Java 类型比运行时推断更稳定。
-4. **优先建设元数据中心。** Telnet 是可选的兜底能力，不应成为生产调用的唯一元数据来源；不要把诊断端口暴露到不可信网络。
-5. **确认 Provider URL 完整。** 元数据中心定位依赖 `application`，服务路由还可能依赖 `version` 和 `group`。
-6. **分别判断调用成功和业务成功。** 先检查 `QuerySuccess`，再检查业务响应中的 `code`、`success` 等字段。
-7. **谨慎重试非幂等请求。** 超时或连接中断不代表 Provider 一定没有执行，请由业务幂等键和重试策略兜底。
-8. **根据服务数量配置缓存。** 大量调用不同接口时提高 `MaintainServiceNum`，或设为 `0`；同时关注连接和内存占用。
-9. **按业务选择负载模式。** 默认 `Random` 适合通用场景；`LeastActive`、P2C 和 `ShortestResponse` 基于消费者本地统计，不需要开放 Telnet 诊断端口；`ConsistentHash` 适合需要请求亲和的场景，升级时注意映射变化。
-10. **部署前用真实 Provider 做兼容测试。** 尤其是未在兼容矩阵中标记为“真实验证”的 Dubbo 版本、复杂 POJO 和自定义 Hessian 类型。
+1. **Reuse `DubboClient`.** Long-lived instances make full use of shared ZooKeeper/Nacos clients, Provider TCP connections, service drivers, and metadata caches.
+2. **Use `QueryAsync` consistently.** Let the client infer signatures for ordinary calls; use explicit Java type overloads when types are ambiguous.
+3. **Specify types for critical interfaces.** Explicit Java types are more predictable than runtime inference for overloads, wrappers, `null`, collections, and POJO.
+4. **Prefer a metadata center.** Telnet is an optional fallback and should not be the only metadata source for production calls. Do not expose diagnostic ports to untrusted networks.
+5. **Ensure Provider URLs are complete.** Locating metadata requires `application`; service routing may also require `version` and `group`.
+6. **Distinguish invocation success from business success.** Check `QuerySuccess` first, then business fields such as `code` and `success`.
+7. **Retry non-idempotent requests cautiously.** A timeout or disconnection does not prove that the Provider did not execute the request. Use business idempotency keys and an appropriate retry policy.
+8. **Size caches for your service count.** Raise `MaintainServiceNum` or set it to `0` when calling many interfaces, while monitoring connections and memory.
+9. **Choose load balancing for the workload.** Default `Random` suits general use. `LeastActive`, P2C, and `ShortestResponse` use local consumer statistics without requiring Telnet diagnostic ports. `ConsistentHash` suits request affinity; account for mapping changes during upgrades.
+10. **Test compatibility against real Providers before deployment.** This is particularly important for Dubbo versions not marked as verified in the compatibility matrix, complex POJO, and custom Hessian types.
 
-## 异常与排障 / Troubleshooting
+## Troubleshooting
 
-### 找不到服务或 Provider
+### Service or Provider Not Found
 
-检查：
+Check:
 
-- `DubboRootPath` 是否与注册中心一致。
-- ZooKeeper 的 `/dubbo/{完整接口名}/providers` 是否存在有效子节点，或 Nacos 对应 Naming 分组中是否存在 `providers:{interface}:...` 服务。
-- Provider URL 是否以 `dubbo://` 或 `tri://` 开头。
-- Provider host 是否为 IP 地址，而不是域名。
-- 接口名、服务 `version` 和 `group` 是否正确。
+- Whether `DubboRootPath` matches the registry.
+- Whether ZooKeeper's `/dubbo/{fully-qualified-interface}/providers` has valid child nodes, or the corresponding Nacos Naming group contains a `providers:{interface}:...` service.
+- Whether Provider URLs start with `dubbo://` or `tri://`.
+- Whether the Provider host is an IP address rather than a domain name.
+- Whether the interface name, service `version`, and `group` are correct.
 
-服务发现失败通常以 `QuerySuccess=false` 的 `DubboRequestResult` 返回，详情在 `ErrorMeaasge`。
+Service discovery failures generally return a `DubboRequestResult` with `QuerySuccess=false`; details are in `ErrorMeaasge`.
 
-### `DubboMetadataException`：无法获取方法签名
+### `DubboMetadataException`: Method Signature Unavailable
 
-异常会分别说明元数据中心和 Telnet 的失败原因。依次检查：
+The exception reports metadata center and Telnet failures separately. Check, in order:
 
-1. Provider URL 的 `release`、`application`、`version` 和 `group`。
-2. `MetadataCenterAddress` 和 `MetadataRootPath` 是否指向实际元数据中心。
-3. 预期 FullServiceDefinition 位置是否存在。ZooKeeper 路径为：
+1. Provider URL fields `release`, `application`, `version`, and `group`.
+2. Whether `MetadataCenterAddress` and `MetadataRootPath` point to the actual metadata center.
+3. Whether the expected FullServiceDefinition location exists. The ZooKeeper path is:
 
    ```text
    {root}/metadata/{interface}/{version?}/{group?}/provider/{application}
    ```
 
-   Nacos 中检查 `{MetadataRootPath}` Config 分组及 DataId：
+   For Nacos, check the `{MetadataRootPath}` Config group and DataId:
 
    ```text
    {interface}:{version}:{group}:provider:{application}
    ```
 
-4. Provider 是否配置并成功上报 metadata-report。只有 consumer 节点不代表存在 provider 方法定义。
-5. Provider 注册的 `dubbo://` 地址和端口是否开放 Telnet `ls -l`。
+4. Whether the Provider has configured metadata-report and successfully published metadata. The presence of consumer nodes does not mean Provider method definitions exist.
+5. Whether Telnet `ls -l` is exposed on the Provider's registered `dubbo://` address and port.
 
-无法修复元数据来源时，按异常建议改用显式类型重载：
+If the metadata sources cannot be fixed, follow the exception's suggestion to use an explicit-type overload:
 
 ```csharp
 await client.QueryAsync(
@@ -763,9 +766,9 @@ await client.QueryAsync(
     new object[] { 1234 });
 ```
 
-### 方法重载无法唯一确定
+### Ambiguous Method Overloads
 
-查看所有候选签名：
+Inspect all candidate signatures:
 
 ```csharp
 var methods = await client.GetMethodMetadataAsync(
@@ -773,40 +776,40 @@ var methods = await client.GetMethodMetadataAsync(
     "getJob");
 ```
 
-然后使用显式 Java 类型。不要仅通过把 `1234` 改成 `1234L` 来区分 primitive 和 wrapper；`long` 与 `java.lang.Long` 仍需要准确签名。
+Then use explicit Java types. Do not merely change `1234` to `1234L` to distinguish primitives from wrappers; `long` and `java.lang.Long` still require an exact signature.
 
-### serialization id 不受支持
+### Unsupported Serialization ID
 
-原生执行器只支持 Hessian2。确认 Provider 接受 Hessian2，并且响应帧 serialization id 为 `2`。当前不会根据 Provider URL 自动切换到 Fastjson2、Kryo、FST、Protobuf 等编码器。
+The native actuator only supports Hessian2. Ensure the Provider accepts Hessian2 and the response frame's serialization ID is `2`. The client does not currently switch automatically to Fastjson2, Kryo, FST, Protobuf, or other encoders based on the Provider URL.
 
-### `tri://` 调用失败
+### Failed `tri://` Calls
 
-确认 Provider 使用 Dubbo 3.3+ 并开放 Java Interface 的 HTTP/JSON 访问。第一期执行器会向
-`http://{host}:{port}/{service}/{method}` 发送 HTTP/1.1 JSON POST，正文必须是参数数组，
-单参数也应为 `[value]`。有多个 version/group 时还要保证注册 URL 中这两个字段准确。
+Ensure the Provider uses Dubbo 3.3+ and exposes Java Interface HTTP/JSON access. The first-phase actuator sends
+an HTTP/1.1 JSON POST to `http://{host}:{port}/{service}/{method}`. The body must be an argument array,
+including `[value]` for a single argument. With multiple versions/groups, ensure both fields in the registered URL are accurate.
 
-Dubbo 3.3.6 的默认 Triple HTTP/JSON 映射不能可靠区分全部 Java 重载。通过
-`DubboClient` 调用时，检测到重载方法会在负载均衡前限定使用 `dubbo://` 原生协议节点；
-若只有 `tri://` 节点则返回明确错误。需要通过 Triple 暴露重载时，建议在 Provider 端为
-各重载声明不同的 REST 路由。
+The default Triple HTTP/JSON mapping in Dubbo 3.3.6 cannot reliably distinguish all Java overloads.
+When invoking through `DubboClient`, detected overloaded methods are restricted to native `dubbo://` nodes before load balancing;
+if only `tri://` nodes exist, an explicit error is returned. To expose overloads through Triple,
+declare a different REST route for each overload on the Provider.
 
-第一期不支持 Protobuf/IDL、流式调用或 gRPC framing；这些服务不能通过当前的
-`TripleDubboActuatorSuite` 调用。
+The first phase does not support Protobuf/IDL, streaming, or gRPC framing; such services cannot be invoked through the current
+`TripleDubboActuatorSuite`.
 
-### 请求超时或连接中断
+### Request Timeout or Disconnection
 
-- 调整 `DubboRequestTimeout`。
-- 检查 `ErrorMeaasge` 和 Provider 日志。
-- 原生连接会在后续请求时重新建立，但失败中的业务请求不会自动重放。
-- 对非幂等方法，不要在无法确认 Provider 是否执行的情况下盲目重试。
+- Adjust `DubboRequestTimeout`.
+- Check `ErrorMeaasge` and Provider logs.
+- Native connections are re-established for later requests, but failed business requests are not replayed automatically.
+- Do not blindly retry non-idempotent methods if you cannot determine whether the Provider executed them.
 
-### `QuerySuccess=true` 但业务失败
+### Business Failure with `QuerySuccess=true`
 
-这是预期行为。`QuerySuccess` 只表示调用层成功；继续解析 `Result` 或 `ResultModle` 中的业务状态。
+This is expected. `QuerySuccess` only indicates invocation-layer success; parse the business status in `Result` or `ResultModle` separately.
 
-## 构建与测试 / Build and Test
+## Build and Test
 
-需要 .NET 10 SDK。所有项目均使用 `net10.0`，不再需要安装 .NET 6 Runtime：
+The .NET 10 SDK is required. All projects use `net10.0`; the .NET 6 Runtime is no longer needed:
 
 ```bash
 dotnet restore DubboNet.sln
@@ -814,9 +817,9 @@ dotnet build DubboNet.sln --no-restore
 dotnet test Tests/UnitTestForDubboNet/UnitTestForDubboNet.csproj --no-restore
 ```
 
-`DubboClientIntegrationTests` 和 `QueryDemo` 默认只使用本机：ZooKeeper 为 `localhost:2181`，Nacos 为 `nacos://localhost:8848`，直连 Provider 的主机为 `localhost`。远程主机必须在运行时通过命令行或环境变量传入，没有内置公网测试地址。
+`DubboClientIntegrationTests` and `QueryDemo` default to local addresses only: `localhost:2181` for ZooKeeper, `nacos://localhost:8848` for Nacos, and `localhost` for direct Provider access. Remote hosts must be supplied at runtime through command-line arguments or environment variables; no public test address is built in.
 
-使用 `--host` 同时指定注册中心和直连 Provider 的主机：
+Use `--host` to set both the registry and direct Provider host:
 
 ```bash
 dotnet run \
@@ -824,7 +827,7 @@ dotnet run \
   -- --host localhost
 ```
 
-Nacos 可使用 `--nacos` 或兼容的 `nacos` 简写。注册中心与 Provider 不在同一主机时，分别指定地址：
+For Nacos, use `--nacos` or the compatible `nacos` shorthand. If the registry and Provider are on different hosts, specify them separately:
 
 ```bash
 dotnet run \
@@ -836,34 +839,34 @@ dotnet run \
   -- --registry nacos://localhost:8848 --provider-host localhost
 ```
 
-也支持环境变量 `DUBBONET_TEST_HOST`、`DUBBONET_TEST_REGISTRY`、`DUBBONET_TEST_PROVIDER_HOST`。命令行 `--host` 覆盖环境变量中的地址，`--registry` / `--provider-host` 可分别指定两端；未指定独立 Provider 主机时，默认使用显式主机或注册中心的首个主机。旧的第一个位置参数（例如 `localhost:2181` 或 `nacos://localhost:8848`）仍然可用。
+Environment variables `DUBBONET_TEST_HOST`, `DUBBONET_TEST_REGISTRY`, and `DUBBONET_TEST_PROVIDER_HOST` are also supported. Command-line `--host` overrides environment addresses; `--registry` / `--provider-host` can set the two endpoints independently. Without a separate Provider host, the explicitly supplied host or the registry's first host is used. The old first positional argument, such as `localhost:2181` or `nacos://localhost:8848`, remains supported.
 
-`--nacos` 只选择协议及缺省端口，不会覆盖已设置的 `DUBBONET_TEST_REGISTRY`：环境变量为 Nacos 地址时使用该地址，为 ZooKeeper 地址时明确报配置冲突。需要覆盖环境地址时使用 `--host` 或显式 `--registry`，避免静默请求到另一套环境。
+`--nacos` only selects the protocol and default port; it does not overwrite `DUBBONET_TEST_REGISTRY`. A Nacos environment address is used as-is; a ZooKeeper address produces an explicit configuration conflict. To override environment addresses, use `--host` or an explicit `--registry`, avoiding silent requests to another environment.
 
-传入 `--print-config` 只打印生效配置，不解析 DNS、不连接注册中心、不发送 RPC；`--help` 显示参数说明。普通单元测试不使用这些联网集成参数，也不依赖公网服务。
+`--print-config` only prints the effective configuration, with no DNS resolution, registry connection, or RPC. `--help` shows argument usage. Ordinary unit tests do not use these network integration arguments or depend on public services.
 
-ZooKeeper 测试矩阵覆盖 Dubbo 2.7.23、3.1.11、3.2.20 和 3.3.6；Nacos 测试矩阵覆盖 3.2.20 和 3.3.6。两者均验证元数据缓存、
-自动签名推断、显式 Java 类型、强类型返回、`DubboInvocation`、Provider 异常，
-以及 Dubbo TCP/Hessian2 和 Triple HTTP/JSON 的明确直连。
-测试使用专门准备的 `com.example.dubbonet` 服务；如传入其他注册中心地址，需确保存在相同分组、根路径和测试服务。程序以非零退出码报告失败，可直接用于手工验收或 CI。
+The ZooKeeper test matrix covers Dubbo 2.7.23, 3.1.11, 3.2.20, and 3.3.6; the Nacos matrix covers 3.2.20 and 3.3.6. Both exercise metadata caching,
+automatic signature inference, explicit Java types, typed responses, `DubboInvocation`, Provider exceptions,
+and explicit direct calls over Dubbo TCP/Hessian2 and Triple HTTP/JSON.
+Tests require the prepared `com.example.dubbonet` services. When supplying another registry address, ensure the same groups, root paths, and test services exist. The program reports failures with a non-zero exit code for manual acceptance testing or CI.
 
-`QueryDemo` 使用顺序代码展示 `DubboClient.QueryAsync` 的全部重载，以及已知 Provider
-IP、端口和协议时如何绕过注册中心直接调用：
+`QueryDemo` uses sequential examples to demonstrate every `DubboClient.QueryAsync` overload, plus direct invocation
+without a registry when the Provider IP, port, and protocol are known:
 
 ```bash
 dotnet run --project Tests/QueryDemo/QueryDemo.csproj -- --host localhost
 ```
 
-仓库不再提供个人 VS Code 快捷任务和根目录 Compose 调试文件。命令行构建、测试、运行不受影响；独立容器构建入口仍保留：
+Personal VS Code shortcut tasks and root-level Compose debugging files are no longer provided. Command-line builds, tests, and runs are unaffected; the standalone container build entry point remains:
 
 ```bash
 docker build -f Tests/DubboClientIntegrationTests/Dockerfile -t dubbonet-integration .
 docker run --rm dubbonet-integration --host localhost --print-config
 ```
 
-容器内 `localhost` 指容器自身。连接宿主机或外部 Provider 时，应显式传入容器可达的主机名或 IP。
+Inside a container, `localhost` means the container itself. To connect to a host machine or external Provider, explicitly supply a hostname or IP reachable from the container.
 
-### 发布 / Publishing
+### Publishing
 
 The pre-ASF automated publishing job inherited from the original repository has
 been removed. Release publishing for the Apache project must be set up and
@@ -871,11 +874,15 @@ reviewed separately under ASF release policy (PMC-managed release process,
 signed artifacts, ASF-owned publishing identity). No package is published from
 this repository today.
 
-本仓库目前不包含任何自动发布工作流。Apache 发布流程需单独设计并评审，
-不得沿用原个人项目的 nuget.org / GitHub Packages 发布身份。
+This repository currently contains no automated publishing workflows. The Apache release process requires separate design and review;
+the original personal project's nuget.org / GitHub Packages publishing identities must not be reused.
+
+## Contributing
+
+Read the [contribution guide](CONTRIBUTING.md) before opening a pull request. When updating documentation, keep the English and Chinese READMEs in sync, or explicitly identify any temporarily untranslated sections in the pull request.
 
 ## License
 
-本项目使用 [Apache License 2.0](LICENSE)。
-
 This project is licensed under the [Apache License 2.0](LICENSE).
+
+See [NOTICE](NOTICE) for attribution information.
