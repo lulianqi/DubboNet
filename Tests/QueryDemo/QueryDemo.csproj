@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="../Shared/TestEndpointOptions.cs" Link="TestEndpointOptions.cs" />
+    <Compile Include="../Shared/QueryDemoVerification.cs" Link="QueryDemoVerification.cs" />
     <ProjectReference Include="..\..\DubboNet.csproj" />
   </ItemGroup>
 </Project>

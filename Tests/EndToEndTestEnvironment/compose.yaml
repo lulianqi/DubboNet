@@ -1,0 +1,38 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: dubbonet-e2e
+
+services:
+  zookeeper:
+    image: zookeeper:3.8.4
+    environment:
+      ZOO_4LW_COMMANDS_WHITELIST: ruok,mntr,srvr
+    ports:
+      - "127.0.0.1:2181:2181"
+
+  nacos:
+    image: nacos/nacos-server:v2.5.4
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      PREFER_HOST_MODE: hostname
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
+    ports:
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:9848:9848"
+      - "127.0.0.1:9849:9849"

@@ -851,7 +851,7 @@ and explicit direct calls over Dubbo TCP/Hessian2 and Triple HTTP/JSON.
 Tests require the prepared `com.example.dubbonet` services. When supplying another registry address, ensure the same groups, root paths, and test services exist. The program reports failures with a non-zero exit code for manual acceptance testing or CI.
 
 `QueryDemo` uses sequential examples to demonstrate every `DubboClient.QueryAsync` overload, plus direct invocation
-without a registry when the Provider IP, port, and protocol are known:
+without a registry when the Provider IP, port, and protocol are known. It validates fixture response values and returns a non-zero exit code on a failed call, deserialization error, or unexpected result:
 
 ```bash
 dotnet run --project Tests/QueryDemo/QueryDemo.csproj -- --host localhost
@@ -865,6 +865,38 @@ docker run --rm dubbonet-integration --host localhost --print-config
 ```
 
 Inside a container, `localhost` means the container itself. To connect to a host machine or external Provider, explicitly supply a hostname or IP reachable from the container.
+
+### Reproducible End-to-end Tests
+
+The independent [End-to-end tests workflow](.github/workflows/end-to-end.yml) builds and starts
+temporary ZooKeeper 3.8.4 / Nacos 2.5.4 containers and Java Providers from
+[`Tests/EndToEndTestEnvironment/JavaProviders`](Tests/EndToEndTestEnvironment/JavaProviders).
+Java Providers run as test-host processes; Java/Maven are not client runtime dependencies.
+No personal server, private JAR, or registry secret is required.
+
+- ZooKeeper covers Dubbo 2.7.23, 3.1.11, 3.2.20, and 3.3.6; Nacos covers 3.2.20 and 3.3.6.
+- [`Tests/DubboNetEndToEndTests`](Tests/DubboNetEndToEndTests) adds 150 method-invocation cases
+  (25 signatures across six combinations) and six metadata coverage checks.
+- Both `DubboClientIntegrationTests` and `QueryDemo` execute with ZooKeeper and Nacos;
+  Native TCP/Hessian2 and Triple HTTP/JSON direct calls are also checked.
+- Expected business exceptions require their test marker; transport failures do not count as success.
+- Logs and TRX results are uploaded even after failures, and final cleanup stops Providers
+  and removes temporary registry containers/volumes.
+
+Its triggers match `Build and test`: pushes to `main`, pull requests targeting `main`,
+and manual dispatch, without file-path filters.
+
+On Linux with Docker Compose v2, JDK 8, Maven, the .NET 10 SDK, iproute2, and GNU coreutils:
+
+```bash
+Tests/EndToEndTestEnvironment/run-local.sh
+```
+
+The script manages startup, bounded readiness checks, the complete test run, logs, and cleanup.
+The separate xUnit suite is opt-in via `DUBBONET_E2E_ENABLED=true`; once enabled, missing
+configuration or unavailable services fail rather than skip tests.
+See the [environment guide](Tests/EndToEndTestEnvironment/README.md) for port requirements,
+addresses, coverage, manual reuse, diagnostics, and how to add test cases.
 
 ### Publishing
 

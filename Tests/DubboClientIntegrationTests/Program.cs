@@ -290,7 +290,8 @@ static async Task RunVersionAsync(
         "provider-exception",
         () => client.QueryAsync($"{EchoService}.alwaysFail", "expected-error"),
         result => !result.QuerySuccess
-            && !string.IsNullOrWhiteSpace(result.ErrorMeaasge),
+            && !string.IsNullOrWhiteSpace(result.ErrorMeaasge)
+            && result.ErrorMeaasge.Contains("expected-error", StringComparison.OrdinalIgnoreCase),
         summary);
 
     Console.WriteLine();

@@ -228,3 +228,44 @@ using TripleDubboActuatorSuite tripleSuite = new(
     new DubboActuatorSuiteConf { DubboRequestTimeout = 10_000 });
 DubboRequestResult directTripleResult = await tripleSuite.SendQuery(directInvocation);
 Console.WriteLine($"直连 Triple HTTP/JSON: {directTripleResult.Result}");
+
+// Verify actual fixture values, not only QuerySuccess. A mismatch makes CI fail.
+var checks = new (string Name, DubboRequestResult Result, bool Passed)[]
+{
+    ("no arguments", noArgumentResult,
+        QueryDemoVerification.MatchesJson(noArgumentResult, value => value.GetString() == "pong")),
+    ("one argument", oneArgumentResult,
+        QueryDemoVerification.MatchesJson(oneArgumentResult, value => value.GetBoolean())),
+    ("multiple arguments", multipleArgumentsResult,
+        QueryDemoVerification.MatchesJson(multipleArgumentsResult, value => value.GetInt32() == 42)),
+    ("typed no arguments", typedNoArgumentResult,
+        QueryDemoVerification.MatchesTyped(typedNoArgumentResult, "pong")),
+    ("typed one argument", typedOneArgumentResult,
+        QueryDemoVerification.MatchesTyped(typedOneArgumentResult, "hello-query-demo")),
+    ("typed multiple arguments", typedMultipleArgumentsResult,
+        QueryDemoVerification.MatchesTyped(typedMultipleArgumentsResult, 42)),
+    ("explicit Java types", explicitTypesResult,
+        QueryDemoVerification.MatchesJson(explicitTypesResult, value => value.GetDouble() == 2.5)),
+    ("typed explicit Java types", typedExplicitTypesResult,
+        QueryDemoVerification.MatchesTyped(typedExplicitTypesResult, 2.5)),
+    ("invocation", invocationResult,
+        QueryDemoVerification.MatchesJson(invocationResult, value =>
+            value.GetProperty("traceId").GetString() == "query-demo"
+            && value.GetProperty("language").GetString() == "中文")),
+    ("typed invocation", typedInvocationResult,
+        QueryDemoVerification.MatchesTyped(typedInvocationResult, "typed-invocation")),
+    ("direct Dubbo TCP", directNativeResult,
+        QueryDemoVerification.MatchesJson(directNativeResult, value => value.GetString() == "direct-query")),
+    ("direct Triple HTTP/JSON", directTripleResult,
+        QueryDemoVerification.MatchesJson(directTripleResult, value => value.GetString() == "direct-query"))
+};
+
+foreach (var check in checks)
+{
+    Console.WriteLine($"[{(check.Passed ? "PASS" : "FAIL")}] {check.Name}");
+    if (!check.Passed)
+        Console.Error.WriteLine($"Unexpected result: {check.Result.Result}; error: {check.Result.ErrorMeaasge}");
+}
+Console.WriteLine($"QueryDemo summary: {checks.Count(check => check.Passed)}/{checks.Length} passed.");
+if (checks.Any(check => !check.Passed))
+    Environment.ExitCode = 1;

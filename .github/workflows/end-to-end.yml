@@ -1,0 +1,180 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: End-to-end tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: end-to-end-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  end-to-end:
+    name: ZooKeeper, Nacos and direct protocols
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      COMPOSE_PROJECT_NAME: dubbonet-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure the end-to-end log directory
+        run: echo "E2E_LOG_DIR=$RUNNER_TEMP/dubbonet-e2e-logs" >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: maven
+          cache-dependency-path: |
+            Tests/EndToEndTestEnvironment/JavaProviders/pom.xml
+            Tests/EndToEndTestEnvironment/JavaProviders/*/pom.xml
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Start temporary registries
+        run: docker compose -f Tests/EndToEndTestEnvironment/compose.yaml up -d
+
+      - name: Resolve the Runner provider address
+        run: |
+          provider_host=$(ip -4 route get 1.1.1.1 | awk '{ for (field = 1; field <= NF; field++) if ($field == "src") { print $(field + 1); exit } }')
+          if [[ -z "$provider_host" || "$provider_host" == 127.* ]]; then
+            echo "Cannot resolve a non-loopback Runner IPv4 address." >&2
+            exit 1
+          fi
+          echo "DUBBONET_PROVIDER_HOST=$provider_host" >> "$GITHUB_ENV"
+          echo "Providers will register $provider_host."
+
+      - name: Build Java providers
+        run: >-
+          mvn -B -ntp
+          -f Tests/EndToEndTestEnvironment/JavaProviders/pom.xml
+          package
+          -DskipTests
+
+      - name: Start Java providers
+        run: Tests/EndToEndTestEnvironment/start-providers.sh "$E2E_LOG_DIR"
+
+      - name: Wait for the temporary environment
+        run: Tests/EndToEndTestEnvironment/wait-for-environment.sh "$E2E_LOG_DIR"
+
+      - name: Restore .NET projects
+        run: dotnet restore DubboNet.sln
+
+      - name: Test every provider method end to end
+        env:
+          DUBBONET_E2E_ENABLED: "true"
+          DUBBONET_E2E_ZOOKEEPER_ADDRESS: 127.0.0.1:2181
+          DUBBONET_E2E_NACOS_ADDRESS: nacos://127.0.0.1:8848
+        run: >-
+          dotnet test
+          Tests/DubboNetEndToEndTests/DubboNetEndToEndTests.csproj
+          --configuration Release
+          --no-restore
+          -p:GeneratePackageOnBuild=false
+          --logger "console;verbosity=detailed"
+          --logger "trx;LogFileName=dubbonet-end-to-end.trx"
+          --results-directory "$E2E_LOG_DIR/test-results"
+          2>&1 | tee "$E2E_LOG_DIR/end-to-end-tests.log"
+
+      - name: Test ZooKeeper discovery and all Dubbo versions
+        run: >-
+          dotnet run
+          --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj
+          --configuration Release
+          --no-restore
+          -p:GeneratePackageOnBuild=false
+          -- --registry 127.0.0.1:2181 --provider-host "$DUBBONET_PROVIDER_HOST"
+          2>&1 | tee "$E2E_LOG_DIR/integration-zookeeper.log"
+
+      - name: Test Nacos discovery
+        run: >-
+          dotnet run
+          --project Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj
+          --configuration Release
+          --no-restore
+          -p:GeneratePackageOnBuild=false
+          -- --registry nacos://127.0.0.1:8848 --provider-host "$DUBBONET_PROVIDER_HOST"
+          2>&1 | tee "$E2E_LOG_DIR/integration-nacos.log"
+
+      - name: Run QueryDemo with ZooKeeper
+        run: >-
+          dotnet run
+          --project Tests/QueryDemo/QueryDemo.csproj
+          --configuration Release
+          --no-restore
+          -p:GeneratePackageOnBuild=false
+          -- --registry 127.0.0.1:2181 --provider-host "$DUBBONET_PROVIDER_HOST"
+          2>&1 | tee "$E2E_LOG_DIR/query-demo-zookeeper.log"
+
+      - name: Run QueryDemo with Nacos
+        run: >-
+          dotnet run
+          --project Tests/QueryDemo/QueryDemo.csproj
+          --configuration Release
+          --no-restore
+          -p:GeneratePackageOnBuild=false
+          -- --registry nacos://127.0.0.1:8848 --provider-host "$DUBBONET_PROVIDER_HOST"
+          2>&1 | tee "$E2E_LOG_DIR/query-demo-nacos.log"
+
+      - name: Collect registry logs
+        if: always()
+        run: |
+          mkdir -p "$E2E_LOG_DIR"
+          docker compose -f Tests/EndToEndTestEnvironment/compose.yaml logs --no-color > "$E2E_LOG_DIR/registries.log" 2>&1 || true
+
+      - name: Upload end-to-end logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: end-to-end-logs-${{ github.run_attempt }}
+          path: ${{ env.E2E_LOG_DIR }}
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload end-to-end test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: end-to-end-test-results-${{ github.run_attempt }}
+          path: ${{ env.E2E_LOG_DIR }}/test-results
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Stop temporary environment
+        if: always()
+        run: |
+          Tests/EndToEndTestEnvironment/stop-providers.sh "$E2E_LOG_DIR"
+          docker compose -f Tests/EndToEndTestEnvironment/compose.yaml down --volumes --remove-orphans

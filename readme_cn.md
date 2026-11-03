@@ -850,7 +850,7 @@ ZooKeeper 测试矩阵覆盖 Dubbo 2.7.23、3.1.11、3.2.20 和 3.3.6；Nacos �
 测试使用专门准备的 `com.example.dubbonet` 服务；如传入其他注册中心地址，需确保存在相同分组、根路径和测试服务。程序以非零退出码报告失败，可直接用于手工验收或 CI。
 
 `QueryDemo` 使用顺序代码展示 `DubboClient.QueryAsync` 的全部重载，以及已知 Provider
-IP、端口和协议时如何绕过注册中心直接调用：
+IP、端口和协议时如何绕过注册中心直接调用。程序校验测试服务的预期返回值；调用失败、反序列化失败或结果不符时返回非零退出码：
 
 ```bash
 dotnet run --project Tests/QueryDemo/QueryDemo.csproj -- --host localhost
@@ -864,6 +864,36 @@ docker run --rm dubbonet-integration --host localhost --print-config
 ```
 
 容器内 `localhost` 指容器自身。连接宿主机或外部 Provider 时，应显式传入容器可达的主机名或 IP。
+
+### 可复现的端到端测试 / Reproducible End-to-end Tests
+
+独立的 [End-to-end tests 工作流](.github/workflows/end-to-end.yml) 构建并启动临时
+ZooKeeper 3.8.4 / Nacos 2.5.4 容器，并从
+[`Tests/EndToEndTestEnvironment/JavaProviders`](Tests/EndToEndTestEnvironment/JavaProviders)
+构建 Java Provider，以测试宿主机进程运行。Java/Maven 不是客户端运行时依赖；
+不需要个人服务器、私有 JAR 或注册中心凭据。
+
+- ZooKeeper 覆盖 Dubbo 2.7.23、3.1.11、3.2.20、3.3.6；Nacos 覆盖 3.2.20、3.3.6。
+- [`Tests/DubboNetEndToEndTests`](Tests/DubboNetEndToEndTests) 提供 150 个方法调用用例
+  （25 个签名 × 6 种组合），另有 6 个元数据覆盖校验。
+- `DubboClientIntegrationTests` 和 `QueryDemo` 均在 ZooKeeper、Nacos 模式下实际执行，
+  同时校验 Native TCP/Hessian2、Triple HTTP/JSON 直连。
+- 预期业务异常必须包含测试标记，不能把传输故障计为通过。
+- 失败时也上传日志和 TRX；最终清理会停止 Provider、删除临时注册中心容器和卷。
+
+触发逻辑与 `Build and test` 一致：`main` 推送、目标为 `main` 的 PR，以及手动触发；
+没有文件路径过滤。
+
+在安装 Docker Compose v2、JDK 8、Maven、.NET 10 SDK、iproute2 和 GNU coreutils 的 Linux 上运行：
+
+```bash
+Tests/EndToEndTestEnvironment/run-local.sh
+```
+
+脚本统一管理启动、有超时边界的就绪检查、完整测试、日志和清理。
+独立 xUnit 工程通过 `DUBBONET_E2E_ENABLED=true` 显式启用；启用后缺少配置或服务不可用
+都会失败，不会跳过。端口要求、地址、覆盖范围、手动复用、排障和扩展方法见
+[环境指南](Tests/EndToEndTestEnvironment/README.md)。
 
 ### 发布 / Publishing
 
