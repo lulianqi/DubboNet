@@ -25,7 +25,6 @@ public final class ProviderApplication {
                 "zookeeper-registry", config.registryAddress(), config);
         RegistryConfig nacosRegistry = registry(
                 "nacos-registry", config.nacosRegistryAddress(), config);
-        List<RegistryConfig> registries = Arrays.asList(zookeeperRegistry, nacosRegistry);
 
         ProtocolConfig dubboProtocol = new ProtocolConfig("dubbo", config.protocolPort());
         dubboProtocol.setSerialization("hessian2");
@@ -40,15 +39,15 @@ public final class ProviderApplication {
                 .protocol(dubboProtocol)
                 .protocol(triProtocol)
                 .service(service(com.example.dubbonet.api.UserService.class,
-                        new UserServiceImpl(), config, protocols, registries))
+                        new UserServiceImpl(), config, protocols))
                 .service(service(com.example.dubbonet.api.OrderService.class,
-                        new OrderServiceImpl(), config, protocols, registries))
+                        new OrderServiceImpl(), config, protocols))
                 .service(service(com.example.dubbonet.api.EchoService.class,
-                        new EchoServiceImpl(), config, protocols, registries))
+                        new EchoServiceImpl(), config, protocols))
                 .service(service(com.example.dubbonet.api.DataTypeService.class,
-                        new DataTypeServiceImpl(), config, protocols, registries))
+                        new DataTypeServiceImpl(), config, protocols))
                 .service(service(com.example.dubbonet.api.OverloadService.class,
-                        new OverloadServiceImpl(), config, protocols, registries));
+                        new OverloadServiceImpl(), config, protocols));
 
         System.out.println("Starting DubboNet provider");
         System.out.println("  Dubbo version : " + config.dubboVersion());
@@ -84,9 +83,7 @@ public final class ProviderApplication {
     private static RegistryConfig registry(String id, String address, DemoConfig config) {
         RegistryConfig registry = new RegistryConfig(address);
         registry.setId(id);
-        // Dubbo 3.3 会合并多个默认注册中心；下方由服务显式绑定，确保地址彼此独立。
-        // EN: Dubbo 3.3 merges multiple default registries; services bind both explicitly.
-        registry.setDefault(false);
+        registry.setDefault(true);
         registry.setGroup(config.registryGroup());
         registry.setCheck(false);
         registry.setRegisterMode("interface");
@@ -103,8 +100,7 @@ public final class ProviderApplication {
 
     private static <T> ServiceConfig<T> service(Class<T> interfaceClass, T implementation,
                                                  DemoConfig config,
-                                                 List<ProtocolConfig> protocols,
-                                                 List<RegistryConfig> registries) {
+                                                 List<ProtocolConfig> protocols) {
         ServiceConfig<T> service = new ServiceConfig<T>();
         service.setId(interfaceClass.getName());
         service.setInterface(interfaceClass);
@@ -112,7 +108,6 @@ public final class ProviderApplication {
         service.setGroup(config.serviceGroup());
         service.setVersion(config.serviceVersion());
         service.setProtocols(protocols);
-        service.setRegistries(registries);
         service.setTimeout(5000);
         service.setRetries(0);
         return service;

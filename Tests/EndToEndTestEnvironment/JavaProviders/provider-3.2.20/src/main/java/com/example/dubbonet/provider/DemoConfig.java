@@ -43,15 +43,15 @@ public final class DemoConfig {
     }
 
     public String registryAddress() {
-        String configured = System.getenv("DUBBO_REGISTRY_ADDRESS");
-        return systemOrDefault("dubbo.registry.address",
+        String configured = System.getenv("DUBBONET_ZOOKEEPER_REGISTRY_ADDRESS");
+        return systemOrDefault("dubbonet.zookeeper.registry.address",
                 configured == null || configured.trim().isEmpty()
                         ? required("dubbo.registry.address") : configured.trim());
     }
 
     public String nacosRegistryAddress() {
-        String configured = System.getenv("DUBBO_NACOS_REGISTRY_ADDRESS");
-        return systemOrDefault("dubbo.nacos.registry.address",
+        String configured = System.getenv("DUBBONET_NACOS_REGISTRY_ADDRESS");
+        return systemOrDefault("dubbonet.nacos.registry.address",
                 configured == null || configured.trim().isEmpty()
                         ? required("dubbo.nacos.registry.address") : configured.trim());
     }

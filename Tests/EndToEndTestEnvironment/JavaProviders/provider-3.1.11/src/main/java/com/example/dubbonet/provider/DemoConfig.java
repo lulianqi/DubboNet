@@ -43,8 +43,8 @@ public final class DemoConfig {
     }
 
     public String registryAddress() {
-        String configured = System.getenv("DUBBO_REGISTRY_ADDRESS");
-        return systemOrDefault("dubbo.registry.address",
+        String configured = System.getenv("DUBBONET_ZOOKEEPER_REGISTRY_ADDRESS");
+        return systemOrDefault("dubbonet.zookeeper.registry.address",
                 configured == null || configured.trim().isEmpty()
                         ? required("dubbo.registry.address") : configured.trim());
     }

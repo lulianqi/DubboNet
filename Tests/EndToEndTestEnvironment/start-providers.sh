@@ -9,12 +9,14 @@ pid_file="$log_dir/provider-pids"
 mkdir -p "$log_dir"
 : > "$pid_file"
 
-export DUBBO_REGISTRY_ADDRESS=${DUBBO_REGISTRY_ADDRESS:-zookeeper://127.0.0.1:2181}
-export DUBBO_NACOS_REGISTRY_ADDRESS=${DUBBO_NACOS_REGISTRY_ADDRESS:-nacos://127.0.0.1:8848}
+# 使用 DUBBONET_ 前缀，避免 Dubbo 3.3 把 DUBBO_REGISTRY_ADDRESS 当作全局覆盖项。
+# EN: Avoid DUBBO_REGISTRY_ADDRESS because Dubbo 3.3 applies it to every registry.
+export DUBBONET_ZOOKEEPER_REGISTRY_ADDRESS=${DUBBONET_ZOOKEEPER_REGISTRY_ADDRESS:-zookeeper://127.0.0.1:2181}
+export DUBBONET_NACOS_REGISTRY_ADDRESS=${DUBBONET_NACOS_REGISTRY_ADDRESS:-nacos://127.0.0.1:8848}
 
 if [[ -z "${DUBBONET_PROVIDER_HOST:-}" ]] && command -v ip >/dev/null 2>&1; then
   DUBBONET_PROVIDER_HOST=$(ip -4 route get 1.1.1.1 \
-    | awk '{ for (index = 1; index <= NF; index++) if ($index == "src") { print $(index + 1); exit } }')
+    | awk '{ for (field = 1; field <= NF; field++) if ($field == "src") { print $(field + 1); exit } }')
 fi
 if [[ -z "${DUBBONET_PROVIDER_HOST:-}" ]]; then
   echo "DUBBONET_PROVIDER_HOST must be a non-loopback address reachable from this machine." >&2
