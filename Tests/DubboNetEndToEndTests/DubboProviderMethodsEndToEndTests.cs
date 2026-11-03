@@ -180,7 +180,7 @@ public sealed class DubboProviderMethodsEndToEndTests
                     string failure = (result.ErrorMeaasge ?? string.Empty) + " " + (result.Result ?? string.Empty);
                     Assert.True(
                         failure.Contains("expected-e2e-error", StringComparison.OrdinalIgnoreCase)
-                        && failure.Contains("DEMO_FAILURE", StringComparison.OrdinalIgnoreCase),
+                    && failure.Contains("com.example.dubbonet.model.DemoServiceException", StringComparison.Ordinal),
                         "The provider exception did not include the expected error details: " + failure);
                     break;
                 }
