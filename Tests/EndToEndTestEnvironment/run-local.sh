@@ -33,6 +33,8 @@ log_dir=${1:-$(mktemp -d "${TMPDIR:-/tmp}/dubbonet-e2e.XXXXXX")}
 mkdir -p "$log_dir"
 log_dir=$(CDPATH= cd -- "$log_dir" && pwd)
 export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-dubbonet-e2e-local-$$}
+echo "Compose project: $COMPOSE_PROJECT_NAME"
+echo "Manual cleanup: docker compose -p $COMPOSE_PROJECT_NAME -f $script_dir/compose.yaml down --volumes --remove-orphans"
 
 cleanup() {
   local status=$?
@@ -56,10 +58,16 @@ run_logged() {
 docker compose -f "$script_dir/compose.yaml" up -d
 run_logged java-build mvn -B -ntp -f "$script_dir/JavaProviders/pom.xml" package -DskipTests
 "$script_dir/start-providers.sh" "$log_dir"
-export DUBBONET_PROVIDER_HOST
 DUBBONET_PROVIDER_HOST=$(<"$log_dir/provider-host")
-"$script_dir/wait-for-environment.sh" "$log_dir"
+if [[ -z "$DUBBONET_PROVIDER_HOST" ]]; then
+  echo "The Provider host file is empty: $log_dir/provider-host" >&2
+  exit 1
+fi
+export DUBBONET_PROVIDER_HOST
 dotnet restore DubboNet.sln
+run_logged readiness-build dotnet build Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj \
+  --configuration Release --no-restore -p:GeneratePackageOnBuild=false
+"$script_dir/wait-for-environment.sh" "$log_dir"
 
 export DUBBONET_E2E_ENABLED=true
 export DUBBONET_E2E_ZOOKEEPER_ADDRESS=127.0.0.1:2181

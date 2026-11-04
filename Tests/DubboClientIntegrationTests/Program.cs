@@ -29,8 +29,9 @@ const string EchoService = "com.example.dubbonet.api.EchoService";
 const string OrderService = "com.example.dubbonet.api.OrderService";
 const string UserService = "com.example.dubbonet.api.UserService";
 
+bool checkReadiness = args.Length > 0 && args[0] == "--check-readiness";
 TestEndpointOptions options;
-try { options = TestEndpointOptions.Parse(args); }
+try { options = TestEndpointOptions.Parse(checkReadiness ? args[1..] : args); }
 catch (ArgumentException exception)
 {
     Console.Error.WriteLine(exception.Message);
@@ -41,6 +42,7 @@ catch (ArgumentException exception)
 if (options.ShowHelp)
 {
     Console.WriteLine(TestEndpointOptions.Usage);
+    Console.WriteLine("Integration-only mode: prefix --check-readiness to inspect Provider/metadata publication without RPC.");
     return;
 }
 if (options.PrintConfiguration)
@@ -71,6 +73,21 @@ VersionScenario[] versions = useNacos
         new VersionScenario("3.2.20", "/dubbo-3.2.20"),
         new VersionScenario("3.3.6", "/dubbo-3.3.6")
     };
+
+if (checkReadiness)
+{
+    try
+    {
+        await EnvironmentReadinessProbe.CheckAsync(
+            registryAddress, providerAddresses, versions.Select(version => (version.Version, version.RootPath)));
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(exception.Message);
+        Environment.ExitCode = 1;
+    }
+    return;
+}
 
 TestSummary summary = new();
 Console.WriteLine($"Registry: {registryAddress} ({(useNacos ? "Nacos" : "ZooKeeper")})");

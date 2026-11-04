@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Stable fallback for direct Compose commands only. CI and run-local.sh override
+# this with COMPOSE_PROJECT_NAME; use the same -p/name when inspecting or cleaning up.
 name: dubbonet-e2e
 
 services:

@@ -25,6 +25,7 @@
   <ItemGroup>
     <Compile Include="../Shared/TestEndpointOptions.cs" Link="TestEndpointOptions.cs" />
     <Compile Include="../Shared/QueryDemoVerification.cs" Link="QueryDemoVerification.cs" />
+    <Compile Include="../Shared/EnvironmentReadinessProbe.cs" Link="EnvironmentReadinessProbe.cs" />
     <ProjectReference Include="..\..\DubboNet.csproj" />
   </ItemGroup>
 

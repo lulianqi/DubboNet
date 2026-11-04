@@ -885,6 +885,10 @@ No personal server, private JAR, or registry secret is required.
 
 Its triggers match `Build and test`: pushes to `main`, pull requests targeting `main`,
 and manual dispatch, without file-path filters.
+This is a distinct integration layer: unit tests alone cannot prove that real Java
+Providers can be discovered through the configured registry paths or invoked across
+protocols. Keeping it enabled catches path/layout and interoperability regressions.
+Only newer updates to the same PR cancel an earlier run; main/manual runs are independent.
 
 On Linux with Docker Compose v2, JDK 8, Maven, the .NET 10 SDK, iproute2, and GNU coreutils:
 
@@ -893,6 +897,9 @@ Tests/EndToEndTestEnvironment/run-local.sh
 ```
 
 The script manages startup, bounded readiness checks, the complete test run, logs, and cleanup.
+Readiness polls actual Provider records and metadata for all fixture services; it does not
+substitute a fixed sleep for successful publication. CI cleanup steps are independent,
+time-bounded, and emit warnings on failure without overriding RPC test results.
 The separate xUnit suite is opt-in via `DUBBONET_E2E_ENABLED=true`; once enabled, missing
 configuration or unavailable services fail rather than skip tests.
 See the [environment guide](Tests/EndToEndTestEnvironment/README.md) for port requirements,

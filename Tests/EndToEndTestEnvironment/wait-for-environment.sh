@@ -76,6 +76,33 @@ wait_for_tcp "$provider_host" 50051 "Dubbo 3.3.6 Triple provider"
 
 check_provider_processes
 
-# Ports open before registry metadata is always visible. Give both registries a
-# short, deterministic settling window before the first discovery request.
-sleep 10
+probe="$script_dir/../DubboClientIntegrationTests/bin/Release/net10.0/DubboClientIntegrationTests.dll"
+if [[ ! -f "$probe" ]]; then
+  echo "Build DubboClientIntegrationTests in Release before waiting for publication." >&2
+  exit 1
+fi
+mkdir -p "$log_dir"
+readiness_log="$log_dir/readiness.log"
+: > "$readiness_log"
+
+wait_for_publication() {
+  local registry=$1 label=$2 remaining
+  while (( SECONDS < ready_deadline )); do
+    check_provider_processes
+    remaining=$((ready_deadline - SECONDS))
+    if (( remaining <= 0 )); then break; fi
+    if timeout --kill-after=2 "$remaining" dotnet "$probe" --check-readiness \
+      --registry "$registry" --provider-host "$provider_host" >> "$readiness_log" 2>&1; then
+      echo "$label Providers and metadata are ready."
+      return 0
+    fi
+    echo "Waiting for $label Provider/metadata publication (details: $readiness_log)."
+    if (( SECONDS < ready_deadline )); then sleep 1; fi
+  done
+  echo "Timed out waiting for $label Provider/metadata publication. Inspect $readiness_log." >&2
+  tail -n 40 "$readiness_log" >&2
+  return 1
+}
+
+wait_for_publication 127.0.0.1:2181 ZooKeeper
+wait_for_publication nacos://127.0.0.1:8848 Nacos

@@ -26,8 +26,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: end-to-end-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # PRs keep only the latest update. Other events get independent groups so
+  # neither in-progress nor pending main/manual runs replace each other.
+  group: end-to-end-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   end-to-end:
@@ -87,11 +89,16 @@ jobs:
       - name: Start Java providers
         run: Tests/EndToEndTestEnvironment/start-providers.sh "$E2E_LOG_DIR"
 
-      - name: Wait for the temporary environment
-        run: Tests/EndToEndTestEnvironment/wait-for-environment.sh "$E2E_LOG_DIR"
-
       - name: Restore .NET projects
         run: dotnet restore DubboNet.sln
+
+      - name: Build the read-only readiness probe
+        run: >-
+          dotnet build Tests/DubboClientIntegrationTests/DubboClientIntegrationTests.csproj
+          --configuration Release --no-restore -p:GeneratePackageOnBuild=false
+
+      - name: Wait for Provider and metadata publication
+        run: Tests/EndToEndTestEnvironment/wait-for-environment.sh "$E2E_LOG_DIR"
 
       - name: Test every provider method end to end
         env:
@@ -173,8 +180,22 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: Stop temporary environment
+      - name: Stop Java providers
         if: always()
+        timeout-minutes: 1
+        continue-on-error: true
         run: |
-          Tests/EndToEndTestEnvironment/stop-providers.sh "$E2E_LOG_DIR"
-          docker compose -f Tests/EndToEndTestEnvironment/compose.yaml down --volumes --remove-orphans
+          if ! Tests/EndToEndTestEnvironment/stop-providers.sh "$E2E_LOG_DIR"; then
+            echo "::warning::Provider cleanup failed; registry cleanup will still run."
+            exit 1
+          fi
+
+      - name: Remove temporary registries
+        if: always()
+        timeout-minutes: 2
+        continue-on-error: true
+        run: |
+          if ! docker compose -f Tests/EndToEndTestEnvironment/compose.yaml down --volumes --remove-orphans; then
+            echo "::warning::Registry/container cleanup failed; inspect the cleanup step logs."
+            exit 1
+          fi

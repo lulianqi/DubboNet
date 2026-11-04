@@ -68,15 +68,32 @@ Tests/EndToEndTestEnvironment/run-local.sh
 
 An optional first argument selects a dedicated log directory. Otherwise a temporary directory
 is created and its path printed. The script builds the Java Providers, starts the registries
-and Providers, waits for readiness, restores .NET projects, and runs the full suite.
+and Providers, restores/builds the .NET readiness executable, waits for publication, and runs the full suite.
 It installs EXIT/INT/TERM cleanup traps, preserves a failing exit code, and removes its
 Compose containers and volumes even when a test fails. Do not share its log directory or
 Compose project name with another run. Like any process, it cannot trap SIGKILL or power loss.
 
-Readiness has a shared 180-second port deadline plus a 10-second registry settling window.
-`DUBBONET_E2E_READY_TIMEOUT` can override the port deadline. Dead Provider processes fail
-readiness immediately. RPC/metadata tests then assert that publication is actually usable;
-an open port alone is not considered a passing RPC test.
+Readiness uses one shared 180-second deadline for TCP ports **and** actual publication;
+`DUBBONET_E2E_READY_TIMEOUT` can override it. Dead Provider processes fail immediately.
+There is no fixed settling sleep. The integration executable's read-only
+`--check-readiness` mode verifies all five interfaces in each expected version/root:
+an enabled, positive-weight native Provider at the expected advertised address/port and
+service identity, plus nonempty FullServiceDefinition types and metadata-center method
+definitions. Telnet-only metadata cannot satisfy readiness. Each retry uses a fresh
+process/snapshot to avoid retaining a missing-node cache. No business RPC is sent by the probe.
+Missing publication is retried within the remaining deadline, then fails with the affected
+registry/version/interface in `readiness.log`; the normal RPC tests are never retried to hide regressions.
+
+The probe must first be built in Release (the workflow and local runner do this). To inspect
+an existing environment once, without polling or business calls:
+
+```bash
+dotnet Tests/DubboClientIntegrationTests/bin/Release/net10.0/DubboClientIntegrationTests.dll \
+  --check-readiness --registry 127.0.0.1:2181 --provider-host "$DUBBONET_PROVIDER_HOST"
+```
+
+The deadline bounds the probe process; a stuck process is force-killed after a two-second
+termination grace period. TCP checks have their own two-second per-attempt cap.
 
 ## Reuse an already running fixture
 
@@ -113,19 +130,32 @@ Tests/EndToEndTestEnvironment/stop-providers.sh /path/to/run-logs
 docker compose -f Tests/EndToEndTestEnvironment/compose.yaml down --volumes --remove-orphans
 ```
 
+The Compose file's `name: dubbonet-e2e` is only a stable fallback for direct/manual commands.
+CI overrides it per run/attempt; `run-local.sh` uses a per-process project name and prints
+the exact project/cleanup command. Use that name with `-p` when inspecting or cleaning up from
+another shell; deleting the fallback would not remove this requirement.
+
 ## GitHub Actions and diagnostics
 
 `.github/workflows/end-to-end.yml` uses exactly the same trigger configuration as
 `build.yml`: pushes to `main`, pull requests targeting `main`, and manual dispatch.
 There are no path filters; documentation-only changes trigger it too.
 It is separate from the fast build/unit workflow and has a 30-minute job timeout.
+This layer detects real registry-path/discovery and protocol interoperability regressions
+that unit tests cannot establish against Java Providers. It is not redundant slow unit testing.
+PR runs share a cancellation group; each main push/manual run uses its own run-ID group, so
+updates to main do not cancel in-progress or pending checks of previous pushes.
 
 Java dependencies and Action revisions are pinned; Actions use read-only repository
 permissions and checkout does not retain credentials. No package or image is published.
 
 Every test's output is streamed to the job log and saved under the run's log directory.
-The always-run final steps collect registry logs, upload Provider/client logs and xUnit TRX
-artifacts (seven-day retention), and stop Providers/remove Compose resources.
+The always-run final steps collect registry logs and upload Provider/client logs and xUnit TRX
+artifacts (seven-day retention). Two independent always-run cleanup steps then stop Providers
+and remove Compose resources, with one-minute and two-minute limits respectively.
+A cleanup failure emits a warning and cannot skip the other cleanup or override the RPC test
+result on the disposable CI runner. Local cleanup remains strict and returns a failing status
+if resources cannot be removed.
 Inspect `end-to-end-logs-*` and `end-to-end-test-results-*` on failures. The runner is
 disposable; cleanup is best-effort if GitHub forcibly terminates the job.
 

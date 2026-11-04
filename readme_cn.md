@@ -883,6 +883,9 @@ ZooKeeper 3.8.4 / Nacos 2.5.4 容器，并从
 
 触发逻辑与 `Build and test` 一致：`main` 推送、目标为 `main` 的 PR，以及手动触发；
 没有文件路径过滤。
+这是一层独立的集成验证：仅靠单元测试无法证明真实 Java Provider 能通过配置的注册路径被发现，
+以及不同协议间的调用确实成功；保留它能够发现路径布局和协议互通回归。
+同一 PR 的新提交会取消旧运行，main 推送和手动运行则互不取消。
 
 在安装 Docker Compose v2、JDK 8、Maven、.NET 10 SDK、iproute2 和 GNU coreutils 的 Linux 上运行：
 
@@ -891,6 +894,8 @@ Tests/EndToEndTestEnvironment/run-local.sh
 ```
 
 脚本统一管理启动、有超时边界的就绪检查、完整测试、日志和清理。
+就绪检测轮询所有测试服务的真实 Provider 记录和元数据，不再用固定睡眠代替发布状态。
+CI 清理步骤独立执行，各自有超时限制；失败时输出警告，不覆盖 RPC 测试结论。
 独立 xUnit 工程通过 `DUBBONET_E2E_ENABLED=true` 显式启用；启用后缺少配置或服务不可用
 都会失败，不会跳过。端口要求、地址、覆盖范围、手动复用、排障和扩展方法见
 [环境指南](Tests/EndToEndTestEnvironment/README.md)。
